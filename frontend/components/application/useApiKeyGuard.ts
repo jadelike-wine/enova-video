@@ -38,17 +38,20 @@ export function useApiKeyGuard() {
       }
       setHasActiveKey(status.has_active_key)
       setHasQiniuConfig(status.has_qiniu_config)
+      return status
     } catch {
+      const fallback = { has_active_key: false, has_qiniu_config: false }
       setHasActiveKey(false)
       setHasQiniuConfig(false)
+      return fallback
     } finally {
       setKeyStatusLoading(false)
     }
   }, [])
 
   const requireApiKey = useCallback(async (): Promise<boolean> => {
-    await refreshKeyStatus()
-    if (hasActiveKey) return true
+    const status = await refreshKeyStatus()
+    if (status.has_active_key) return true
 
     const goSettings = await confirm({
       title: NO_API_KEY_TITLE,
@@ -61,11 +64,11 @@ export function useApiKeyGuard() {
       router.push('/app/settings')
     }
     return false
-  }, [refreshKeyStatus, hasActiveKey, confirm, router])
+  }, [refreshKeyStatus, confirm, router])
 
   const requireQiniuConfig = useCallback(async (): Promise<boolean> => {
-    await refreshKeyStatus()
-    if (hasQiniuConfig) return true
+    const status = await refreshKeyStatus()
+    if (status.has_qiniu_config) return true
 
     const goSettings = await confirm({
       title: NO_QINIU_TITLE,
@@ -78,7 +81,7 @@ export function useApiKeyGuard() {
       router.push('/app/settings#storage')
     }
     return false
-  }, [refreshKeyStatus, hasQiniuConfig, confirm, router])
+  }, [refreshKeyStatus, confirm, router])
 
   return {
     hasActiveKey,

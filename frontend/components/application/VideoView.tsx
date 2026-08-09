@@ -174,7 +174,18 @@ export default function VideoView() {
   useEffect(() => {
     historyRef.current = history
   }, [history])
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollingRef = useRef(false)
+  const selectedTaskRef = useRef<number | string | null>(selectedTaskId)
+  useEffect(() => {
+    selectedTaskRef.current = selectedTaskId
+  }, [selectedTaskId])
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const currentModeNeedsQiniu = videoModeNeedsQiniu(form.mode)
 
@@ -197,25 +208,48 @@ export default function VideoView() {
     { label: '竖屏', items: meta.resolution_presets.filter((p) => p.group === 'portrait') },
   ].filter((g) => g.items.length)
 
-  const taskErrorMessage = (task: VideoTask) =>
-    formatErrorMessage(task?.error_message) || (task?.status === 'failed' ? '生成失败' : '')
+  const taskErrorMessage = useCallback(
+    (task: VideoTask) =>
+      formatErrorMessage(task?.error_message) || (task?.status === 'failed' ? '生成失败' : ''),
+    [],
+  )
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current)
+      clearTimeout(pollTimerRef.current)
       pollTimerRef.current = null
     }
   }, [])
 
-  const startPollingAll = useCallback(() => {
-    stopPolling()
-    pollTimerRef.current = setInterval(async () => {
-      const pending = historyRef.current.filter(
+  const pendingTasks = useCallback(
+    () =>
+      historyRef.current.filter(
         (t) =>
           ['queued', 'in_progress', 'submitting'].includes(t.status) &&
           !String(t.id).startsWith('temp-'),
-      )
-      if (!pending.length) return
+      ),
+    [],
+  )
+
+  const pollTickRef = useRef<() => Promise<void>>(async () => {})
+
+  const schedulePoll = useCallback(() => {
+    if (!mountedRef.current) return
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current)
+    pollTimerRef.current = setTimeout(() => {
+      void pollTickRef.current()
+    }, 8000)
+  }, [])
+
+  const pollTick = useCallback(async () => {
+    if (pollingRef.current || !mountedRef.current) return
+    pollingRef.current = true
+    try {
+      const pending = pendingTasks()
+      if (!pending.length) {
+        stopPolling()
+        return
+      }
       for (const task of pending) {
         try {
           const prevStatus = task.status
@@ -230,7 +264,7 @@ export default function VideoView() {
           }
           if (prevStatus !== 'failed' && updated.status === 'failed') {
             const msg = taskErrorMessage(updated) || '生成失败'
-            if (selectedTaskId === updated.id) {
+            if (selectedTaskRef.current === updated.id) {
               setError(msg)
             }
             await alert({ title: '生成失败', message: msg, confirmVariant: 'danger' })
@@ -239,8 +273,28 @@ export default function VideoView() {
           /* ignore transient polling errors */
         }
       }
-    }, 8000)
-  }, [stopPolling, selectedTaskId, setHistory, alert])
+    } finally {
+      pollingRef.current = false
+    }
+    if (mountedRef.current && pendingTasks().length) {
+      schedulePoll()
+    } else {
+      stopPolling()
+    }
+  }, [pendingTasks, stopPolling, schedulePoll, setHistory, alert, taskErrorMessage])
+
+  useEffect(() => {
+    pollTickRef.current = pollTick
+  }, [pollTick])
+
+  const startPollingAll = useCallback(() => {
+    stopPolling()
+    if (pollingRef.current) return
+    // Schedule a single tick regardless of current pending count; pollTick
+    // self-stops if no pending tasks remain. This avoids a stale read of
+    // historyRef right after an async reset.
+    schedulePoll()
+  }, [stopPolling, schedulePoll])
 
   const loadMeta = useCallback(async () => {
     const data = (await videoApi.getModels()) as VideoMeta
@@ -389,6 +443,7 @@ export default function VideoView() {
     startPollingAll,
     resetHistory,
     alert,
+    taskErrorMessage,
   ])
 
   const refreshTaskStatus = useCallback(
@@ -438,7 +493,7 @@ export default function VideoView() {
         setRefreshingTaskId(null)
       }
     },
-    [refreshingTaskId, alert, setHistory, startPollingAll],
+    [refreshingTaskId, alert, setHistory, startPollingAll, taskErrorMessage],
   )
 
   const retryTask = useCallback(
@@ -491,7 +546,7 @@ export default function VideoView() {
         setRetrying(false)
       }
     },
-    [retrying, requireApiKey, alert, setHistory, startPollingAll],
+    [retrying, requireApiKey, alert, setHistory, startPollingAll, taskErrorMessage],
   )
 
   const deleteTask = useCallback(

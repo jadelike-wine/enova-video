@@ -69,7 +69,6 @@ export default function SettingsView() {
   }, [alert])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadKeys()
   }, [loadKeys])
 

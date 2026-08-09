@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { buildMetadata } from '../../../lib/seo'
+import { buildMetadata, siteUrl } from '../../../lib/seo'
 
 export const metadata: Metadata = buildMetadata({
   title: '快速开始',
@@ -54,7 +54,7 @@ npm install
 npm run dev`}
         </pre>
         <p className="text-white/60 text-sm mt-3">
-          打开 <Link href="/" className="text-cyan-300 hover:underline">http://localhost:3000</Link>。
+          打开 <Link href="/" className="text-cyan-300 hover:underline">{siteUrl()}</Link>。
           前端通过 <code className="text-cyan-300">/api/*</code> 转发到 FastAPI（默认 <code className="text-cyan-300">http://127.0.0.1:8000</code>）。
         </p>
       </section>

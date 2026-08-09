@@ -87,6 +87,7 @@ export default function ChatView() {
   const [editingTitle, setEditingTitle] = useState('')
   const [streamingModel, setStreamingModel] = useState<string | null>(null)
   const [streamingStartedAt, setStreamingStartedAt] = useState<string | null>(null)
+  const [notFound, setNotFound] = useState(false)
 
   const messagesEl = useRef<HTMLDivElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
@@ -121,16 +122,28 @@ export default function ChatView() {
 
   const loadConversation = useCallback(
     async (id: number) => {
-      const data = (await chatApi.getConversation(id)) as {
-        conversation: Conversation
-        messages: Message[]
+      try {
+        const data = (await chatApi.getConversation(id)) as {
+          conversation: Conversation
+          messages: Message[]
+        }
+        setNotFound(false)
+        setCurrentConv(data.conversation)
+        setMessages(data.messages)
+        setSelectedModel(data.conversation.model || DEFAULT_MODEL)
+        requestAnimationFrame(scrollBottom)
+      } catch (err) {
+        const message = (err as Error).message || ''
+        if (message.includes('对话不存在')) {
+          setNotFound(true)
+          setCurrentConv(null)
+          setMessages([])
+        } else {
+          await alert({ title: '加载失败', message, confirmVariant: 'danger' })
+        }
       }
-      setCurrentConv(data.conversation)
-      setMessages(data.messages)
-      setSelectedModel(data.conversation.model || DEFAULT_MODEL)
-      requestAnimationFrame(scrollBottom)
     },
-    [scrollBottom],
+    [scrollBottom, alert],
   )
 
   const onModelChange = useCallback(
@@ -226,12 +239,15 @@ export default function ChatView() {
     [editingConvId, currentConv, cancelRename, router],
   )
 
-  const chatPayload = () => ({
-    model: selectedModel,
-    temperature,
-    max_tokens: maxTokens,
-    enable_thinking: enableThinking,
-  })
+  const chatPayload = useCallback(
+    () => ({
+      model: selectedModel,
+      temperature,
+      max_tokens: maxTokens,
+      enable_thinking: enableThinking,
+    }),
+    [selectedModel, temperature, maxTokens, enableThinking],
+  )
 
   const beginStreaming = (modelId: string) => {
     setLoading(true)
@@ -307,8 +323,7 @@ export default function ChatView() {
         selectedModel,
       )
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentConv, selectedModel, startStream],
+    [currentConv, selectedModel, startStream, chatPayload],
   )
 
   const send = useCallback(async () => {
@@ -352,8 +367,7 @@ export default function ChatView() {
         modelId,
       )
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loading, requireApiKey, messages, selectedModel, alert, currentConv, startStream],
+    [loading, requireApiKey, messages, selectedModel, alert, currentConv, startStream, chatPayload],
   )
 
   const deleteAssistantMessage = useCallback(
@@ -443,9 +457,9 @@ export default function ChatView() {
   useEffect(() => {
     if (loading || streaming) return
     if (currentId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadConversation(currentId)
     } else {
+      setNotFound(false)
       setCurrentConv(null)
       setMessages([])
       setSelectedModel(DEFAULT_MODEL)
@@ -660,7 +674,25 @@ export default function ChatView() {
 
         {/* Messages */}
         <div ref={messagesEl} className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-          {!messages.length && !streaming && (
+          {notFound && (
+            <div className="flex flex-col items-center justify-center h-full text-center">
+              <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-rose-500/20 to-amber-400/20 flex items-center justify-center text-3xl mb-5 border border-white/15">
+                🗑️
+              </div>
+              <p className="text-lg font-bold text-white">对话不存在或已被删除</p>
+              <p className="text-sm mt-2 text-white/45">该对话可能已被删除，或链接已失效。</p>
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
+                <Link href="/app/chat" className="btn-secondary text-sm px-4 py-2">
+                  返回聊天列表
+                </Link>
+                <button onClick={newConversation} className="btn-primary text-sm px-4 py-2">
+                  新建对话
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!notFound && !messages.length && !streaming && (
             <div className="flex flex-col items-center justify-center h-full text-white/50">
               <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-fuchsia-500/30 to-cyan-400/30 flex items-center justify-center text-4xl mb-5 border border-white/20 animate-float">
                 💬
@@ -838,11 +870,11 @@ export default function ChatView() {
                 }
               }}
               rows={2}
-              placeholder="输入消息，Enter 发送..."
+              placeholder={notFound ? '对话不存在，无法发送消息' : '输入消息，Enter 发送...'}
               className="input-field flex-1 resize-none"
-              disabled={loading}
+              disabled={loading || notFound}
             />
-            <button onClick={send} disabled={loading || !input.trim()} className="btn-primary self-end px-8">
+            <button onClick={send} disabled={loading || notFound || !input.trim()} className="btn-primary self-end px-8">
               {loading ? '生成中...' : '发送'}
             </button>
           </div>

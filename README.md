@@ -147,6 +147,22 @@ npm install
 npm run dev
 ```
 
+### 前端环境变量
+
+Next.js 前端通过以下环境变量配置（放在 `frontend/.env` 或部署环境中）：
+
+```env
+NEXT_PUBLIC_SITE_URL=https://your-domain.com
+BACKEND_URL=http://127.0.0.1:8000
+```
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `NEXT_PUBLIC_SITE_URL` | **生产环境必填** | 站点对外访问的完整域名（如 `https://your-domain.com`）。用于生成 canonical、OpenGraph URL、sitemap 与 robots Sitemap。开发环境未设置时回退到 `http://localhost:3000`；**生产环境未设置会直接构建失败**，防止把 localhost 泄漏到 SEO 输出。 |
+| `BACKEND_URL` | 部署时必填 | Next.js Node Server 转发 `/api/*` 时连接的后端 FastAPI 地址，默认 `http://127.0.0.1:8000`。 |
+
+> 注意：Agnes AI 的 API Key 等敏感信息只应保存在后端（`backend/.env` 或网页设置），**不要**放入 `NEXT_PUBLIC_*` 前缀的环境变量，否则会暴露到浏览器端。
+
 ### 5. 首次使用：配置 Agnes AI
 
 浏览器访问 [http://localhost:3000](http://localhost:3000)，进入应用侧边栏 **设置** 页面：
@@ -165,9 +181,24 @@ Next.js 前端会将浏览器端的 `/api/*` 请求代理到后端的 `http://12
 
 ## 生产部署
 
+> 部署架构说明：本项目**不是**「静态构建 → Nginx 托管 dist」的传统 SPA 部署。前端是 Next.js Node Server（`next start`），需要常驻进程运行：
+
+```text
+Browser
+  ↓
+Reverse Proxy (Nginx / Caddy / Traefik)
+  ├── /api/* → FastAPI (http://127.0.0.1:8000)
+  └── /*     → Next.js Node Server (next start, 默认 3000)
+```
+
+或直接让 Next.js Node Server 的 `/api/*` rewrite 转发到 `BACKEND_URL`，反向代理只负责把流量交给 Next.js 即可。
+
+### 构建
+
 ```bash
-# 构建 Next.js 生产包
-cd frontend && npm run build
+# 构建 Next.js 生产包（生产环境必须设置 NEXT_PUBLIC_SITE_URL）
+cd frontend
+NEXT_PUBLIC_SITE_URL=https://your-domain.com BACKEND_URL=http://127.0.0.1:8000 npm run build
 
 # 后端以生产模式运行（建议在 venv 中）
 cd backend
@@ -175,14 +206,14 @@ source .venv/bin/activate
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-前端以 Next.js 方式部署：
+### 运行
 
 ```bash
 cd frontend
-npm run start   # 默认端口 3000
+npm run start   # Next.js Node Server，默认端口 3000
 ```
 
-将 `/api` 反向代理到 FastAPI 服务即可，或直接让 Next.js 的 `/api/*` rewrite 转发到 `BACKEND_URL`。
+前端以 Next.js 方式部署，常驻 Node Server；反向代理将 `/*` 转发到 Next.js，将 `/api/*` 转发到 FastAPI（或直接由 Next.js 的 `/api/*` rewrite 转发到 `BACKEND_URL`）。
 
 ## API 文档
 
@@ -258,7 +289,6 @@ agnes-ai-creator/
 │   │   ├── marketing/       # 官网 / SEO 组件
 │   │   └── application/     # 应用交互组件
 │   ├── lib/                 # api.ts / seo.ts / models.ts 等
-│   └── public/
 └── _needs/                      # 需求与设计说明
 ```
 

@@ -1,4 +1,5 @@
 import { marked } from 'marked'
+import DOMPurify from 'isomorphic-dompurify'
 
 marked.setOptions({
   gfm: true,
@@ -22,7 +23,8 @@ function preprocessEmphasis(text: string): string {
 export function renderMarkdown(text: string): string {
   if (!text) return ''
   try {
-    return marked.parse(preprocessEmphasis(text)) as string
+    const html = marked.parse(preprocessEmphasis(text)) as string
+    return DOMPurify.sanitize(html)
   } catch {
     return text
       .replace(/&/g, '&amp;')

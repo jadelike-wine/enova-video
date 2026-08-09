@@ -1,10 +1,11 @@
 import type { MetadataRoute } from 'next'
 import { MODELS } from '../lib/models'
+import { siteUrl } from '../lib/seo'
 
 export const dynamic = 'force-dynamic'
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = (process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000').replace(/\/+$/, '')
+  const base = siteUrl()
   const now = new Date()
 
   const staticRoutes = [
@@ -19,7 +20,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: '/docs/video-generation', priority: 0.6, changeFrequency: 'monthly' as const },
   ]
 
-  const modelRoutes = MODELS.map((m) => ({
+  const modelRoutes = MODELS.filter((m) => !m.deprecated).map((m) => ({
     path: `/models/${m.slug}`,
     priority: 0.7,
     changeFrequency: 'monthly' as const,

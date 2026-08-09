@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export function useClipboard(resetMs = 2000) {
-  const copiedKeyRef = useRef<string | null>(null)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const copyText = useCallback(
@@ -21,10 +21,11 @@ export function useClipboard(resetMs = 2000) {
         document.execCommand('copy')
         document.body.removeChild(ta)
       }
-      copiedKeyRef.current = key
+      setCopiedKey(key)
       if (timerRef.current) clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => {
-        if (copiedKeyRef.current === key) copiedKeyRef.current = null
+        setCopiedKey((cur) => (cur === key ? null : cur))
+        timerRef.current = null
       }, resetMs)
       return true
     },
@@ -32,7 +33,14 @@ export function useClipboard(resetMs = 2000) {
   )
 
   const isCopied = useCallback((key: string): boolean => {
-    return copiedKeyRef.current === key
+    return copiedKey === key
+  }, [copiedKey])
+
+  // Clear pending timer on unmount to avoid setting state after unmount.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
   }, [])
 
   return { copyText, isCopied }

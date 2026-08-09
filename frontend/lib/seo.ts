@@ -8,10 +8,17 @@ export const SITE_NAME = 'Agnes AI Creator'
 export const SITE_TAGLINE = 'Open Source AI Chat, Image & Video Generator'
 
 export function siteUrl(): string {
-  return (
-    (process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/+$/, '') ||
-    'http://localhost:3000'
-  )
+  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+
+  if (configured) {
+    return configured.replace(/\/+$/, '')
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('NEXT_PUBLIC_SITE_URL is required in production')
+  }
+
+  return 'http://localhost:3000'
 }
 
 export function absoluteUrl(path: string): string {

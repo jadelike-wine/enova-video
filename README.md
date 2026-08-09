@@ -12,12 +12,10 @@
   <img alt="models" src="https://img.shields.io/badge/models-text%20%7C%20image%20%7C%20video-black?style=flat-square"></a>
   <a href="https://www.python.org/" target="_blank">
   <img alt="python" src="https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white"></a>
-  <a href="https://vuejs.org/" target="_blank">
-  <img alt="vue" src="https://img.shields.io/badge/vue-3.5-4FC08D?style=flat-square&logo=vuedotjs&logoColor=white"></a>
   <a href="https://fastapi.tiangolo.com/" target="_blank">
   <img alt="fastapi" src="https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white"></a>
-  <a href="https://vitejs.dev/" target="_blank">
-  <img alt="vite" src="https://img.shields.io/badge/vite-6.0-646CFF?style=flat-square&logo=vite&logoColor=white"></a>
+  <a href="https://nextjs.org/" target="_blank">
+  <img alt="next" src="https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=nextdotjs&logoColor=white"></a>
   <a href="https://x.com/haiqushe" target="_blank">
   <img alt="follow" src="https://img.shields.io/badge/follow-@haiqushe-red?style=flat-square"></a>
   <a href="https://dz.haiqushe.com/" target="_blank">
@@ -34,7 +32,7 @@
 
 <p align="center">
   <strong>对话 · 生图 · 生视频 · 一个界面全搞定</strong><br/>
-  免费 Agnes AI 模型 &nbsp;·&nbsp; Vue 3 + FastAPI 全栈 &nbsp;·&nbsp; 毛玻璃现代 UI &nbsp;·&nbsp; 网页可视化配置
+  免费 Agnes AI 模型 &nbsp;·&nbsp; Next.js + FastAPI 全栈 &nbsp;·&nbsp; 毛玻璃现代 UI &nbsp;·&nbsp; 网页可视化配置
 </p>
 
 ## 界面预览
@@ -86,7 +84,7 @@
 
 ## 技术栈
 
-- **前端**: Vue 3 · Vite · Vue Router · Tailwind CSS
+- **前端**: Next.js 15（App Router）· React 19 · TypeScript · Tailwind CSS
 - **后端**: Python 3 · FastAPI · httpx · APScheduler
 - **数据库**: SQLite（零配置，首次启动自动建表，SQL 文件在 backend/sql 文件夹里）
 - **对象存储**: 七牛云（可选）
@@ -95,7 +93,7 @@
 ## 环境要求
 
 - Python 3.10+
-- Node.js 18+
+- Node.js 18.18+
 - [Agnes AI API Key](https://platform.agnes-ai.com/)（免费申请，在网页 **设置** 中配置）
 - 七牛云对象存储（可选，用于持久化保存生成结果）
 
@@ -151,7 +149,7 @@ npm run dev
 
 ### 5. 首次使用：配置 Agnes AI
 
-浏览器访问 [http://localhost:5173](http://localhost:5173)，进入侧边栏 **设置** 页面：
+浏览器访问 [http://localhost:3000](http://localhost:3000)，进入应用侧边栏 **设置** 页面：
 
 <p align="left">
   <img src="docs/images/settings.png" alt="网页设置 — 添加 API Key" width="720" style="border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
@@ -163,12 +161,12 @@ npm run dev
 
 配置完成后即可使用对话、图片、视频功能。
 
-前端开发服务器会将 `/api` 请求代理至 `http://127.0.0.1:8000`。
+Next.js 前端会将浏览器端的 `/api/*` 请求代理到后端的 `http://127.0.0.1:8000`（可通过 `BACKEND_URL` 环境变量覆盖）。浏览器始终只访问 `/api/*`，不感知后端地址。
 
 ## 生产部署
 
 ```bash
-# 构建前端静态资源
+# 构建 Next.js 生产包
 cd frontend && npm run build
 
 # 后端以生产模式运行（建议在 venv 中）
@@ -177,7 +175,14 @@ source .venv/bin/activate
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-将 `frontend/dist` 交由 Nginx 等静态服务器托管，并将 `/api` 反向代理到 FastAPI 服务即可。
+前端以 Next.js 方式部署：
+
+```bash
+cd frontend
+npm run start   # 默认端口 3000
+```
+
+将 `/api` 反向代理到 FastAPI 服务即可，或直接让 Next.js 的 `/api/*` rewrite 转发到 `BACKEND_URL`。
 
 ## API 文档
 
@@ -237,12 +242,23 @@ agnes-ai-creator/
 │   ├── database/                # SQLite 数据库文件（gitignore）
 │   ├── .env.example             # 环境变量示例
 │   └── requirements.txt
-├── frontend/
-│   └── src/
-│       ├── views/               # 对话、图片、视频、设置页面
-│       ├── api/                 # API 客户端
-│       ├── components/          # 通用 UI 组件
-│       └── composables/         # 可复用逻辑
+├── frontend/                # Next.js 15（App Router）
+│   ├── app/
+│   │   ├── layout.tsx       # 根布局
+│   │   ├── page.tsx         # SEO 首页（/）
+│   │   ├── ai-chat/         # SEO 落地页（/ai-chat）
+│   │   ├── ai-image-generator/
+│   │   ├── ai-video-generator/
+│   │   ├── models/          # 模型列表与详情（/models/*）
+│   │   ├── docs/            # 文档（/docs/*）
+│   │   ├── app/             # 交互式应用（/app/chat | /app/images | /app/videos | /app/settings）
+│   │   ├── robots.ts        # /robots.txt
+│   │   └── sitemap.ts       # /sitemap.xml
+│   ├── components/
+│   │   ├── marketing/       # 官网 / SEO 组件
+│   │   └── application/     # 应用交互组件
+│   ├── lib/                 # api.ts / seo.ts / models.ts 等
+│   └── public/
 └── _needs/                      # 需求与设计说明
 ```
 

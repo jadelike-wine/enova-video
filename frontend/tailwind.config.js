@@ -1,8 +1,8 @@
 /** @type {import('tailwindcss').Config} */
-import typography from '@tailwindcss/typography'
+const typography = require('@tailwindcss/typography')
 
-export default {
-  content: ['./index.html', './src/**/*.{vue,js}'],
+module.exports = {
+  content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}', './lib/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
@@ -39,7 +39,7 @@ export default {
       },
       animation: {
         'gradient-shift': 'gradient-shift 12s ease infinite',
-        'float': 'float 6s ease-in-out infinite',
+        float: 'float 6s ease-in-out infinite',
       },
       keyframes: {
         'gradient-shift': {

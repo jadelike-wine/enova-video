@@ -2,6 +2,7 @@
 backend/.env
 node_modules/
 dist/
+.next/
 .venv/
 venv/
 __pycache__/

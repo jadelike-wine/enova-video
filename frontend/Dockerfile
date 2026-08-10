@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1
 
+# 版本 / 构建信息（GitHub Actions 构建时注入；本地构建使用占位值）
+ARG APP_VERSION=dev
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+
 #############################
 # 阶段 1: 安装生产依赖
 #############################
@@ -34,11 +39,21 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
+# 继承根级 ARG 用于 Label
+ARG APP_VERSION
+ARG GIT_SHA
+ARG BUILD_TIME
 ENV NODE_ENV=production
 
 # 非 root 运行
 RUN addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 nextjs
+
+# 镜像溯源 Label（version / git sha / build time）
+LABEL org.opencontainers.image.title="enova-video-frontend" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
 
 # standalone 模式：私有依赖已内联，无需 node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

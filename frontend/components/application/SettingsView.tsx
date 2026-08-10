@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { settingsApi } from '../../lib/api'
+import { settingsApi, systemApi, type SystemVersion, type UpdateCheck } from '../../lib/api'
 import { useDialog } from './DialogProvider'
 
 interface StorageStatus {
@@ -74,12 +74,20 @@ export default function SettingsView() {
   const [storage, setStorage] = useState<StorageStatus>(EMPTY_STORAGE)
   const [savingStorage, setSavingStorage] = useState(false)
 
+  // ---- 系统版本 / 更新检查 ----
+  const [sysVersion, setSysVersion] = useState<SystemVersion | null>(null)
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheck | null>(null)
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [lastCheckFailed, setLastCheckFailed] = useState(false)
+  const [lastCheckAt, setLastCheckAt] = useState<string>('')
+
   const loadKeys = useCallback(async () => {
     setLoading(true)
     try {
-      const [statusData, keysData] = await Promise.all([
+      const [statusData, keysData, versionData] = await Promise.all([
         settingsApi.getStatus(),
         settingsApi.listApiKeys(),
+        systemApi.getVersion(),
       ])
       const st = statusData as KeyStatus
       const ks = keysData as ApiKeyList
@@ -88,6 +96,7 @@ export default function SettingsView() {
       setBaseUrlForm(st.agnes_base_url || '')
       setDefaultBaseUrl(st.default_agnes_base_url || 'https://apihub.agnes-ai.com')
       if (st.storage) setStorage(st.storage)
+      setSysVersion(versionData as SystemVersion)
     } catch (e) {
       await alert({ title: '加载失败', message: (e as Error).message })
     } finally {
@@ -98,6 +107,25 @@ export default function SettingsView() {
   useEffect(() => {
     loadKeys()
   }, [loadKeys])
+
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true)
+    setLastCheckFailed(false)
+    try {
+      const data = (await systemApi.checkUpdate()) as UpdateCheck
+      setUpdateCheck(data)
+      setLastCheckAt(new Date().toLocaleString())
+    } catch (e) {
+      setLastCheckFailed(true)
+      setUpdateCheck(null)
+      await alert({
+        title: '更新检查失败',
+        message: (e as Error).message,
+      })
+    } finally {
+      setCheckingUpdate(false)
+    }
+  }
 
   const handleSaveBaseUrl = async () => {
     const url = baseUrlForm.trim()
@@ -393,6 +421,90 @@ export default function SettingsView() {
               </button>
             </div>
           </div>
+        </section>
+
+        {/* 系统版本 / 更新检查 */}
+        <section id="system-update" className="glass-card scroll-mt-6">
+          <h3 className="text-lg font-bold text-white mb-1">System Update</h3>
+          <p className="text-sm text-white/50 mb-4">
+            查看当前版本并手动检查更新。此页面<strong>只检查更新，不会自动升级</strong>；
+            升级与回滚由服务器端脚本（scripts/update.sh、scripts/rollback.sh）完成。
+          </p>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-xs text-white/40 mb-1">Current Version</p>
+              <p className="text-xl font-bold text-white">
+                {sysVersion?.version ? `v${sysVersion.version}` : '--'}
+              </p>
+              {sysVersion?.git_sha && (
+                <p className="text-xs text-white/40 mt-1 font-mono">
+                  Git SHA: {sysVersion.git_sha.slice(0, 12)}
+                </p>
+              )}
+              {sysVersion?.build_time && (
+                <p className="text-xs text-white/30 mt-0.5">Build: {sysVersion.build_time}</p>
+              )}
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-xs text-white/40 mb-1">Latest Version</p>
+              {updateCheck ? (
+                <p className="text-xl font-bold text-white">
+                  {updateCheck.latest_version ? `v${updateCheck.latest_version}` : '--'}
+                </p>
+              ) : (
+                <p className="text-xl font-bold text-white/40">--</p>
+              )}
+              {lastCheckAt && (
+                <p className="text-xs text-white/40 mt-1">上次检查：{lastCheckAt}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between mt-4 flex-wrap gap-3">
+            <div className="text-sm">
+              {lastCheckFailed && (
+                <span className="text-amber-300">更新检查失败，请稍后重试。</span>
+              )}
+              {updateCheck && !updateCheck.update_available && (
+                <span className="text-emerald-300">
+                  You are running the latest version.
+                </span>
+              )}
+              {updateCheck && updateCheck.update_available && (
+                <span className="text-cyan-300">
+                  Current: v{updateCheck.current_version} · Latest: v{updateCheck.latest_version} ·{' '}
+                  <strong>Update Available</strong>
+                </span>
+              )}
+            </div>
+            <button
+              className="btn-primary"
+              disabled={checkingUpdate}
+              onClick={handleCheckUpdate}
+            >
+              {checkingUpdate ? 'Checking…' : 'Check for Updates'}
+            </button>
+          </div>
+
+          {updateCheck?.update_available && updateCheck.release_notes && (
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-xs text-white/40 mb-2">Release Notes（v{updateCheck.latest_version}）</p>
+              <pre className="text-xs text-white/60 whitespace-pre-wrap font-sans max-h-40 overflow-y-auto">
+                {updateCheck.release_notes}
+              </pre>
+              {updateCheck.release_url && (
+                <a
+                  href={updateCheck.release_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block mt-2 text-xs text-cyan-300 hover:underline"
+                >
+                  查看 GitHub Release
+                </a>
+              )}
+            </div>
+          )}
         </section>
 
         {/* 添加 Key */}

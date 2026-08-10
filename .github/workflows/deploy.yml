@@ -1,0 +1,87 @@
+name: Deploy / Rollback (Production)
+
+# 仅手动触发（workflow_dispatch），禁止 push main 自动部署生产。
+# 通过 SSH 调用服务器上已有的 scripts/update.sh 或 scripts/rollback.sh。
+# GitHub Action 不覆盖服务器 .env，不传递任何 Agnes/AWS/Qiniu Secret。
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'deploy 或 rollback'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - rollback
+      version:
+        description: '目标版本（如 v1.2.0）；deploy 时生效，留空则升级到最新 stable'
+        required: false
+        default: ''
+        type: string
+      restore_db:
+        description: 'rollback 是否恢复旧数据库（有数据丢失风险）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+# 生产环境：建议在 GitHub 上为该 environment 配置 Required Reviewers
+# （人工批准后才允许部署）。
+environment: production
+
+permissions:
+  contents: read
+
+jobs:
+  execute:
+    name: ${{ inputs.action }} on server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        if: inputs.action == 'deploy'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd "$DEPLOY_PATH"
+            if [ -n "$DEPLOY_VERSION" ]; then
+              ./scripts/update.sh "$DEPLOY_VERSION"
+            else
+              ./scripts/update.sh
+            fi
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_VERSION: ${{ inputs.version }}
+
+      - name: Rollback via SSH
+        if: inputs.action == 'rollback'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd "$DEPLOY_PATH"
+            if [ "$DEPLOY_RESTORE_DB" = "true" ]; then
+              ./scripts/rollback.sh --restore-db
+            else
+              ./scripts/rollback.sh --code-only
+            fi
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_RESTORE_DB: ${{ inputs.restore_db }}
+
+      - name: Mark failed on failed deploy
+        if: failure()
+        run: echo "::error::Deploy/Rollback 未成功，目标版本部署失败或回滚异常。请查看服务器 .deploy/logs/ 与服务器返回日志。"

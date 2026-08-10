@@ -3,6 +3,7 @@ backend/.env
 node_modules/
 dist/
 .next/
+*.tsbuildinfo
 .venv/
 venv/
 __pycache__/
@@ -10,3 +11,11 @@ __pycache__/
 backend/database/
 .DS_Store
 _needs/
+
+# ---- 版本发布 / 更新系统 ----
+# 部署状态与日志（含 update_id、state.json、history.json、version.env）
+.deploy/
+# SQLite 一致性备份（升级前生成，勿提交仓库）
+backups/
+*.db-wal
+*.db-shm

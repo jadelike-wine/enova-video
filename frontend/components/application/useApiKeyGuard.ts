@@ -29,7 +29,11 @@ export function useApiKeyGuard() {
   const [hasStorageConfig, setHasStorageConfig] = useState(true)
   const [keyStatusLoading, setKeyStatusLoading] = useState(true)
 
-  const refreshKeyStatus = useCallback(async () => {
+  const refreshKeyStatus = useCallback(async (): Promise<{
+    has_active_key: boolean
+    has_qiniu_config: boolean
+    storage?: { ready?: boolean }
+  }> => {
     setKeyStatusLoading(true)
     try {
       const status = (await settingsApi.getStatus()) as {

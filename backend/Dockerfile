@@ -2,6 +2,14 @@
 
 FROM python:3.12-slim
 
+# 版本 / 构建信息（GitHub Actions 构建时注入；本地构建使用占位值）
+ARG APP_VERSION=dev
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+ENV APP_VERSION=${APP_VERSION} \
+    GIT_SHA=${GIT_SHA} \
+    BUILD_TIME=${BUILD_TIME}
+
 # 容器日志直接输出、不生成 .pyc
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -25,6 +33,12 @@ RUN adduser --disabled-password --gecos "" appuser \
 USER appuser
 
 EXPOSE 8000
+
+# 镜像溯源 Label（version / git sha / build time）
+LABEL org.opencontainers.image.title="enova-video-backend" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3); sys.exit(0)" || exit 1

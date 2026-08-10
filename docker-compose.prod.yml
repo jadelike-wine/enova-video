@@ -1,0 +1,78 @@
+# ============================================================
+# 生产 Compose：使用 GHCR 已构建镜像，禁止 --build。
+# 版本通过 .deploy/version.env 的 APP_VERSION 注入（见 scripts/update.sh）。
+#
+#   升级/回滚 = 切换 APP_VERSION -> docker compose up -d --no-build
+#
+# 不要使用 docker compose down -v / docker system prune -a。
+# ============================================================
+name: agnes-ai-creator-prod
+
+services:
+  backend:
+    # 必须使用明确版本 tag，禁止依赖 latest
+    image: ghcr.io/jadelike-wine/enova-video-backend:${APP_VERSION}
+    # 仅对 frontend 开放 8000，不对外暴露
+    expose:
+      - "8000"
+    environment:
+      DATABASE_PATH: /data/app.db
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-none}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+      AWS_S3_PREFIX: ${AWS_S3_PREFIX:-agnes-ai}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_S3_PUBLIC_BASE_URL: ${AWS_S3_PUBLIC_BASE_URL:-}
+      AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-}
+      QINIU_ACCESS_KEY: ${QINIU_ACCESS_KEY:-}
+      QINIU_SECRET_KEY: ${QINIU_SECRET_KEY:-}
+      QINIU_BUCKET: ${QINIU_BUCKET:-}
+      QINIU_DOMAIN: ${QINIU_DOMAIN:-}
+      QINIU_REGION: ${QINIU_REGION:-z0}
+      AGNES_API_KEY: ${AGNES_API_KEY:-}
+      AGNES_BASE_URL: ${AGNES_BASE_URL:-}
+      # 更新检查（仅后端使用；GITHUB_TOKEN 仅 private 仓库需要）
+      GITHUB_REPOSITORY: ${GITHUB_REPOSITORY:-jadelike-wine/enova-video}
+      UPDATE_CHANNEL: ${UPDATE_CHANNEL:-stable}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+      LOG_PROMPTS: ${LOG_PROMPTS:-false}
+      ACCESS_LOG: ${ACCESS_LOG:-true}
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    volumes:
+      - backend_data:/data
+      # 供 scripts/update.sh 在容器内做一致性 SQLite backup 后写回宿主机
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3); sys.exit(0)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/jadelike-wine/enova-video-frontend:${APP_VERSION}
+    # 对外暴露 3000
+    ports:
+      - "3000:3000"
+    # BACKEND_URL / NEXT_PUBLIC_SITE_URL 已在镜像构建时内联，无需运行时覆盖
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    restart: unless-stopped
+
+volumes:
+  backend_data:

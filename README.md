@@ -300,6 +300,145 @@ docker compose up -d --build
 
 ---
 
+## 版本发布、更新与回滚
+
+> 目标：**版本化发布（SemVer）+ 手动检查更新 + 手动执行更新 + SQLite 备份 + 真实健康检查 + 失败自动回滚 + 可人工回滚**。
+> 默认**禁止无人值守自动升级**生产；任何生产升级前必须有 SQLite 备份；任何新版本必须通过真实 Health Check 才判定成功；任何升级失败都有明确、可验证的回滚路径。
+
+### 版本与镜像
+
+- 根目录 `VERSION` 记录当前 SemVer（如 `1.1.0`）。
+- Docker 镜像使用明确版本 tag，禁止依赖 `latest` 升级/回滚：
+
+```text
+ghcr.io/jadelike-wine/enova-video-frontend:v1.2.0
+ghcr.io/jadelike-wine/enova-video-backend:v1.2.0
+```
+
+- 额外提供 `latest` 与 `sha-<commit>` tag，仅用于不分意版本的快速拉取，生产更新/回滚一律用明确版本或 digest。
+- 构建时注入 `APP_VERSION` / `GIT_SHA` / `BUILD_TIME`，后端可通过接口查询。
+
+### 发布一个版本
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+推送 `v*` tag 会触发 GitHub Actions `release.yml`：编译测试 → 登录 GHCR → 构建并推送 backend/frontend（`linux/amd64` + `linux/arm64`）→ 生成 `release.json`（版本 / Git SHA / 镜像 / digest）→ 创建 GitHub Release。
+
+### 检查更新（手动）
+
+进入 **设置 → System Update → Check for Updates**。页面只做「检查」，绝不自动升级。后端接口：
+
+```http
+GET /api/system/update/check
+```
+
+```json
+{
+  "current_version": "1.1.0",
+  "latest_version": "1.2.0",
+  "update_available": true,
+  "published_at": "...",
+  "release_notes": "...",
+  "release_url": "...",
+  "channel": "stable"
+}
+```
+
+默认只检查 **stable** release，忽略 `draft` / `prerelease`。GitHub API 故障只影响本次检查（`UPDATE_CHECK_FAILED`），不影响主应用。
+
+### 升级到最新 stable
+
+```bash
+./scripts/update.sh
+```
+
+### 升级到指定版本
+
+```bash
+./scripts/update.sh v1.2.0
+```
+
+### 只查看升级计划（不修改任何东西）
+
+```bash
+./scripts/update.sh --dry-run
+```
+
+升级流程（任一步失败即中止，旧版本继续运行）：
+
+```text
+lock → 确定目标版本 → 预检(Docker/Compose) → 当前健康检查
+→ SQLite 一致性备份 → 保存 deployment state → pull 新镜像
+→ 校验 digest → 切换 APP_VERSION → docker compose up -d --no-build
+→ 全链路健康检查(backend /health + frontend / + frontend /api/health)
+→ 成功记录；失败自动回滚
+```
+
+### 代码回滚（推荐，保留当前数据库）
+
+```bash
+./scripts/rollback.sh --code-only
+```
+
+只回滚 frontend/backend 到上一个成功版本，**不**改动数据库（避免丢失新数据）。
+
+### 完整回滚（代码 + 恢复旧数据库）
+
+```bash
+./scripts/rollback.sh --restore-db
+```
+
+会恢复 pre-update SQLite 备份，**会删除备份时间点之后产生的所有新数据**，脚本会要求确认。
+
+> **数据丢失风险**：`--restore-db` 会把数据库恢复到升级前快照。新版本已运行一段时间并产生新数据时，请优先使用 `--code-only`。
+
+### 更新 / 回滚日志
+
+所有 update/rollback 都带唯一 `update_id`，日志同时输出 stdout 并保存到 `.deploy/logs/`：
+
+```bash
+ls -lah .deploy/logs/
+```
+
+失败时自动保存失败版本的 Docker 日志（`--tail=500`），回滚后仍可调查。
+
+### 部署状态
+
+`.deploy/` 保存 `state.json`（previous/current 版本与 digest、备份路径、update_id）、`history.json`、`version.env`（仅 `APP_VERSION`，与 `.env` 中的 Secret 分离）、`update.lock`。**绝不存 Secret**。
+
+### 生产 Compose
+
+生产使用 GHCR 镜像，版本从 `.deploy/version.env` 注入：
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --no-build
+```
+
+禁止 `docker compose down -v` 与 `docker system prune -a`。
+
+### GitHub Actions 手动部署 / 回滚
+
+`deploy.yml` 仅允许 `workflow_dispatch` 手动触发（不随 push 自动部署生产），通过 SSH 调用服务器脚本：
+
+```text
+deploy  → cd $DEPLOY_PATH && ./scripts/update.sh [v1.2.0]
+rollback→ cd $DEPLOY_PATH && ./scripts/rollback.sh --code-only
+```
+
+需要配置 GitHub Secrets（`deploy.yml` 中引用）：`DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` / `DEPLOY_PATH`。生产 Deploy 使用 `environment: production`（可配置 Required Reviewers 人工审批）。
+
+### 服务器需要哪些配置
+
+- Docker（含 Compose 插件）、能访问 GHCR。
+- 克隆仓库到 `DEPLOY_PATH`，`cp .env.example .env` 并填写 Agnes / AWS / 七牛等配置。
+- GitHub 仓库为 private 时，后端需 `GITHUB_TOKEN`（最小权限 `read:packages`/`read:releases`）用于检查更新；GHCR 镜像为 private 时，服务器需 `docker login ghcr.io` 并配置只读 token。
+- 更新脚本内置锁（flock，macOS 开发机回退为 mkdir 原子锁），update 与 rollback 互斥。
+
+---
+
 ## 日志与故障排查
 
 应用日志（backend / frontend）统一输出到 **stdout / stderr**，不写入容器内 `.log` 文件，因此直接用 `docker compose logs`（或 `docker logs <container>`）即可查看，无需进入容器。
@@ -406,6 +545,13 @@ docker compose logs backend | grep "9fd8ab"
 | PATCH | `/api/settings/api-keys/{id}` | 编辑名称或 Key |
 | POST | `/api/settings/api-keys/{id}/activate` | 启用指定 Key |
 | DELETE | `/api/settings/api-keys/{id}` | 删除 Key |
+
+### 系统信息 / 更新检查接口
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/system/version` | 当前版本 / Git SHA / 构建时间 |
+| GET | `/api/system/update/check` | 手动检查最新 stable 版本（只读，不升级） |
 
 ## 数据库
 

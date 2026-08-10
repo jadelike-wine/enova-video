@@ -25,7 +25,7 @@ from app.config import (
     ACCESS_LOG,
     DATABASE_PATH,
 )
-from app.routers import chat, images, videos, settings
+from app.routers import chat, images, videos, settings, system
 from app.services.video_poller import poll_pending_videos
 from app.services.storage_settings import (
     get_storage_provider,
@@ -189,6 +189,7 @@ app.include_router(chat.router)
 app.include_router(images.router)
 app.include_router(videos.router)
 app.include_router(settings.router)
+app.include_router(system.router)
 
 
 @app.exception_handler(HTTPException)

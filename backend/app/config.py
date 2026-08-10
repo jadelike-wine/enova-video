@@ -13,6 +13,22 @@ QINIU_REGION = os.getenv("QINIU_REGION", "z0").strip()
 
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(BASE_DIR / "database" / "aimodel.db"))
 
+# ---- 版本 / 发布信息（Docker build 时注入，见 VERSION 与 GitHub Actions）----
+# 当前应用版本，SemVer，如 1.2.0（不带 v 前缀）
+APP_VERSION = os.getenv("APP_VERSION", "").strip().lstrip("v")
+# 构建时的 Git commit SHA
+GIT_SHA = os.getenv("GIT_SHA", "").strip()
+# 构建时间（UTC ISO 8601）
+BUILD_TIME = os.getenv("BUILD_TIME", "").strip()
+
+# ---- 更新检查（仅后端使用，绝不注入 NEXT_PUBLIC_*）----
+# GitHub 仓库，形如 owner/repo
+GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "jadelike-wine/enova-video").strip()
+# 更新通道：stable（默认，忽略 draft / prerelease）
+UPDATE_CHANNEL = os.getenv("UPDATE_CHANNEL", "stable").strip().lower() or "stable"
+# 只读 GitHub Token（private 仓库需要；public 仓库可留空）。仅后端使用，禁止输出到日志。
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "").strip()
+
 # ---- 日志 ----
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO"
 LOG_FORMAT = os.getenv("LOG_FORMAT", "text").strip().lower() or "text"

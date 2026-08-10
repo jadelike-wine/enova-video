@@ -27,7 +27,7 @@ function attachRequestMeta(err: Error, body: { request_id?: string; error_code?:
   return err
 }
 
-function addRequestIdHeader(headers: RequestInit['headers']): Headers {
+function addRequestIdHeader(headers: RequestInit['headers'] = undefined): Headers {
   const h = new Headers(headers || {})
   if (!h.has('X-Request-ID')) h.set('X-Request-ID', newRequestId())
   return h
@@ -245,4 +245,26 @@ export const settingsApi = {
     json(`/settings/api-keys/${id}/activate`, { method: 'POST' }),
   deleteApiKey: (id: number) =>
     json(`/settings/api-keys/${id}`, { method: 'DELETE' }),
+}
+
+export interface SystemVersion {
+  version: string
+  git_sha: string
+  build_time: string
+}
+
+export interface UpdateCheck {
+  current_version: string
+  latest_version: string
+  update_available: boolean
+  published_at?: string | null
+  release_notes?: string
+  release_url?: string
+  channel?: string
+}
+
+/** 系统信息与更新检查。只读，不触发任何升级动作。 */
+export const systemApi = {
+  getVersion: () => json<SystemVersion>('/system/version'),
+  checkUpdate: () => json<UpdateCheck>('/system/update/check'),
 }

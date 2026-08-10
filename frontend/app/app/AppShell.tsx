@@ -11,7 +11,11 @@ const navItems = [
   { path: '/app/settings', label: '设置', icon: '⚙️', gradient: 'from-slate-400 to-zinc-500' },
 ]
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+// 注意：此组件不能作为 app/app 下的嵌套 layout.tsx 使用。
+// Next.js 15.5.x 存在 bug：当 app/app/layout.tsx 存在时，根 layout 引入的
+// 全局 CSS 会被静默丢弃（构建成功但 .next/static/css 为空，页面无样式）。
+// 因此这里用客户端组件包裹各个页面，而不是作为 layout 挂载。
+export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
   return (

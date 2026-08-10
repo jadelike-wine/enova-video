@@ -52,6 +52,25 @@ jobs:
           NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://example.com' }}
           BACKEND_URL: http://backend:8000
 
+      # 防回归：HTML 200 但 CSS/JS 404 的生产问题。Next.js 15.5.x 嵌套 layout
+      # 曾导致全局 CSS 被静默丢弃（构建成功但 .next/static/css 为空）。
+      # 此处强制校验构建产物确实生成了 CSS/JS 静态文件，缺失即失败。
+      - name: Check static CSS/JS artifacts
+        working-directory: frontend
+        run: |
+          css_count=$(find .next/static/css -name "*.css" 2>/dev/null | wc -l | tr -d ' ')
+          js_count=$(find .next/static/chunks -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
+          echo "CSS files: $css_count"
+          echo "JS files: $js_count"
+          if [ "$css_count" -eq 0 ]; then
+            echo "::error::Build output has NO CSS files (missing or empty .next/static/css). Global styles were silently dropped. Aborting release."
+            exit 1
+          fi
+          if [ "$js_count" -eq 0 ]; then
+            echo "::error::Build output has NO JS chunks (.next/static/chunks empty). Aborting release."
+            exit 1
+          fi
+
   release:
     name: Build & Publish ${{ github.ref_name }}
     needs: test

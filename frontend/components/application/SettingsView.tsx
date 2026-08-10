@@ -4,12 +4,35 @@ import { useCallback, useEffect, useState } from 'react'
 import { settingsApi } from '../../lib/api'
 import { useDialog } from './DialogProvider'
 
+interface StorageStatus {
+  provider: string
+  ready: boolean
+  qiniu_configured: boolean
+  aws_region: string
+  aws_bucket: string
+  aws_prefix: string
+  aws_public_base_url: string
+  aws_endpoint_url: string
+}
+
 interface KeyStatus {
   has_active_key: boolean
   has_qiniu_config: boolean
   key_count: number
   agnes_base_url: string
   default_agnes_base_url: string
+  storage?: StorageStatus
+}
+
+const EMPTY_STORAGE: StorageStatus = {
+  provider: 'none',
+  ready: false,
+  qiniu_configured: false,
+  aws_region: '',
+  aws_bucket: '',
+  aws_prefix: 'agnes-ai',
+  aws_public_base_url: '',
+  aws_endpoint_url: '',
 }
 
 interface ApiKeyItem {
@@ -48,6 +71,9 @@ export default function SettingsView() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState({ name: '', api_key: '' })
 
+  const [storage, setStorage] = useState<StorageStatus>(EMPTY_STORAGE)
+  const [savingStorage, setSavingStorage] = useState(false)
+
   const loadKeys = useCallback(async () => {
     setLoading(true)
     try {
@@ -61,6 +87,7 @@ export default function SettingsView() {
       setKeys(ks.items)
       setBaseUrlForm(st.agnes_base_url || '')
       setDefaultBaseUrl(st.default_agnes_base_url || 'https://apihub.agnes-ai.com')
+      if (st.storage) setStorage(st.storage)
     } catch (e) {
       await alert({ title: '加载失败', message: (e as Error).message })
     } finally {
@@ -93,6 +120,26 @@ export default function SettingsView() {
 
   const resetBaseUrl = () => {
     setBaseUrlForm(defaultBaseUrl)
+  }
+
+  const handleSaveStorage = async () => {
+    setSavingStorage(true)
+    try {
+      const data = (await settingsApi.updateStorage({
+        provider: storage.provider,
+        aws_region: storage.aws_region,
+        aws_bucket: storage.aws_bucket,
+        aws_prefix: storage.aws_prefix,
+        aws_public_base_url: storage.aws_public_base_url,
+        aws_endpoint_url: storage.aws_endpoint_url,
+      })) as StorageStatus
+      setStorage(data)
+      await alert({ title: '已保存', message: '对象存储配置已保存，重启后端后生效。' })
+    } catch (e) {
+      await alert({ title: '保存失败', message: (e as Error).message })
+    } finally {
+      setSavingStorage(false)
+    }
   }
 
   const handleCreate = async () => {
@@ -209,58 +256,115 @@ export default function SettingsView() {
         {/* 对象存储 */}
         <section id="storage" className="glass-card scroll-mt-6">
           <div className="flex items-center justify-between gap-3 mb-1">
-            <h3 className="text-lg font-bold text-white">对象存储（七牛云）</h3>
+            <h3 className="text-lg font-bold text-white">对象存储</h3>
             {!loading && (
               <span
                 className={`text-xs px-2.5 py-1 rounded-full border ${
-                  status.has_qiniu_config
+                  storage.ready
                     ? 'border-emerald-400/40 text-emerald-200 bg-emerald-400/10'
                     : 'border-amber-400/40 text-amber-200 bg-amber-400/10'
                 }`}
               >
-                {status.has_qiniu_config ? '已配置' : '未配置'}
+                {storage.ready ? '已配置' : '未配置'}
               </span>
             )}
           </div>
           <p className="text-sm text-white/50 mb-4">
-            七牛云用于上传参考图片，并将生成结果持久化到 CDN。未配置时仍可使用文生图、文生视频，但带参考图的模式不可用，历史媒体链接可能过期。
+            对象存储用于上传参考图片，并将生成结果持久化。支持
+            <span className="text-cyan-300"> none（不转存）</span>、
+            <span className="text-cyan-300"> qiniu（七牛云）</span>、
+            <span className="text-cyan-300"> s3（AWS S3 / S3 兼容存储）</span>。
+            未配置时仍可使用文生图、文生视频，但带参考图的模式不可用，历史媒体链接可能过期。
           </p>
 
-          {!loading && !status.has_qiniu_config && (
-            <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 mb-4">
-              <p className="text-sm text-amber-100/90 font-medium">如何配置</p>
-              <ol className="text-sm text-white/60 mt-2 space-y-1.5 list-decimal list-inside">
-                <li>
-                  前往
-                  <a
-                    href="https://portal.qiniu.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-cyan-300 hover:underline"
-                  >
-                    {' '}七牛云控制台
-                  </a>
-                  {' '}注册并创建存储空间（Bucket），绑定 CDN 访问域名
-                </li>
-                <li>复制 Access Key、Secret Key、Bucket 名称与 CDN 域名</li>
-                <li>
-                  编辑项目中的
-                  <code className="text-cyan-300/90">backend/.env</code>
-                  {' '}（可参考
-                  <code className="text-cyan-300/90">backend/.env.example</code>）
-                </li>
-                <li>填入以下变量后重启后端服务</li>
-              </ol>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5">存储 Provider</label>
+              <select
+                value={storage.provider}
+                onChange={(e) => setStorage((prev) => ({ ...prev, provider: e.target.value }))}
+                className="input-field"
+              >
+                <option value="none">none（不转存）</option>
+                <option value="qiniu">qiniu（七牛云）</option>
+                <option value="s3">s3（AWS S3）</option>
+              </select>
             </div>
-          )}
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5">AWS Region</label>
+              <input
+                value={storage.aws_region}
+                onChange={(e) => setStorage((prev) => ({ ...prev, aws_region: e.target.value }))}
+                type="text"
+                className="input-field"
+                placeholder="ap-southeast-1"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5">S3 Bucket</label>
+              <input
+                value={storage.aws_bucket}
+                onChange={(e) => setStorage((prev) => ({ ...prev, aws_bucket: e.target.value }))}
+                type="text"
+                className="input-field"
+                placeholder="my-agnes-bucket"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5">S3 Prefix</label>
+              <input
+                value={storage.aws_prefix}
+                onChange={(e) => setStorage((prev) => ({ ...prev, aws_prefix: e.target.value }))}
+                type="text"
+                className="input-field"
+                placeholder="agnes-ai"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5">
+                Public Base URL（CloudFront / CDN，可选）
+              </label>
+              <input
+                value={storage.aws_public_base_url}
+                onChange={(e) =>
+                  setStorage((prev) => ({ ...prev, aws_public_base_url: e.target.value }))
+                }
+                type="url"
+                className="input-field"
+                placeholder="https://cdn.example.com"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5">
+                Endpoint URL（S3 兼容存储，可选）
+              </label>
+              <input
+                value={storage.aws_endpoint_url}
+                onChange={(e) =>
+                  setStorage((prev) => ({ ...prev, aws_endpoint_url: e.target.value }))
+                }
+                type="url"
+                className="input-field"
+                placeholder="留空使用 AWS S3"
+              />
+            </div>
+          </div>
 
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 font-mono text-xs text-white/70 space-y-1">
-            <p>QINIU_ACCESS_KEY=你的 Access Key</p>
-            <p>QINIU_SECRET_KEY=你的 Secret Key</p>
-            <p>QINIU_BUCKET=存储桶名称</p>
-            <p>QINIU_DOMAIN=https://你的 CDN 域名</p>
+          <div className="flex justify-end mt-4">
+            <button className="btn-primary" disabled={savingStorage} onClick={handleSaveStorage}>
+              {savingStorage ? '保存中…' : '保存对象存储配置'}
+            </button>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs text-white/60 space-y-1">
             <p className="text-white/40">
-              QINIU_REGION=z0 <span className="font-sans">（可选，默认华东）</span>
+              凭据（AWS Access Key / Secret / Session Token）不在网页中管理，仅通过
+              <code className="text-cyan-300/90"> backend/.env</code> 或 AWS IAM Role 提供；
+              生产环境推荐 EC2 绑定 IAM Role，无需填写任何密钥。
+            </p>
+            <p className="text-white/40">
+              AWS_S3_PUBLIC_BASE_URL 存在时返回稳定公开/CDN 地址；私有 bucket 数据库只保存对象
+              key，读取时动态生成 presigned URL（1 小时）。
             </p>
           </div>
         </section>

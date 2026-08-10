@@ -7,14 +7,44 @@ const BASE = '/api'
 
 export type ApiError = Error
 
+function newRequestId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
+/** 从错误响应体中提取 request_id / error_code，并拼进错误消息。 */
+function attachRequestMeta(err: Error, body: { request_id?: string; error_code?: string }) {
+  const parts: string[] = []
+  if (body.request_id) parts.push(`Request ID: ${body.request_id}`)
+  if (body.error_code) parts.push(`Error Code: ${body.error_code}`)
+  if (parts.length) err.message = `${err.message} (${parts.join(', ')})`
+  return err
+}
+
+function addRequestIdHeader(headers: RequestInit['headers']): Headers {
+  const h = new Headers(headers || {})
+  if (!h.has('X-Request-ID')) h.set('X-Request-ID', newRequestId())
+  return h
+}
+
 async function request(url: string, options: RequestInit = {}): Promise<Response> {
+  const headers = addRequestIdHeader(options.headers)
+  if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+
   const resp = await fetch(`${BASE}${url}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
+    headers,
   })
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ detail: resp.statusText }))
-    throw new Error((err as { detail?: string }).detail || resp.statusText)
+    const body = await resp.json().catch(() => ({ detail: resp.statusText }))
+    const err = new Error((body as { detail?: string }).detail || resp.statusText)
+    throw attachRequestMeta(err, body as { request_id?: string; error_code?: string })
   }
   return resp
 }
@@ -36,7 +66,7 @@ function postStream(
 ): void {
   fetch(`${BASE}${url}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: addRequestIdHeader({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ ...data, stream: true }),
   })
     .then(async (resp) => {
@@ -140,7 +170,11 @@ export const imageApi = {
         if (v !== undefined && v !== null) form.append(k, String(v))
       }
       for (const file of files) form.append('files', file)
-      return fetch(`${BASE}/images/generate`, { method: 'POST', body: form }).then(
+      return fetch(`${BASE}/images/generate`, {
+        method: 'POST',
+        headers: { 'X-Request-ID': addRequestIdHeader().get('X-Request-ID')! },
+        body: form,
+      }).then(
         async (resp) => {
           if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: resp.statusText }))
@@ -184,7 +218,11 @@ export const videoApi = {
   upload: async (file: File) => {
     const form = new FormData()
     form.append('file', file)
-    const resp = await fetch(`${BASE}/videos/upload`, { method: 'POST', body: form })
+    const resp = await fetch(`${BASE}/videos/upload`, {
+      method: 'POST',
+      headers: { 'X-Request-ID': addRequestIdHeader().get('X-Request-ID')! },
+      body: form,
+    })
     if (!resp.ok) throw new Error('上传失败')
     return resp.json()
   },
@@ -195,6 +233,9 @@ export const settingsApi = {
   getBaseUrl: () => json('/settings/base-url'),
   updateBaseUrl: (base_url: string) =>
     json('/settings/base-url', { method: 'PUT', body: JSON.stringify({ base_url }) }),
+  getStorage: () => json('/settings/storage'),
+  updateStorage: (data: Record<string, unknown>) =>
+    json('/settings/storage', { method: 'PUT', body: JSON.stringify(data) }),
   listApiKeys: () => json<{ items: unknown[] }>('/settings/api-keys'),
   createApiKey: (data: Record<string, unknown>) =>
     json('/settings/api-keys', { method: 'POST', body: JSON.stringify(data) }),

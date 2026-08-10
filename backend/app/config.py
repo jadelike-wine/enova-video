@@ -13,6 +13,20 @@ QINIU_REGION = os.getenv("QINIU_REGION", "z0").strip()
 
 DATABASE_PATH = os.getenv("DATABASE_PATH", str(BASE_DIR / "database" / "aimodel.db"))
 
+# ---- 日志 ----
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO"
+LOG_FORMAT = os.getenv("LOG_FORMAT", "text").strip().lower() or "text"
+# 是否把用户 prompt 写入日志（默认关闭，避免把敏感/超长内容刷进 Docker log）
+LOG_PROMPTS = os.getenv("LOG_PROMPTS", "false").lower() in ("1", "true", "yes", "on")
+# 是否输出请求级 access 日志
+ACCESS_LOG = os.getenv("ACCESS_LOG", "true").lower() in ("1", "true", "yes", "on")
+
+_VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+if LOG_LEVEL not in _VALID_LOG_LEVELS:
+    LOG_LEVEL = "INFO"
+if LOG_FORMAT not in ("text", "json"):
+    LOG_FORMAT = "text"
+
 TEXT_MODELS = ["agnes-2.0-flash", "agnes-1.5-flash"]
 IMAGE_MODELS = ["agnes-image-2.0-flash", "agnes-image-2.1-flash"]
 VIDEO_MODELS = ["agnes-video-v2.0"]

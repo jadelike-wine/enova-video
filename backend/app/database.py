@@ -1,7 +1,10 @@
 import sqlite3
+import logging
 from pathlib import Path
 from contextlib import contextmanager
 from app.config import DATABASE_PATH, BASE_DIR
+
+logger = logging.getLogger(__name__)
 
 
 def _migrate_video_tasks_status():
@@ -11,6 +14,8 @@ def _migrate_video_tasks_status():
         ).fetchone()
         if not row or "'submitting'" in row[0]:
             return
+
+        logger.info("Applying migration %s", "video_tasks_status_submitting")
 
         conn.executescript("""
             CREATE TABLE video_tasks_new (
@@ -49,19 +54,44 @@ def _migrate_video_tasks_status():
             CREATE INDEX IF NOT EXISTS idx_video_tasks_created_at ON video_tasks(created_at DESC);
         """)
         conn.commit()
+        logger.info("Migration %s completed", "video_tasks_status_submitting")
+
+
+def _migrate_storage_columns():
+    """为 image_tasks / video_tasks 幂等新增对象存储列（storage_provider / storage_key）。
+
+    旧库升级后：
+    - 不 DROP 表、不重建、不丢历史记录
+    - 旧记录 storage_provider / storage_key 为 NULL，仍通过原 qiniu_url / output_url 展示
+    可重复执行。
+    """
+    with sqlite3.connect(DATABASE_PATH) as conn:
+        for table in ("image_tasks", "video_tasks"):
+            cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            for col in ("storage_provider", "storage_key"):
+                if col not in cols:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
+        conn.commit()
+    logger.info("Migration %s completed", "add_storage_columns")
 
 
 def init_db():
     db_path = Path(DATABASE_PATH)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     schema_path = BASE_DIR / "sql" / "schema.sql"
-    with sqlite3.connect(DATABASE_PATH) as conn:
-        conn.executescript(schema_path.read_text(encoding="utf-8"))
-        cols = {row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
-        if "model" not in cols:
-            conn.execute("ALTER TABLE messages ADD COLUMN model TEXT")
-        conn.commit()
+    logger.info("SQLite initialized path=%s", DATABASE_PATH)
+    try:
+        with sqlite3.connect(DATABASE_PATH) as conn:
+            conn.executescript(schema_path.read_text(encoding="utf-8"))
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
+            if "model" not in cols:
+                conn.execute("ALTER TABLE messages ADD COLUMN model TEXT")
+            conn.commit()
+    except Exception:
+        logger.error("Database initialization failed", exc_info=True)
+        raise
     _migrate_video_tasks_status()
+    _migrate_storage_columns()
     from app.services.api_key_service import import_env_api_key_if_empty
     from app.services.app_settings_service import ensure_default_settings
 
@@ -78,6 +108,7 @@ def get_db():
         conn.commit()
     except Exception:
         conn.rollback()
+        logger.error("Database transaction failure", exc_info=True)
         raise
     finally:
         conn.close()

@@ -132,11 +132,11 @@ export default function VideoView() {
   const { confirm, alert } = useDialog()
   const {
     hasActiveKey,
-    hasQiniuConfig,
+    hasStorageConfig,
     keyStatusLoading,
     refreshKeyStatus,
     requireApiKey,
-    requireQiniuConfig,
+    requireStorageConfig,
   } = useApiKeyGuard()
 
   const [meta, setMeta] = useState<VideoMeta>({
@@ -310,7 +310,7 @@ export default function VideoView() {
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
-    if (!(await requireQiniuConfig())) {
+    if (!(await requireStorageConfig())) {
       e.target.value = ''
       return
     }
@@ -359,7 +359,7 @@ export default function VideoView() {
       return
     }
     if (!(await requireApiKey())) return
-    if (currentModeNeedsQiniu && !(await requireQiniuConfig())) return
+    if (currentModeNeedsQiniu && !(await requireStorageConfig())) return
 
     setError('')
     setSubmitting(true)
@@ -437,7 +437,7 @@ export default function VideoView() {
     inputImages,
     currentModeNeedsQiniu,
     requireApiKey,
-    requireQiniuConfig,
+    requireStorageConfig,
     history,
     setHistory,
     startPollingAll,
@@ -794,7 +794,7 @@ export default function VideoView() {
               </div>
             )}
 
-            {!keyStatusLoading && !hasQiniuConfig && (
+            {!keyStatusLoading && !hasStorageConfig && (
               <div className="glass-card border border-sky-400/25 bg-sky-400/10 py-3 px-4">
                 <p className="text-sm text-sky-100/90">
                   未配置七牛云对象存储：当前可使用
@@ -828,7 +828,7 @@ export default function VideoView() {
                       </button>
                     ))}
                   </div>
-                  {!keyStatusLoading && !hasQiniuConfig && currentModeNeedsQiniu && (
+                  {!keyStatusLoading && !hasStorageConfig && currentModeNeedsQiniu && (
                     <p className="text-xs text-amber-200/90 mt-2 glass px-3 py-2 rounded-xl border border-amber-400/25">
                       此模式需上传参考图，请先配置七牛云对象存储。
                       <Link href="/app/settings#storage" className="text-cyan-300 hover:underline">
@@ -887,7 +887,7 @@ export default function VideoView() {
                     </div>
                     <label
                       className={`btn-secondary inline-flex items-center gap-2 text-sm ${
-                        !hasQiniuConfig
+                        !hasStorageConfig
                           ? 'opacity-50 cursor-not-allowed pointer-events-none'
                           : 'cursor-pointer'
                       }`}

@@ -18,6 +18,21 @@ def get_active_api_key() -> Optional[str]:
         return row[0] if row else None
 
 
+def get_active_api_key_info() -> dict:
+    """返回当前激活 Key 的脱敏信息（id / name / 末4位），绝不返回完整 Key。"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, name, api_key FROM api_keys WHERE is_active = 1 LIMIT 1"
+        ).fetchone()
+    if not row:
+        return {}
+    return {
+        "api_key_id": row["id"],
+        "api_key_name": row["name"],
+        "key_suffix": row["api_key"][-4:] if len(row["api_key"]) >= 4 else "****",
+    }
+
+
 def list_api_keys() -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(

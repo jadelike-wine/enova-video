@@ -109,14 +109,23 @@ cp backend/.env.example backend/.env
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
+| `STORAGE_PROVIDER` | 否 | 存储 Provider：`none` / `qiniu` / `s3`，默认 `none` |
 | `QINIU_ACCESS_KEY` | 否 | 七牛云 Access Key |
 | `QINIU_SECRET_KEY` | 否 | 七牛云 Secret Key |
 | `QINIU_BUCKET` | 否 | 存储桶名称 |
 | `QINIU_DOMAIN` | 否 | CDN 访问域名，如 `https://xxx.example.com` |
 | `QINIU_REGION` | 否 | 存储区域，默认华东 `z0` |
+| `AWS_REGION` | 否 | S3 bucket 区域，如 `ap-southeast-1` |
+| `AWS_S3_BUCKET` | 否 | S3 存储桶名称 |
+| `AWS_S3_PREFIX` | 否 | S3 对象前缀，默认 `agnes-ai` |
+| `AWS_S3_PUBLIC_BASE_URL` | 否 | CloudFront / 自定义 CDN 域名（可选） |
+| `AWS_S3_ENDPOINT_URL` | 否 | S3 兼容存储 endpoint（AWS S3 留空） |
+| `AWS_ACCESS_KEY_ID` | 否 | S3 Access Key（推荐用 IAM Role） |
+| `AWS_SECRET_ACCESS_KEY` | 否 | S3 Secret Key（推荐用 IAM Role） |
+| `AWS_SESSION_TOKEN` | 否 | 临时会话 Token（可选） |
 | `DATABASE_PATH` | 否 | SQLite 路径，默认 `./database/aimodel.db` |
 
-> 未配置七牛云时，AI 生成功能仍可用，但媒体可能不会持久化到对象存储。
+> 未配置对象存储（`STORAGE_PROVIDER=none`）时，AI 生成功能仍可用，但媒体可能不会持久化到对象存储。
 
 ### 3. 启动后端
 
@@ -206,6 +215,181 @@ npm run start   # Next.js Node Server，默认端口 3000
 
 前端以 Next.js 方式部署，常驻 Node Server；反向代理将 `/*` 转发到 Next.js，将 `/api/*` 转发到 FastAPI（或直接由 Next.js 的 `/api/*` rewrite 转发到 `BACKEND_URL`）。
 
+## Docker 部署
+
+> 前置条件：一台安装 Docker（含 Compose 插件）的 Linux 服务器。整个项目（前端 + 后端 + SQLite）通过 `docker compose up -d --build` 一键启动。
+
+```text
+Browser
+   ↓
+Next.js :3000   （对外）
+   ↓ /api/* （服务端 rewrite，浏览器不感知后端地址）
+FastAPI :8000   （仅内部，不对外暴露）
+   ↓
+Agnes AI API
+
+FastAPI
+   ↓
+SQLite 持久化 volume（/data）
+```
+
+### 1. 复制环境变量
+
+```bash
+cp .env.example .env
+```
+
+### 2. 修改配置
+
+至少需要配置：
+
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `NEXT_PUBLIC_SITE_URL` | **是** | 站点对外访问的完整 URL，如 `https://ai.example.com`。用于 SEO canonical / OpenGraph / sitemap。 |
+| `AGNES_API_KEY` | 否* | 数据库为空时，作为初始 API Key 自动导入。*也可跳过，事后在网页「设置」中添加。 |
+| `STORAGE_PROVIDER` | 否 | `none` / `qiniu` / `s3`，默认 `none`。 |
+| `QINIU_*` | 否 | 七牛云对象存储（`STORAGE_PROVIDER=qiniu` 时使用），不配则跳过转存。 |
+| `AWS_*` | 否 | AWS S3 对象存储（`STORAGE_PROVIDER=s3` 时使用），凭据可选，推荐 IAM Role。 |
+
+其余变量（`BACKEND_URL=http://backend:8000`、`DATABASE_PATH=/data/app.db`）已给出容器内正确默认值，一般无需修改。
+
+### 3. 构建启动
+
+```bash
+docker compose up -d --build
+```
+
+### 4. 查看状态
+
+```bash
+docker compose ps
+```
+
+### 5. 查看日志
+
+```bash
+docker compose logs -f
+# 或只看单个服务
+docker compose logs -f frontend
+docker compose logs -f backend
+```
+
+详细的日志查询与故障排查方法见下文 [日志与故障排查](#日志与故障排查)。
+
+### 6. 停止
+
+```bash
+docker compose down
+```
+
+### 7. 更新代码后重新部署
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+### 数据说明（重要）
+
+- `docker compose down` **不会删除** SQLite 数据 —— 数据保存在命名卷 `backend_data` 中。
+- `docker compose down -v` **会删除** volume 中的数据（数据库、API Key、历史记录），**请谨慎执行**。
+
+### 首次使用
+
+启动后访问 `http://服务器IP:3000`，进入应用侧边栏 **设置** 页面，添加并启用 Agnes AI API Key 即可使用（若已配置 `AGNES_API_KEY` 则会自动导入）。
+
+---
+
+## 日志与故障排查
+
+应用日志（backend / frontend）统一输出到 **stdout / stderr**，不写入容器内 `.log` 文件，因此直接用 `docker compose logs`（或 `docker logs <container>`）即可查看，无需进入容器。
+
+### 日志配置
+
+通过根目录 `.env` 控制（默认值见 `.env.example`）：
+
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` | `INFO` |
+| `LOG_FORMAT` | `text`（人读）/ `json`（接 CloudWatch / Loki / ELK） | `text` |
+| `LOG_PROMPTS` | 是否把用户 prompt 写入日志 | `false` |
+| `ACCESS_LOG` | 是否输出请求级 access 日志 | `true` |
+
+排障时想获得更详细日志，改 `.env` 后重建即可：
+
+```bash
+LOG_LEVEL=DEBUG
+docker compose up -d --build backend
+```
+
+> `DEBUG` 仅为排障使用，生产不建议默认开启。即使 `DEBUG`，**敏感信息脱敏始终生效**，不会输出完整 API Key / AWS Secret。
+
+### 日志滚动
+
+`docker-compose.yml` 已为 backend / frontend 配置 `json-file` 驱动，**20MB × 5 个文件/容器**，防止详细日志无限吃满磁盘。滚动只影响本地 Docker 日志文件，不影响 `docker compose logs` 的使用。
+
+### 常用日志查询命令
+
+```bash
+# 所有服务日志（跟随）
+docker compose logs -f
+
+# 只看 backend / frontend
+docker compose logs -f backend
+docker compose logs -f frontend
+
+# 最近 200 行
+docker compose logs --tail=200 backend
+
+# 带时间戳
+docker compose logs -f -t backend
+
+# 按 Request ID 查询整次调用链
+docker compose logs backend | grep "abc123"
+
+# 按视频 Task ID 查询整个生成生命周期
+docker compose logs backend | grep "task_id=xxx"
+
+# 查 S3 相关日志
+docker compose logs backend | grep -i "s3"
+
+# 只查错误
+docker compose logs backend | grep "ERROR"
+
+# 若 LOG_FORMAT=json，可用 jq 过滤
+docker compose logs backend | jq -c 'select(.level=="ERROR")'
+```
+
+### 如何定位常见问题
+
+| 现象 | 重点搜索字段 / 特征 |
+|------|----------------------|
+| Agnes 401（Key 无效/过期） | `error_code=AGNES_UNAUTHORIZED` 或日志中 `status=401` |
+| Agnes 429（限流） | `error_code=AGNES_RATE_LIMITED` 或 `status=429`、`retry_after` |
+| Agnes 超时 | `error_code=AGNES_TIMEOUT`、`type=timeout`、`retry_count` |
+| S3 权限不足 | `error_code=S3_ACCESS_DENIED`、`status=403`、`provider=s3` |
+| S3 桶不存在 | `error_code=S3_UPLOAD_FAILED`、AWS 报错 `NoSuchBucket` |
+| S3 连接失败 | `provider=s3` + `ConnectTimeoutError` / `EndpointConnectionError` |
+| 七牛上传失败 | `provider=qiniu` + `error_code=QINIU_UPLOAD_FAILED` |
+| SQLite 权限/写入失败 | `database` logger + `PermissionError` / `operational error`、`DATABASE_PATH` 不可写 |
+| 视频 poller 停止 | `video.poller` 日志消失、`Scheduler Video poller scheduler started` 缺失 |
+| backend 未健康 | `docker compose ps` 中 backend 不是 healthy；查 `health` 相关日志 |
+| frontend 无法代理 backend | frontend 日志中 `upstream` / `ECONNREFUSED` / `502` |
+
+### Request ID 与 Task ID 追踪
+
+- 每个 HTTP 请求都带 `request_id`（前端生成并透传 `X-Request-ID`，后端也自动生成），响应头 `X-Request-ID` 回传，错误响应体包含 `request_id` 与 `error_code`。
+- 图片 / 视频生成任务额外记录 `task_id`（数据库任务 ID），视频轮询用 `task_id` 串联整个生命周期：提交 → 轮询 → 完成/失败 → 下载 → 存储 → 入库。
+
+```bash
+# 拿到网页报错里的 Request ID 后，一键定位整条调用链
+docker compose logs backend | grep "9fd8ab"
+```
+
+---
+
+> 默认仅对外暴露 `3000`（前端）；后端 `8000` 仅作为内部端口供前端访问，不对外网公开。如需调试后端，可临时在 `docker-compose.yml` 的 `backend` 服务上增加 `ports: - "8000:8000"`，调试完请移除。
+
 ## API 文档
 
 后端启动后访问 [http://localhost:8000/docs](http://localhost:8000/docs) 查看 Swagger 文档。
@@ -247,6 +431,91 @@ npm run start   # Next.js Node Server，默认端口 3000
 | 视频 | `data/video/` |
 | 文档 | `data/document/` |
 | 其他 | `data/other/` |
+
+## AWS S3 存储
+
+Agnes AI Creator 支持使用 **AWS S3**（或任何 S3 兼容存储）作为对象存储，与七牛云/不转存三种模式通过 `STORAGE_PROVIDER` 统一切换。业务代码只依赖统一的 Storage 层，不感知底层是七牛还是 S3。
+
+### 使用 Access Key 的本地 Docker 部署
+
+在根目录 `.env` 中配置：
+
+```bash
+STORAGE_PROVIDER=s3
+AWS_REGION=ap-southeast-1
+AWS_S3_BUCKET=my-bucket
+AWS_ACCESS_KEY_ID=你的AccessKey
+AWS_SECRET_ACCESS_KEY=你的SecretKey
+```
+
+### EC2 / ECS / EKS 使用 IAM Role 部署（推荐生产）
+
+**无需在 `.env` 中填写任何密钥**。boto3 会自动走 AWS 默认 Credential Provider Chain，从 EC2 Instance Profile / ECS Task Role / EKS IAM Role 获取凭据：
+
+```bash
+STORAGE_PROVIDER=s3
+AWS_REGION=ap-southeast-1
+AWS_S3_BUCKET=my-bucket
+AWS_S3_PREFIX=agnes-ai
+```
+
+```text
+EC2
+ ↓
+IAM Instance Profile
+ ↓
+S3
+```
+
+### 最小 IAM Policy
+
+只授予实际用到的 `s3:PutObject`（上传）与 `s3:GetObject`（读取/presigned URL），并把资源限制到 bucket 的前缀 `agnes-ai/*`，不使用 `s3:*`：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": "arn:aws:s3:::YOUR_BUCKET/agnes-ai/*"
+    }
+  ]
+}
+```
+
+### CloudFront / 自定义 CDN 域名
+
+配置后，应用返回稳定的公开 URL：`https://cdn.example.com/agnes-ai/images/...`。未配置时私有 bucket 使用 presigned URL。
+
+```bash
+AWS_S3_PUBLIC_BASE_URL=https://cdn.example.com
+```
+
+### 私有 Bucket（presigned URL）
+
+如果 S3 bucket 是私有的，**数据库只保存稳定的对象 key**（`storage_provider` + `storage_key`），不会把会过期的 presigned URL 永久写入 SQLite。读取历史记录时，API 动态生成有效期 1 小时的 presigned GET URL。
+
+### 对象 Key 规范
+
+```text
+{prefix}/images/{yyyy}/{mm}/{dd}/{uuid}.{ext}
+{prefix}/videos/{yyyy}/{mm}/{dd}/{uuid}.{ext}
+```
+
+例如 `agnes-ai/images/2026/08/10/2f82...png`。使用 16 位随机 UUID 作为文件名，避免冲突与覆盖；不把原始 URL 的 query string 塞进 key。
+
+### Content-Type
+
+上传时按优先级设置：上游 HTTP `Content-Type` → 扩展名推断（png/jpeg/webp/mp4 等）→ 回退 `application/octet-stream`。
+
+### 容错
+
+对象存储是附加能力：`S3 临时失败` 不会导致 AI 生成结果丢失，会降级保留 Agnes 原始 URL 并记录日志。
+
+### 网页设置
+
+也可在「设置 → 对象存储」页面选择 Provider 并填写非敏感配置（Region / Bucket / Prefix / Public Base URL / Endpoint）。凭据（Access Key / Secret / Session Token）不在网页中管理，仅通过 `backend/.env` 或 IAM Role 提供。修改存储配置后需重启后端生效。
 
 ## 项目结构
 

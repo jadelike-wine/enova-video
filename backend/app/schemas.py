@@ -74,3 +74,13 @@ class VideoGenerateRequest(BaseModel):
     frame_rate: float = 24
     num_inference_steps: Optional[int] = None
     seed: Optional[int] = None
+
+
+class StorageSettingsUpdate(BaseModel):
+    """网页可编辑的非敏感对象存储配置（凭据仅通过环境变量/IAM Role 提供）。"""
+    provider: Optional[str] = None
+    aws_region: Optional[str] = None
+    aws_bucket: Optional[str] = None
+    aws_prefix: Optional[str] = None
+    aws_public_base_url: Optional[str] = None
+    aws_endpoint_url: Optional[str] = None

@@ -9,9 +9,9 @@ export const NO_API_KEY_TITLE = '无法操作'
 export const NO_API_KEY_MESSAGE =
   '尚未配置 Agnes AI API Key，无法执行此操作。请前往「设置」页面添加并启用 API Key。'
 
-export const NO_QINIU_TITLE = '需要对象存储'
-export const NO_QINIU_MESSAGE =
-  '尚未配置七牛云对象存储，无法上传参考图片。请在 backend/.env 中配置 QINIU_ACCESS_KEY、QINIU_SECRET_KEY、QINIU_BUCKET、QINIU_DOMAIN 后重启后端。详细说明请见「设置」页面。'
+export const NO_STORAGE_TITLE = '需要对象存储'
+export const NO_STORAGE_MESSAGE =
+  '尚未配置对象存储（七牛云或 AWS S3），无法上传参考图片。请在「设置」页面或 backend/.env 中配置存储服务后重启后端。详细说明请见「设置」页面。'
 
 export function imageModeNeedsQiniu(mode: string): boolean {
   return mode !== 'text2img'
@@ -26,7 +26,7 @@ export function useApiKeyGuard() {
   const { confirm } = useDialog()
 
   const [hasActiveKey, setHasActiveKey] = useState(true)
-  const [hasQiniuConfig, setHasQiniuConfig] = useState(true)
+  const [hasStorageConfig, setHasStorageConfig] = useState(true)
   const [keyStatusLoading, setKeyStatusLoading] = useState(true)
 
   const refreshKeyStatus = useCallback(async () => {
@@ -35,14 +35,17 @@ export function useApiKeyGuard() {
       const status = (await settingsApi.getStatus()) as {
         has_active_key: boolean
         has_qiniu_config: boolean
+        storage?: { ready?: boolean }
       }
       setHasActiveKey(status.has_active_key)
-      setHasQiniuConfig(status.has_qiniu_config)
+      // 兼容旧后端：无 storage 字段时回退到 has_qiniu_config
+      const storageReady = status.storage?.ready ?? status.has_qiniu_config
+      setHasStorageConfig(storageReady)
       return status
     } catch {
       const fallback = { has_active_key: false, has_qiniu_config: false }
       setHasActiveKey(false)
-      setHasQiniuConfig(false)
+      setHasStorageConfig(false)
       return fallback
     } finally {
       setKeyStatusLoading(false)
@@ -66,13 +69,13 @@ export function useApiKeyGuard() {
     return false
   }, [refreshKeyStatus, confirm, router])
 
-  const requireQiniuConfig = useCallback(async (): Promise<boolean> => {
+  const requireStorageConfig = useCallback(async (): Promise<boolean> => {
     const status = await refreshKeyStatus()
-    if (status.has_qiniu_config) return true
+    if (status.storage?.ready ?? status.has_qiniu_config) return true
 
     const goSettings = await confirm({
-      title: NO_QINIU_TITLE,
-      message: NO_QINIU_MESSAGE,
+      title: NO_STORAGE_TITLE,
+      message: NO_STORAGE_MESSAGE,
       confirmText: '查看说明',
       cancelText: '取消',
       confirmVariant: 'primary',
@@ -85,10 +88,10 @@ export function useApiKeyGuard() {
 
   return {
     hasActiveKey,
-    hasQiniuConfig,
+    hasStorageConfig,
     keyStatusLoading,
     refreshKeyStatus,
     requireApiKey,
-    requireQiniuConfig,
+    requireStorageConfig,
   }
 }

@@ -1,6 +1,8 @@
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:8000'
 
 const nextConfig = {
+  // Standalone output: 生成最小化 Node Server，便于 Docker 化部署
+  output: 'standalone',
   reactStrictMode: true,
   async redirects() {
     return [

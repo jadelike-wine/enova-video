@@ -1,13 +1,33 @@
+import asyncio
 import json
 import base64
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request
 from app.database import get_db, row_to_dict
 from app.schemas import ImageGenerateRequest
 from app.services.agnes_client import agnes_client
-from app.services.error_utils import is_transient_http_error
-from app.services.qiniu_service import upload_bytes, upload_from_url
+from app.services.error_utils import (
+    is_transient_http_error,
+    classify_agnes_error,
+    ApiError,
+    ERROR_CODES,
+)
+from app.services.storage import get_storage_service, resolve_display_url
+from app.core.logging import get_logger, set_task_id
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/images", tags=["images"])
+
+
+def _serialize(row) -> dict:
+    """序列化任务行，并把 qiniu_url 字段替换为当前可读的展示 URL。
+
+    私有 S3 记录在此动态生成 presigned URL，避免把过期签名 URL 落库。
+    """
+    d = row_to_dict(row)
+    if d:
+        d["qiniu_url"] = resolve_display_url(d)
+    return d
 
 
 async def _upload_input_file(file: UploadFile) -> dict:
@@ -15,7 +35,11 @@ async def _upload_input_file(file: UploadFile) -> dict:
     ext = (file.filename or "image.png").rsplit(".", 1)[-1].lower()
     if ext not in ("png", "jpg", "jpeg", "webp", "gif"):
         ext = "png"
-    uploaded = upload_bytes(content, "img", ext)
+    uploaded = await asyncio.to_thread(
+        get_storage_service().upload_bytes, content, "img", ext
+    )
+    if not uploaded:
+        raise HTTPException(400, "未配置对象存储，无法上传参考图片")
     with get_db() as conn:
         conn.execute(
             """INSERT INTO uploads (filename, original_name, qiniu_key, qiniu_url, file_type, size_bytes)
@@ -26,35 +50,80 @@ async def _upload_input_file(file: UploadFile) -> dict:
 
 
 async def _complete_image_task(task_id: int, result: dict) -> dict:
+    set_task_id(task_id)
     item = result.get("data", [{}])[0]
     output_url = item.get("url")
     b64 = item.get("b64_json")
     revised = item.get("revised_prompt")
     qiniu_url = None
+    storage_provider = None
+    storage_key = None
 
+    # 对象存储是附加能力：转存失败不应丢失 AI 生成结果，降级保留原始 URL。
+    storage = get_storage_service()
     if output_url:
         try:
-            uploaded = upload_from_url(output_url, "img")
-            qiniu_url = uploaded["url"]
-        except Exception:
-            pass
+            uploaded = await asyncio.to_thread(storage.upload_from_url, output_url, "img")
+            if uploaded:
+                storage_provider = uploaded["provider"]
+                storage_key = uploaded["key"]
+                qiniu_url = uploaded["url"] or qiniu_url
+        except Exception as e:
+            logger.warning(
+                "图片转存失败，保留 Agnes 原始 URL task_id=%s",
+                task_id,
+                exc_info=e,
+                extra={
+                    "task_id": task_id,
+                    "provider": storage.name,
+                    "upload_failed": True,
+                    "fallback": "original_url",
+                },
+            )
     elif b64:
         try:
             data = base64.b64decode(b64)
-            uploaded = upload_bytes(data, "img", "png")
-            qiniu_url = uploaded["url"]
-            output_url = qiniu_url
-        except Exception:
-            pass
+            uploaded = await asyncio.to_thread(storage.upload_bytes, data, "img", "png")
+            if uploaded:
+                storage_provider = uploaded["provider"]
+                storage_key = uploaded["key"]
+                qiniu_url = uploaded["url"] or None
+                output_url = qiniu_url or output_url
+        except Exception as e:
+            logger.warning(
+                "图片(bytes)转存失败，保留 Agnes 原始 URL task_id=%s",
+                task_id,
+                exc_info=e,
+                extra={
+                    "task_id": task_id,
+                    "provider": storage.name,
+                    "upload_failed": True,
+                    "fallback": "original_url",
+                },
+            )
 
     with get_db() as conn:
         conn.execute(
-            """UPDATE image_tasks SET status='completed', output_url=?, qiniu_url=?, revised_prompt=?,
-               duration_ms=?, error_message=NULL, completed_at=datetime('now','localtime') WHERE id=?""",
-            (output_url, qiniu_url, revised, result.get("duration_ms", 0), task_id),
+            """UPDATE image_tasks SET status='completed', output_url=?, qiniu_url=?, storage_provider=?,
+               storage_key=?, revised_prompt=?, duration_ms=?, error_message=NULL,
+               completed_at=datetime('now','localtime') WHERE id=?""",
+            (output_url, qiniu_url, storage_provider, storage_key, revised,
+             result.get("duration_ms", 0), task_id),
         )
         row = conn.execute("SELECT * FROM image_tasks WHERE id = ?", (task_id,)).fetchone()
-    return row_to_dict(row)
+    logger.info(
+        "image request completed task_id=%s provider=%s",
+        task_id,
+        storage_provider or "none",
+        extra={
+            "task_id": task_id,
+            "generation_id": task_id,
+            "mode": "image",
+            "storage_provider": storage_provider or "none",
+            "duration_ms": result.get("duration_ms", 0),
+        },
+    )
+    return _serialize(row)
 
 
 async def _run_image_generate(body: ImageGenerateRequest, task_id: int | None = None):
@@ -97,6 +166,22 @@ async def _run_image_generate(body: ImageGenerateRequest, task_id: int | None = 
                    WHERE id=?""",
                 (task_id,),
             )
+    set_task_id(task_id)
+    logger.info(
+        "image generation requested task_id=%s model=%s mode=%s size=%s",
+        task_id,
+        body.model,
+        body.mode,
+        body.size,
+        extra={
+            "task_id": task_id,
+            "generation_id": task_id,
+            "model": body.model,
+            "mode": body.mode,
+            "size": body.size,
+            "image_count": len(body.images or []),
+        },
+    )
 
     try:
         result = await agnes_client.generate_image(payload)
@@ -110,9 +195,19 @@ async def _run_image_generate(body: ImageGenerateRequest, task_id: int | None = 
                 (err_msg, task_id),
             )
         status = 502 if "Agnes API" in err_msg else 500
+        error_code = ERROR_CODES["UNKNOWN"]
         if is_transient_http_error(e):
             status = 429
-        raise HTTPException(status, err_msg)
+            error_code = ERROR_CODES["AGNES_RATE_LIMITED"]
+        else:
+            error_code = classify_agnes_error(e)
+        logger.error(
+            "image generation failed task_id=%s",
+            task_id,
+            exc_info=e,
+            extra={"task_id": task_id, "error_code": error_code},
+        )
+        raise ApiError(status, err_msg, error_code)
 
 
 @router.get("/models")
@@ -135,7 +230,7 @@ def list_tasks(limit: int = 20, offset: int = 0):
             "SELECT * FROM image_tasks ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
-    return [row_to_dict(r) for r in rows]
+    return [_serialize(r) for r in rows]
 
 
 @router.get("/tasks/{task_id}")
@@ -144,7 +239,7 @@ def get_task(task_id: int):
         row = conn.execute("SELECT * FROM image_tasks WHERE id = ?", (task_id,)).fetchone()
     if not row:
         raise HTTPException(404, "任务不存在")
-    return row_to_dict(row)
+    return _serialize(row)
 
 
 @router.delete("/tasks/{task_id}")

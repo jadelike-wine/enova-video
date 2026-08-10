@@ -5,6 +5,10 @@ from app.database import get_db, row_to_dict
 from app.schemas import ConversationCreate, ConversationUpdate, ChatRequest, RegenerateRequest
 from app.services.agnes_client import agnes_client
 from app.services.token_utils import estimate_tokens
+from app.services.error_utils import classify_agnes_error
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -48,6 +52,13 @@ def _assistant_stream(conv_id: int, model: str, messages: list, kwargs: dict):
                         )
                     yield f"data: {json.dumps({'type': 'done', 'usage': usage, 'duration_ms': duration_ms}, ensure_ascii=False)}\n\n"
         except Exception as e:
+            logger.error(
+                "chat stream failed conv_id=%s model=%s",
+                conv_id,
+                model,
+                exc_info=e,
+                extra={"error_code": classify_agnes_error(e)},
+            )
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

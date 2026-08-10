@@ -1,33 +1,71 @@
+import asyncio
 import json
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
 from app.database import get_db, row_to_dict
 from app.schemas import VideoGenerateRequest
 from app.services.agnes_client import agnes_client
-from app.services.error_utils import format_agnes_error, is_transient_http_error
-from app.services.qiniu_service import upload_bytes
+from app.services.error_utils import (
+    format_agnes_error,
+    is_transient_http_error,
+    classify_agnes_error,
+    ApiError,
+    ERROR_CODES,
+)
+from app.services.storage import get_storage_service, resolve_display_url
 from app.services.video_poller import refresh_task_from_agnes
+from app.core.logging import get_logger, set_task_id
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
 
 
+def _serialize(row) -> dict:
+    """序列化任务行，并把 qiniu_url 字段替换为当前可读的展示 URL。"""
+    d = row_to_dict(row)
+    if d:
+        d["qiniu_url"] = resolve_display_url(d)
+    return d
+
+
+def _already_stored(row) -> bool:
+    """判断该任务是否已转存到对象存储（避免重复上传）。"""
+    return bool(row["qiniu_url"] or row["storage_provider"] or row["storage_key"])
+
+
 async def _submit_to_agnes(task_id: int, payload: dict) -> dict:
+    set_task_id(task_id)
     try:
         result = await agnes_client.create_video(payload)
         status = result.get("status", "queued")
         error_msg = format_agnes_error(result.get("error"))
+        agnes_task_id = result.get("task_id") or result.get("id")
+        video_id = result.get("video_id")
         if status == "failed" and not error_msg:
             error_msg = "视频生成失败（Agnes API 未返回具体原因）"
         with get_db() as conn:
             conn.execute(
                 """UPDATE video_tasks SET task_id=?, video_id=?, status=?, progress=?, seconds=?, size=?, duration_ms=?,
                    error_message=? WHERE id=?""",
-                (result.get("task_id") or result.get("id"), result.get("video_id"),
+                (agnes_task_id, video_id,
                  status, result.get("progress", 0),
                  result.get("seconds"), result.get("size"), result.get("duration_ms", 0),
                  error_msg, task_id),
             )
             row = conn.execute("SELECT * FROM video_tasks WHERE id = ?", (task_id,)).fetchone()
-        return row_to_dict(row)
+        logger.info(
+            "video generation submitted task_id=%s agnes_task_id=%s status=%s",
+            task_id,
+            agnes_task_id,
+            status,
+            extra={
+                "task_id": task_id,
+                "video_id": video_id,
+                "status": status,
+                "generation_id": task_id,
+            },
+        )
+        return _serialize(row)
     except Exception as e:
         err_text = str(e).strip() or "提交到 Agnes API 失败（无详细错误信息）"
         with get_db() as conn:
@@ -36,7 +74,13 @@ async def _submit_to_agnes(task_id: int, payload: dict) -> dict:
                 (err_text, task_id),
             )
             row = conn.execute("SELECT * FROM video_tasks WHERE id = ?", (task_id,)).fetchone()
-        return row_to_dict(row)
+        logger.error(
+            "video generation submit failed task_id=%s",
+            task_id,
+            exc_info=e,
+            extra={"task_id": task_id, "error_code": classify_agnes_error(e)},
+        )
+        return _serialize(row)
 
 
 @router.get("/models")
@@ -75,7 +119,7 @@ def list_tasks(limit: int = 20, offset: int = 0):
             "SELECT * FROM video_tasks ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
-    return [row_to_dict(r) for r in rows]
+    return [_serialize(r) for r in rows]
 
 
 @router.get("/tasks/{task_id}")
@@ -96,14 +140,14 @@ async def get_task(task_id: int):
                 task_id,
                 row["video_id"],
                 row["model"],
-                current_qiniu_url=row["qiniu_url"],
+                already_stored=_already_stored(row),
             )
             with get_db() as conn:
                 row = conn.execute("SELECT * FROM video_tasks WHERE id = ?", (task_id,)).fetchone()
         except Exception:
             pass
 
-    return row_to_dict(row)
+    return _serialize(row)
 
 
 @router.delete("/tasks/{task_id}")
@@ -167,8 +211,22 @@ async def generate_video(body: VideoGenerateRequest, background_tasks: Backgroun
         task_id = cur.lastrowid
         row = conn.execute("SELECT * FROM video_tasks WHERE id = ?", (task_id,)).fetchone()
 
+    set_task_id(task_id)
+    logger.info(
+        "video generation requested task_id=%s mode=%s model=%s image_count=%s",
+        task_id,
+        body.mode,
+        body.model,
+        len(input_images) if input_images else 0,
+        extra={
+            "task_id": task_id,
+            "mode": body.mode,
+            "model": body.model,
+            "image_count": len(input_images) if input_images else 0,
+        },
+    )
     background_tasks.add_task(_submit_to_agnes, task_id, payload)
-    return row_to_dict(row)
+    return _serialize(row)
 
 
 @router.post("/tasks/{task_id}/sync")
@@ -178,7 +236,7 @@ async def sync_video_task(task_id: int):
     if not row:
         raise HTTPException(404, "任务不存在")
     if row["status"] == "completed":
-        return row_to_dict(row)
+        return _serialize(row)
     if not row["video_id"]:
         raise HTTPException(400, "任务尚未提交到服务器，无法刷新状态")
 
@@ -187,19 +245,20 @@ async def sync_video_task(task_id: int):
             task_id,
             row["video_id"],
             row["model"],
-            current_qiniu_url=row["qiniu_url"],
+            already_stored=_already_stored(row),
         )
     except Exception as e:
         if is_transient_http_error(e):
-            raise HTTPException(
+            raise ApiError(
                 429,
                 "状态查询被限流，请稍后再试",
+                ERROR_CODES["AGNES_RATE_LIMITED"],
             ) from e
-        raise HTTPException(502, str(e)) from e
+        raise ApiError(502, str(e), classify_agnes_error(e)) from e
 
     with get_db() as conn:
         row = conn.execute("SELECT * FROM video_tasks WHERE id = ?", (task_id,)).fetchone()
-    return row_to_dict(row)
+    return _serialize(row)
 
 
 @router.post("/tasks/{task_id}/retry")
@@ -217,18 +276,19 @@ async def retry_task(task_id: int, background_tasks: BackgroundTasks):
                 task_id,
                 row["video_id"],
                 row["model"],
-                current_qiniu_url=row["qiniu_url"],
+                already_stored=_already_stored(row),
             )
             with get_db() as conn:
                 row = conn.execute("SELECT * FROM video_tasks WHERE id = ?", (task_id,)).fetchone()
-            return row_to_dict(row)
+            return _serialize(row)
         except Exception as e:
             if is_transient_http_error(e):
-                raise HTTPException(
+                raise ApiError(
                     429,
                     "状态查询被限流，视频可能仍在生成中，请稍后再试",
+                    ERROR_CODES["AGNES_RATE_LIMITED"],
                 ) from e
-            raise HTTPException(502, str(e)) from e
+            raise ApiError(502, str(e), classify_agnes_error(e)) from e
 
     if not row["request_params"]:
         raise HTTPException(400, "缺少请求参数，无法重试")
@@ -238,13 +298,14 @@ async def retry_task(task_id: int, background_tasks: BackgroundTasks):
         conn.execute(
             """UPDATE video_tasks SET status='submitting', progress=0, error_message=NULL,
                task_id=NULL, video_id=NULL, output_url=NULL, qiniu_url=NULL,
+               storage_provider=NULL, storage_key=NULL,
                seconds=NULL, size=NULL, completed_at=NULL WHERE id=?""",
             (task_id,),
         )
         row = conn.execute("SELECT * FROM video_tasks WHERE id = ?", (task_id,)).fetchone()
 
     background_tasks.add_task(_submit_to_agnes, task_id, payload)
-    return row_to_dict(row)
+    return _serialize(row)
 
 
 @router.post("/upload")
@@ -253,7 +314,11 @@ async def upload_image(file: UploadFile = File(...)):
     ext = (file.filename or "image.png").rsplit(".", 1)[-1].lower()
     if ext not in ("png", "jpg", "jpeg", "webp"):
         ext = "png"
-    uploaded = upload_bytes(content, "img", ext)
+    uploaded = await asyncio.to_thread(
+        get_storage_service().upload_bytes, content, "img", ext
+    )
+    if not uploaded:
+        raise HTTPException(400, "未配置对象存储，无法上传")
     with get_db() as conn:
         conn.execute(
             """INSERT INTO uploads (filename, original_name, qiniu_key, qiniu_url, file_type, size_bytes)

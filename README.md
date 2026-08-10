@@ -4,7 +4,7 @@
 </p>
 <h1 align="center">Agnes AI Creator</h1>
 <p align="center"><strong>基于 Agnes AI 免费大模型的自托管多模态 Web 客户端</strong></p>
-<p align="center">AI 对话 · 文生图 / 图生图 · 文生视频 / 图生视频 · 七牛云持久化（可选）</p>
+<p align="center">AI 对话 · 文生图 / 图生图 · 文生视频 / 图生视频 </p>
 <div align="center">
   <a href="https://platform.agnes-ai.com/" target="_blank">
   <img alt="agnes ai" src="https://img.shields.io/badge/platform-Agnes%20AI-ff6b3d?style=flat-square"></a>
@@ -16,10 +16,6 @@
   <img alt="fastapi" src="https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white"></a>
   <a href="https://nextjs.org/" target="_blank">
   <img alt="next" src="https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=nextdotjs&logoColor=white"></a>
-  <a href="https://x.com/haiqushe" target="_blank">
-  <img alt="follow" src="https://img.shields.io/badge/follow-@haiqushe-red?style=flat-square"></a>
-  <a href="https://dz.haiqushe.com/" target="_blank">
-  <img alt="haiqushe" src="https://img.shields.io/badge/海趣社-站点导航-blueviolet?style=flat-square"></a>
 </div>
 
 <p align="center">

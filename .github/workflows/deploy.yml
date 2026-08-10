@@ -20,7 +20,7 @@ on:
         default: ''
         type: string
       restore_db:
-        description: 'rollback 是否恢复旧数据库（有数据丢失风险）'
+        description: 'rollback 是否恢复旧数据库（有数据丢失风险），仅在 rollback 时生效'
         required: false
         default: 'false'
         type: choice
@@ -28,20 +28,20 @@ on:
           - 'false'
           - 'true'
 
-# 生产环境：建议在 GitHub 上为该 environment 配置 Required Reviewers
-# （人工批准后才允许部署）。
-environment: production
-
 permissions:
   contents: read
 
 jobs:
   execute:
-    name: ${{ inputs.action }} on server
+    name: ${{ inputs.action }} on production
     runs-on: ubuntu-latest
+    # environment 必须放在 job 内（GitHub Actions 中它是 job 级关键字）。
+    # 放在 workflow 顶层会导致工作流无法正确解析而出现 "No jobs were run"。
+    # 生产环境：建议在 GitHub Settings -> Environments -> production
+    # 配置 Required Reviewers（人工批准后才允许部署）。
+    # 该 job 可访问 Repository Secrets 与 production Environment Secrets。
+    environment: production
     steps:
-      - uses: actions/checkout@v4
-
       - name: Deploy via SSH
         if: inputs.action == 'deploy'
         uses: appleboy/ssh-action@v1.2.0
@@ -50,6 +50,9 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          # envs 告诉 ssh-action 把哪些环境变量转发到远程 shell；
+          # 值来自下方 env: 块。没有 envs 远程脚本里 $DEPLOY_PATH 会是空值。
+          envs: DEPLOY_PATH,DEPLOY_VERSION
           script: |
             set -e
             cd "$DEPLOY_PATH"
@@ -70,11 +73,14 @@ jobs:
           port: ${{ secrets.DEPLOY_PORT }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: DEPLOY_PATH,DEPLOY_RESTORE_DB
           script: |
             set -e
             cd "$DEPLOY_PATH"
             if [ "$DEPLOY_RESTORE_DB" = "true" ]; then
-              ./scripts/rollback.sh --restore-db
+              # restore_db 由用户在 workflow_dispatch 中显式选择后才执行；
+              # AUTO_CONFIRM=1 跳过 rollback.sh 的交互式确认，避免 GitHub Action 卡住。
+              AUTO_CONFIRM=1 ./scripts/rollback.sh --restore-db
             else
               ./scripts/rollback.sh --code-only
             fi

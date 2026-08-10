@@ -311,11 +311,12 @@ docker compose up -d --build
 - Docker 镜像使用明确版本 tag，禁止依赖 `latest` 升级/回滚：
 
 ```text
-ghcr.io/jadelike-wine/enova-video-frontend:v1.2.0
-ghcr.io/jadelike-wine/enova-video-backend:v1.2.0
+ghcr.io/jadelike-wine/enova-video-frontend:1.2.0
+ghcr.io/jadelike-wine/enova-video-backend:1.2.0
 ```
 
-- 额外提供 `latest` 与 `sha-<commit>` tag，仅用于不分意版本的快速拉取，生产更新/回滚一律用明确版本或 digest。
+- Git Tag 带 `v` 前缀（`v1.2.0`），Docker 镜像 tag 不带 `v`（`1.2.0`），`APP_VERSION` 也不带 `v`。全项目统一。
+- 额外提供 `latest` 与 `sha-<commit>` tag，仅用于无需指定版本的快速拉取，生产更新/回滚一律用明确版本或 digest。
 - 构建时注入 `APP_VERSION` / `GIT_SHA` / `BUILD_TIME`，后端可通过接口查询。
 
 ### 发布一个版本
@@ -421,14 +422,39 @@ docker compose -f docker-compose.prod.yml up -d --no-build
 
 ### GitHub Actions 手动部署 / 回滚
 
-`deploy.yml` 仅允许 `workflow_dispatch` 手动触发（不随 push 自动部署生产），通过 SSH 调用服务器脚本：
+`deploy.yml` 仅允许 `workflow_dispatch` 手动触发（不随 push 自动部署生产），通过 SSH 调用服务器脚本。
+
+**触发方式**：`GitHub → Actions → Deploy / Rollback (Production) → Run workflow`，选择输入：
+
+| 输入 | 说明 |
+|------|------|
+| `action` | `deploy`（部署）或 `rollback`（回滚） |
+| `version` | 仅 deploy 生效。如 `v1.2.0`；留空则升级到最新 stable |
+| `restore_db` | 仅 rollback 生效。`false`（默认，code-only）或 `true`（恢复旧数据库） |
+
+执行内容：
 
 ```text
-deploy  → cd $DEPLOY_PATH && ./scripts/update.sh [v1.2.0]
-rollback→ cd $DEPLOY_PATH && ./scripts/rollback.sh --code-only
+deploy   → cd $DEPLOY_PATH && ./scripts/update.sh [v1.2.0]
+rollback → cd $DEPLOY_PATH && AUTO_CONFIRM=1 ./scripts/rollback.sh --restore-db   (restore_db=true)
+           cd $DEPLOY_PATH && ./scripts/rollback.sh --code-only                     (restore_db=false)
 ```
 
-需要配置 GitHub Secrets（`deploy.yml` 中引用）：`DEPLOY_HOST` / `DEPLOY_PORT` / `DEPLOY_USER` / `DEPLOY_SSH_KEY` / `DEPLOY_PATH`。生产 Deploy 使用 `environment: production`（可配置 Required Reviewers 人工审批）。
+- `restore_db=true` 只有在 workflow_dispatch 中显式选择后才执行；`AUTO_CONFIRM=1` 跳过 `rollback.sh` 的交互式确认，避免 GitHub Action 卡在 `read` 输入。
+- **数据丢失风险**：`restore_db=true` 会恢复 pre-update SQLite 备份，删除备份之后的「新数据」。新版本已成功运行一段时间后，请优先 `restore_db=false`（code-only）。
+- deploy 失败时（新版本 healthcheck 失败 → 自动回滚旧版本）GitHub Action 仍是 **FAILED**（目标版本未部署成功），但线上服务已恢复旧版本。
+
+**需要配置的 Secrets**（`deploy.yml` 引用，建议放在 `production` Environment Secrets，也可用 Repository Secrets）：
+
+```text
+DEPLOY_HOST      # 服务器 IP / 域名
+DEPLOY_PORT      # SSH 端口，默认 22
+DEPLOY_USER      # SSH 用户名
+DEPLOY_SSH_KEY   # SSH 私钥（github 账号可用的）multiline
+DEPLOY_PATH      # 服务器上仓库克隆路径（如 /opt/enova-video）
+```
+
+**production Environment**：前往 `GitHub → Settings → Environments → production` 创建，可用 Required Reviewers 实现「人工批准后才允许部署」。
 
 ### 服务器需要哪些配置
 

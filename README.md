@@ -22,17 +22,12 @@
   <img alt="haiqushe" src="https://img.shields.io/badge/海趣社-站点导航-blueviolet?style=flat-square"></a>
 </div>
 
-> 免费使用 Agnes AI 模型，自己去 [Agnes AI 平台官网](https://platform.agnes-ai.com/) 注册后填入 key 即可使用。
-
-> 推荐一个汇聚全球 500+ 大模型的 AI 大模型中转站: [AIGC1024.com](https://aigc1024.com/)
-
 <p align="center">
   <img src="docs/images/ai-img-gen.png" alt="Agnes AI Creator — AI 流式对话界面" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
 </p>
 
 <p align="center">
   <strong>对话 · 生图 · 生视频 · 一个界面全搞定</strong><br/>
-  免费 Agnes AI 模型 &nbsp;·&nbsp; Next.js + FastAPI 全栈 &nbsp;·&nbsp; 毛玻璃现代 UI &nbsp;·&nbsp; 网页可视化配置
 </p>
 
 ## 界面预览

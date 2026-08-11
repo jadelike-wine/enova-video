@@ -10,12 +10,14 @@
   <img alt="agnes ai" src="https://img.shields.io/badge/platform-Agnes%20AI-ff6b3d?style=flat-square"></a>
   <a href="https://agnes-ai.com/doc/overview" target="_blank">
   <img alt="models" src="https://img.shields.io/badge/models-text%20%7C%20image%20%7C%20video-black?style=flat-square"></a>
-  <a href="https://www.python.org/" target="_blank">
-  <img alt="python" src="https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white"></a>
-  <a href="https://fastapi.tiangolo.com/" target="_blank">
-  <img alt="fastapi" src="https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white"></a>
+  <a href="https://nodejs.org/" target="_blank">
+  <img alt="node" src="https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js&logoColor=white"></a>
+  <a href="https://nestjs.com/" target="_blank">
+  <img alt="nestjs" src="https://img.shields.io/badge/NestJS-11-E0234E?style=flat-square&logo=nestjs&logoColor=white"></a>
   <a href="https://nextjs.org/" target="_blank">
   <img alt="next" src="https://img.shields.io/badge/Next.js-15-000000?style=flat-square&logo=nextdotjs&logoColor=white"></a>
+  <a href="https://www.postgresql.org/" target="_blank">
+  <img alt="postgres" src="https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white"></a>
 </div>
 
 <p align="center">
@@ -38,7 +40,7 @@
     <td width="50%" align="center" valign="top">
       <img src="docs/images/ai-video-gen.png" alt="视频生成界面" width="100%" style="display:block;margin-bottom:6px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
       <strong>🎬 视频生成</strong><br/>
-      <span style="font-size:13px">文/图生视频 · 关键帧动画 · 内置播放器 · 七牛云转存</span>
+      <span style="font-size:13px">文/图生视频 · 关键帧动画 · 内置播放器 · 媒体转存</span>
     </td>
   </tr>
   <tr>
@@ -48,9 +50,9 @@
       <span style="font-size:13px">流式输出 · Thinking 模式 · Token 统计 · 多对话切换</span>
     </td>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/settings.png" alt="网页设置界面" width="100%" style="display:block;margin-bottom:6px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
-      <strong>⚙️ 网页设置</strong><br/>
-      <span style="font-size:13px">API Key / Base URL 可视化配置 · 多 Key 管理 · 即改即用</span>
+      <img src="docs/images/settings.png" alt="账户设置界面" width="100%" style="display:block;margin-bottom:6px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
+      <strong>⚙️ 账户与钱包</strong><br/>
+      <span style="font-size:13px">登录注册 · Credits 余额 · Wallet 充值 · 账户设置</span>
     </td>
   </tr>
 </table>
@@ -59,11 +61,16 @@
 
 | 模块 | 能力 |
 |------|------|
+| **账户与鉴权** | 注册 / 登录 / 登出、HttpOnly Cookie 会话、Turnstile 人机校验、用户角色（USER/ADMIN） |
 | **文本对话** | 新建 / 切换对话、流式输出、Thinking 模式、Token 与耗时统计 |
 | **图片生成** | 文生图、单图编辑、多图合成；多模型支持 |
-| **视频生成** | 文生视频、图生视频、多图视频、关键帧动画；后台异步轮询任务状态 |
-| **媒体存储** | 图片 / 视频生成结果自动转存七牛云，持久化历史记录 |
-| **网页设置** | 可视化配置 API Base URL、多 Key 管理与切换，无需改代码或重启 |
+| **视频生成** | 文生视频、图生视频、多图视频、关键帧动画；BullMQ 异步任务 + 延迟轮询 |
+| **统一任务系统** | `GenerationJob` 统一建模图片 / 视频等生成任务，状态机 PENDING→QUEUED→RUNNING→SUCCEEDED/FAILED/CANCELED |
+| **计费闭环** | Credits 钱包 + Reserve/Settle/Release 三段式结算、账本（Ledger）、幂等入账、防超卖 |
+| **支付充值** | sandbox / 支付宝 / 微信 适配层，充值下单 → 回调验签 → 幂等入账 |
+| **媒体存储** | 图片 / 视频结果自动转存七牛云 / S3，持久化历史记录，SSRF 防护 |
+| **管理后台** | `/api/v1/admin/*`：Provider / Credential / User / Stats / Settings / 审计日志 / 系统更新 |
+| **多工作区** | Workspace + 成员隔离（IDOR 防护），注册自动创建 Personal Workspace 与 Welcome Credits |
 
 ### 支持的模型
 
@@ -75,20 +82,64 @@
 
 ## 技术栈
 
-- **前端**: Next.js 15（App Router）· React 19 · TypeScript · Tailwind CSS
-- **后端**: Python 3 · FastAPI · httpx · APScheduler
-- **数据库**: SQLite（零配置，首次启动自动建表，SQL 文件在 backend/sql 文件夹里）
-- **对象存储**: 七牛云（可选）
-- **AI 接口**: [Agnes AI OpenAI 兼容 API](https://agnes-ai.com/doc/overview)
+- **前端**: Next.js 15（App Router）· React 19 · TypeScript · Tailwind CSS（`apps/web`）
+- **API**: NestJS 11 + Fastify + TypeScript（`apps/api`）
+- **Worker**: BullMQ 生成任务消费者（`apps/worker`）
+- **数据库**: PostgreSQL 16 · Drizzle ORM（版本化 migration）
+- **队列 / 缓存**: Redis + BullMQ
+- **对象存储**: 七牛云 / AWS S3（可选，抽象为 `ObjectStorage` 接口）
+- **AI 接口**: [Agnes AI OpenAI 兼容 API](https://agnes-ai.com/doc/overview)，经 `ProviderRegistry` + AES-GCM 加密凭证访问
+
+## 架构概览
+
+本项目是 **Modular Monolith（模块化单体）**，同一代码库里按 `apps/` 拆分三个独立进程，通过 `packages/*` 共享业务逻辑：
+
+```text
+Browser
+  ↓
+Web (Next.js :3000, apps/web)          # SSR + 静态页面，/api/v1/* rewrite 到 API
+  ↓ /api/v1/*（服务端 rewrite）
+API (NestJS :3001, apps/api)           # 鉴权 / 对话 / 生成 / 计费 / 支付 / 管理后台
+  ├── PostgreSQL (Drizzle)             # 数据持久化
+  ├── Redis / BullMQ                   # 队列（enqueue 生成任务）
+  ↓
+Worker (apps/worker)                   # 消费 BullMQ：调用 Agnes → 轮询 → 转存 → 结算
+  ├── ProviderRegistry + Credential    # AI Provider 抽象 + AES-GCM 加密凭证
+  ├── ObjectStorage                    # 七牛云 / S3
+  └── WalletGateway                    # 最终成功结算 / 失败释放保留 credits
+```
+
+### 目录结构
+
+```
+enova-video/
+├── apps/
+│   ├── api/                  # NestJS API（REST /api/v1 + OpenAPI）
+│   ├── worker/               # BullMQ 生成任务消费者
+│   └── web/                  # Next.js 15 前端（App Router）
+├── packages/
+│   ├── contracts/            # 跨进程共享类型 / 枚举 / 错误码 / 队列契约
+│   ├── config/               # 环境变量校验（Zod）
+│   ├── db/                   # Drizzle schema + migrations + client
+│   ├── provider/             # AIProvider 抽象 + ObjectStorage + CredentialManager + SSRF
+│   ├── billing/              # 钱包 / credits 领域逻辑（Reserve / Settle / Release）
+│   ├── payment/              # 支付渠道抽象 + sandbox / 支付宝 / 微信 适配器
+│   ├── sdk/                  # 由 openapi.json 生成的 TS 客户端
+│   └── migrator/             # 旧 SQLite 数据迁移 CLI
+├── scripts/                  # 生产更新 / 回滚脚本（update.sh / rollback.sh / lib.sh）
+├── .github/workflows/        # ci / deploy / release
+├── docker-compose.dev.yml    # 本地 PostgreSQL + Redis
+└── docker-compose.prod.yml   # 生产 postgres + redis + api + worker + web
+```
 
 ## 环境要求
 
-- Python 3.10+
-- Node.js 18.18+
-- [Agnes AI API Key](https://platform.agnes-ai.com/)（免费申请，在网页 **设置** 中配置）
-- 七牛云对象存储（可选，用于持久化保存生成结果）
+- Node.js `>=20`
+- pnpm `10.27.0`
+- Docker（可选，用于本地 PostgreSQL / Redis 或生产部署）
+- [Agnes AI API Key](https://platform.agnes-ai.com/)（在管理后台或数据库初始导入）
 
-## 快速开始
+## 快速开始（本地开发）
 
 ### 1. 克隆项目
 
@@ -97,551 +148,124 @@ git clone https://github.com/jadelike-wine/enova-video.git
 cd enova-video
 ```
 
-### 2. 配置后端环境变量（可选）
-
-七牛云与数据库路径通过 `backend/.env` 配置；**Agnes AI 的 API Key 与 Base URL 在网页设置中管理**，无需写入 `.env`。
+### 2. 安装依赖并启动基础设施
 
 ```bash
-cp backend/.env.example backend/.env
+pnpm install
+docker compose -f docker-compose.dev.yml up -d   # 启动 PostgreSQL + Redis
+cp .env.example .env                              # 按需配置
 ```
 
-编辑 `backend/.env`：
-
-| 变量 | 必填 | 说明 |
-|------|------|------|
-| `STORAGE_PROVIDER` | 否 | 存储 Provider：`none` / `qiniu` / `s3`，默认 `none` |
-| `QINIU_ACCESS_KEY` | 否 | 七牛云 Access Key |
-| `QINIU_SECRET_KEY` | 否 | 七牛云 Secret Key |
-| `QINIU_BUCKET` | 否 | 存储桶名称 |
-| `QINIU_DOMAIN` | 否 | CDN 访问域名，如 `https://xxx.example.com` |
-| `QINIU_REGION` | 否 | 存储区域，默认华东 `z0` |
-| `AWS_REGION` | 否 | S3 bucket 区域，如 `ap-southeast-1` |
-| `AWS_S3_BUCKET` | 否 | S3 存储桶名称 |
-| `AWS_S3_PREFIX` | 否 | S3 对象前缀，默认 `agnes-ai` |
-| `AWS_S3_PUBLIC_BASE_URL` | 否 | CloudFront / 自定义 CDN 域名（可选） |
-| `AWS_S3_ENDPOINT_URL` | 否 | S3 兼容存储 endpoint（AWS S3 留空） |
-| `AWS_ACCESS_KEY_ID` | 否 | S3 Access Key（推荐用 IAM Role） |
-| `AWS_SECRET_ACCESS_KEY` | 否 | S3 Secret Key（推荐用 IAM Role） |
-| `AWS_SESSION_TOKEN` | 否 | 临时会话 Token（可选） |
-| `DATABASE_PATH` | 否 | SQLite 路径，默认 `./database/aimodel.db` |
-
-> 未配置对象存储（`STORAGE_PROVIDER=none`）时，AI 生成功能仍可用，但媒体可能不会持久化到对象存储。
-
-### 3. 启动后端
-
-建议使用虚拟环境，避免与系统 Python 包冲突：
+### 3. 启动开发进程
 
 ```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+pnpm dev        # 并行启动所有新架构 workspace（api / worker / web）
 ```
 
-### 4. 启动前端
+也可以分别启动：
 
 ```bash
-cd frontend
-npm install
-npm run dev
+pnpm dev:api     # API，默认 http://localhost:3001
+pnpm dev:worker  # 生成任务 worker
+pnpm --filter @enova/web dev   # 前端，默认 http://localhost:3000
 ```
 
-### 前端环境变量
+### 4. 数据库与 SDK
 
-Next.js 前端通过以下环境变量配置（放在 `frontend/.env` 或部署环境中）：
-
-```env
-NEXT_PUBLIC_SITE_URL=https://your-domain.com
-BACKEND_URL=http://127.0.0.1:8000
+```bash
+pnpm db:generate   # 生成 Drizzle migration
+pnpm db:migrate    # 执行 PostgreSQL migration
+pnpm sdk:generate  # 根据 apps/api/openapi.json 生成 SDK 类型
 ```
 
-| 变量 | 必填 | 说明 |
-|------|------|------|
-| `NEXT_PUBLIC_SITE_URL` | **生产环境必填** | 站点对外访问的完整域名（如 `https://your-domain.com`）。用于生成 canonical、OpenGraph URL、sitemap 与 robots Sitemap。开发环境未设置时回退到 `http://localhost:3000`；**生产环境未设置会直接构建失败**，防止把 localhost 泄漏到 SEO 输出。 |
-| `BACKEND_URL` | 部署时必填 | Next.js Node Server 转发 `/api/*` 时连接的后端 FastAPI 地址，默认 `http://127.0.0.1:8000`。 |
+### 5. 首次使用
 
-> 注意：Agnes AI 的 API Key 等敏感信息只应保存在后端（`backend/.env` 或网页设置），**不要**放入 `NEXT_PUBLIC_*` 前缀的环境变量，否则会暴露到浏览器端。
+浏览器访问 [http://localhost:3000](http://localhost:3000) → 注册账号（自动创建 Personal Workspace + Welcome Credits）。Agnes AI 的 Provider 与凭证在管理后台配置（见下文）。
 
-### 5. 首次使用：配置 Agnes AI
+## 提交前验证
 
-浏览器访问 [http://localhost:3000](http://localhost:3000)，进入应用侧边栏 **设置** 页面：
+```bash
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
 
-<p align="left">
-  <img src="docs/images/settings.png" alt="网页设置 — 添加 API Key" width="720" style="border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
-</p>
-
-1. **API Base URL**：默认为 `https://apihub.agnes-ai.com`，一般无需修改
-2. **添加 API Key**：填写名称与 Key，勾选「添加后立即启用」
-3. 可添加多个 Key，随时切换「使用中」的 Key
-
-配置完成后即可使用对话、图片、视频功能。
-
-Next.js 前端会将浏览器端的 `/api/*` 请求代理到后端的 `http://127.0.0.1:8000`（可通过 `BACKEND_URL` 环境变量覆盖）。浏览器始终只访问 `/api/*`，不感知后端地址。
+只改单个 workspace 时可用 `pnpm --filter <package> <script>` 缩小范围。
 
 ## 生产部署
 
-> 部署架构说明：本项目**不是**「静态构建 → Nginx 托管 dist」的传统 SPA 部署。前端是 Next.js Node Server（`next start`），需要常驻进程运行：
+生产使用 **GitHub Actions Release 构建的 GHCR 镜像**，通过 `docker-compose.prod.yml` 编排 `postgres + redis + api + worker + web` 五个服务。
+
+### 架构拓扑
 
 ```text
 Browser
   ↓
 Reverse Proxy (Nginx / Caddy / Traefik)
-  ├── /api/* → FastAPI (http://127.0.0.1:8000)
-  └── /*     → Next.js Node Server (next start, 默认 3000)
+  ↓ 3000
+Web (Next.js standalone, ghcr.io/...-web)
+  ↓ /api/v1/*（服务端 rewrite）
+API (NestJS, ghcr.io/...-api :3001)
+  ├── PostgreSQL 16（数据卷）
+  ├── Redis 7（队列 / 缓存）
+  ↓
+Worker (ghcr.io/...-worker)
 ```
 
-或直接让 Next.js Node Server 的 `/api/*` rewrite 转发到 `BACKEND_URL`，反向代理只负责把流量交给 Next.js 即可。
+- **API** 启动前自动执行 Drizzle migration（幂等，失败即退出 → 健康检查失败 → 自动回滚）。
+- **Web** 以 Next.js `output: 'standalone'` 运行，`/api/v1/*` rewrite 到 API。
+- **Worker** 消费 BullMQ 队列，负责实际生成、轮询、转存与结算。
 
-### 构建
+### 部署编排
 
 ```bash
-# 构建 Next.js 生产包（生产环境必须设置 NEXT_PUBLIC_SITE_URL）
-cd frontend
-NEXT_PUBLIC_SITE_URL=https://your-domain.com BACKEND_URL=http://127.0.0.1:8000 npm run build
-
-# 后端以生产模式运行（建议在 venv 中）
-cd backend
-source .venv/bin/activate
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+git tag v1.2.0 && git push origin v1.2.0   # 触发 release.yml 构建并推送 GHCR 镜像
+./scripts/update.sh v1.2.0                  # 在服务器上拉取并升级到指定版本
 ```
 
-### 运行
-
-```bash
-cd frontend
-npm run start   # Next.js Node Server，默认端口 3000
-```
-
-前端以 Next.js 方式部署，常驻 Node Server；反向代理将 `/*` 转发到 Next.js，将 `/api/*` 转发到 FastAPI（或直接由 Next.js 的 `/api/*` rewrite 转发到 `BACKEND_URL`）。
-
-## Docker 部署
-
-> 前置条件：一台安装 Docker（含 Compose 插件）的 Linux 服务器。整个项目（前端 + 后端 + SQLite）通过 `docker compose up -d --build` 一键启动。
-
-```text
-Browser
-   ↓
-Next.js :3000   （对外）
-   ↓ /api/* （服务端 rewrite，浏览器不感知后端地址）
-FastAPI :8000   （仅内部，不对外暴露）
-   ↓
-Agnes AI API
-
-FastAPI
-   ↓
-SQLite 持久化 volume（/data）
-```
-
-### 1. 复制环境变量
-
-```bash
-cp .env.example .env
-```
-
-### 2. 修改配置
-
-至少需要配置：
+生产环境变量通过 `.env` 注入（见 `.env.example`），关键项：
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| `NEXT_PUBLIC_SITE_URL` | **是** | 站点对外访问的完整 URL，如 `https://ai.example.com`。用于 SEO canonical / OpenGraph / sitemap。 |
-| `AGNES_API_KEY` | 否* | 数据库为空时，作为初始 API Key 自动导入。*也可跳过，事后在网页「设置」中添加。 |
-| `STORAGE_PROVIDER` | 否 | `none` / `qiniu` / `s3`，默认 `none`。 |
-| `QINIU_*` | 否 | 七牛云对象存储（`STORAGE_PROVIDER=qiniu` 时使用），不配则跳过转存。 |
-| `AWS_*` | 否 | AWS S3 对象存储（`STORAGE_PROVIDER=s3` 时使用），凭据可选，推荐 IAM Role。 |
-
-其余变量（`BACKEND_URL=http://backend:8000`、`DATABASE_PATH=/data/app.db`）已给出容器内正确默认值，一般无需修改。
-
-### 3. 构建启动
-
-```bash
-docker compose up -d --build
-```
-
-### 4. 查看状态
-
-```bash
-docker compose ps
-```
-
-### 5. 查看日志
-
-```bash
-docker compose logs -f
-# 或只看单个服务
-docker compose logs -f frontend
-docker compose logs -f backend
-```
-
-详细的日志查询与故障排查方法见下文 [日志与故障排查](#日志与故障排查)。
-
-### 6. 停止
-
-```bash
-docker compose down
-```
-
-### 7. 更新代码后重新部署
-
-```bash
-git pull
-docker compose up -d --build
-```
-
-### 数据说明（重要）
-
-- `docker compose down` **不会删除** SQLite 数据 —— 数据保存在命名卷 `backend_data` 中。
-- `docker compose down -v` **会删除** volume 中的数据（数据库、API Key、历史记录），**请谨慎执行**。
-
-### 首次使用
-
-启动后访问 `http://服务器IP:3000`，进入应用侧边栏 **设置** 页面，添加并启用 Agnes AI API Key 即可使用（若已配置 `AGNES_API_KEY` 则会自动导入）。
-
----
-
-## 版本发布、更新与回滚
-
-> 目标：**版本化发布（SemVer）+ 手动检查更新 + 手动执行更新 + SQLite 备份 + 真实健康检查 + 失败自动回滚 + 可人工回滚**。
-> 默认**禁止无人值守自动升级**生产；任何生产升级前必须有 SQLite 备份；任何新版本必须通过真实 Health Check 才判定成功；任何升级失败都有明确、可验证的回滚路径。
-
-### 版本与镜像
-
-- 根目录 `VERSION` 记录当前 SemVer（如 `1.1.0`）。
-- Docker 镜像使用明确版本 tag，禁止依赖 `latest` 升级/回滚：
-
-```text
-ghcr.io/jadelike-wine/enova-video-frontend:1.2.0
-ghcr.io/jadelike-wine/enova-video-backend:1.2.0
-```
-
-- Git Tag 带 `v` 前缀（`v1.2.0`），Docker 镜像 tag 不带 `v`（`1.2.0`），`APP_VERSION` 也不带 `v`。全项目统一。
-- 额外提供 `latest` 与 `sha-<commit>` tag，仅用于无需指定版本的快速拉取，生产更新/回滚一律用明确版本或 digest。
-- 构建时注入 `APP_VERSION` / `GIT_SHA` / `BUILD_TIME`，后端可通过接口查询。
-
-### 发布一个版本
-
-```bash
-git tag v1.2.0
-git push origin v1.2.0
-```
-
-推送 `v*` tag 会触发 GitHub Actions `release.yml`：编译测试 → 登录 GHCR → 构建并推送 backend/frontend（`linux/amd64` + `linux/arm64`）→ 生成 `release.json`（版本 / Git SHA / 镜像 / digest）→ 创建 GitHub Release。
-
-### 检查更新（手动）
-
-进入 **设置 → System Update → Check for Updates**。页面只做「检查」，绝不自动升级。后端接口：
-
-```http
-GET /api/system/update/check
-```
-
-```json
-{
-  "current_version": "1.1.0",
-  "latest_version": "1.2.0",
-  "update_available": true,
-  "published_at": "...",
-  "release_notes": "...",
-  "release_url": "...",
-  "channel": "stable"
-}
-```
-
-默认只检查 **stable** release，忽略 `draft` / `prerelease`。GitHub API 故障只影响本次检查（`UPDATE_CHECK_FAILED`），不影响主应用。
-
-### 升级到最新 stable
-
-```bash
-./scripts/update.sh
-```
-
-### 升级到指定版本
-
-```bash
-./scripts/update.sh v1.2.0
-```
-
-### 只查看升级计划（不修改任何东西）
-
-```bash
-./scripts/update.sh --dry-run
-```
-
-升级流程（任一步失败即中止，旧版本继续运行）：
-
-```text
-lock → 确定目标版本 → 预检(Docker/Compose) → 当前健康检查
-→ SQLite 一致性备份 → 保存 deployment state → pull 新镜像
-→ 校验 digest → 切换 APP_VERSION → docker compose up -d --no-build
-→ 全链路健康检查(backend /health + frontend / + frontend /api/health)
-→ 成功记录；失败自动回滚
-```
-
-### 代码回滚（推荐，保留当前数据库）
-
-```bash
-./scripts/rollback.sh --code-only
-```
-
-只回滚 frontend/backend 到上一个成功版本，**不**改动数据库（避免丢失新数据）。
-
-### 完整回滚（代码 + 恢复旧数据库）
-
-```bash
-./scripts/rollback.sh --restore-db
-```
-
-会恢复 pre-update SQLite 备份，**会删除备份时间点之后产生的所有新数据**，脚本会要求确认。
-
-> **数据丢失风险**：`--restore-db` 会把数据库恢复到升级前快照。新版本已运行一段时间并产生新数据时，请优先使用 `--code-only`。
-
-### 更新 / 回滚日志
-
-所有 update/rollback 都带唯一 `update_id`，日志同时输出 stdout 并保存到 `.deploy/logs/`：
-
-```bash
-ls -lah .deploy/logs/
-```
-
-失败时自动保存失败版本的 Docker 日志（`--tail=500`），回滚后仍可调查。
-
-### 部署状态
-
-`.deploy/` 保存 `state.json`（previous/current 版本与 digest、备份路径、update_id）、`history.json`、`version.env`（仅 `APP_VERSION`，与 `.env` 中的 Secret 分离）、`update.lock`。**绝不存 Secret**。
-
-### 生产 Compose
-
-生产使用 GHCR 镜像，版本从 `.deploy/version.env` 注入：
-
-```bash
-docker compose -f docker-compose.prod.yml up -d --no-build
-```
-
-禁止 `docker compose down -v` 与 `docker system prune -a`。
-
-### GitHub Actions 手动部署 / 回滚
-
-`deploy.yml` 仅允许 `workflow_dispatch` 手动触发（不随 push 自动部署生产），通过 SSH 调用服务器脚本。
-
-**触发方式**：`GitHub → Actions → Deploy / Rollback (Production) → Run workflow`，选择输入：
-
-| 输入 | 说明 |
-|------|------|
-| `action` | `deploy`（部署）或 `rollback`（回滚） |
-| `version` | 仅 deploy 生效。如 `v1.2.0`；留空则升级到最新 stable |
-| `restore_db` | 仅 rollback 生效。`false`（默认，code-only）或 `true`（恢复旧数据库） |
-
-执行内容：
-
-```text
-deploy   → cd $DEPLOY_PATH && ./scripts/update.sh [v1.2.0]
-rollback → cd $DEPLOY_PATH && AUTO_CONFIRM=1 ./scripts/rollback.sh --restore-db   (restore_db=true)
-           cd $DEPLOY_PATH && ./scripts/rollback.sh --code-only                     (restore_db=false)
-```
-
-- `restore_db=true` 只有在 workflow_dispatch 中显式选择后才执行；`AUTO_CONFIRM=1` 跳过 `rollback.sh` 的交互式确认，避免 GitHub Action 卡在 `read` 输入。
-- **数据丢失风险**：`restore_db=true` 会恢复 pre-update SQLite 备份，删除备份之后的「新数据」。新版本已成功运行一段时间后，请优先 `restore_db=false`（code-only）。
-- deploy 失败时（新版本 healthcheck 失败 → 自动回滚旧版本）GitHub Action 仍是 **FAILED**（目标版本未部署成功），但线上服务已恢复旧版本。
-
-**需要配置的 Secrets**（`deploy.yml` 引用，建议放在 `production` Environment Secrets，也可用 Repository Secrets）：
-
-```text
-DEPLOY_HOST      # 服务器 IP / 域名
-DEPLOY_PORT      # SSH 端口，默认 22
-DEPLOY_USER      # SSH 用户名
-DEPLOY_SSH_KEY   # SSH 私钥（github 账号可用的）multiline
-DEPLOY_PATH      # 服务器上仓库克隆路径（如 /opt/enova-video）
-```
-
-**production Environment**：前往 `GitHub → Settings → Environments → production` 创建，可用 Required Reviewers 实现「人工批准后才允许部署」。
-
-### 服务器需要哪些配置
-
-- Docker（含 Compose 插件）、能访问 GHCR。
-- 克隆仓库到 `DEPLOY_PATH`，`cp .env.example .env` 并填写 Agnes / AWS / 七牛等配置。
-- GitHub 仓库为 private 时，后端需 `GITHUB_TOKEN`（最小权限 `read:packages`/`read:releases`）用于检查更新；GHCR 镜像为 private 时，服务器需 `docker login ghcr.io` 并配置只读 token。
-- 更新脚本内置锁（flock，macOS 开发机回退为 mkdir 原子锁），update 与 rollback 互斥。
-
----
-
-## 日志与故障排查
-
-应用日志（backend / frontend）统一输出到 **stdout / stderr**，不写入容器内 `.log` 文件，因此直接用 `docker compose logs`（或 `docker logs <container>`）即可查看，无需进入容器。
-
-### 日志配置
-
-通过根目录 `.env` 控制（默认值见 `.env.example`）：
-
-| 变量 | 说明 | 默认 |
-|------|------|------|
-| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` | `INFO` |
-| `LOG_FORMAT` | `text`（人读）/ `json`（接 CloudWatch / Loki / ELK） | `text` |
-| `LOG_PROMPTS` | 是否把用户 prompt 写入日志 | `false` |
-| `ACCESS_LOG` | 是否输出请求级 access 日志 | `true` |
-
-排障时想获得更详细日志，改 `.env` 后重建即可：
-
-```bash
-LOG_LEVEL=DEBUG
-docker compose up -d --build backend
-```
-
-> `DEBUG` 仅为排障使用，生产不建议默认开启。即使 `DEBUG`，**敏感信息脱敏始终生效**，不会输出完整 API Key / AWS Secret。
-
-### 日志滚动
-
-`docker-compose.yml` 已为 backend / frontend 配置 `json-file` 驱动，**20MB × 5 个文件/容器**，防止详细日志无限吃满磁盘。滚动只影响本地 Docker 日志文件，不影响 `docker compose logs` 的使用。
-
-### 常用日志查询命令
-
-```bash
-# 所有服务日志（跟随）
-docker compose logs -f
-
-# 只看 backend / frontend
-docker compose logs -f backend
-docker compose logs -f frontend
-
-# 最近 200 行
-docker compose logs --tail=200 backend
-
-# 带时间戳
-docker compose logs -f -t backend
-
-# 按 Request ID 查询整次调用链
-docker compose logs backend | grep "abc123"
-
-# 按视频 Task ID 查询整个生成生命周期
-docker compose logs backend | grep "task_id=xxx"
-
-# 查 S3 相关日志
-docker compose logs backend | grep -i "s3"
-
-# 只查错误
-docker compose logs backend | grep "ERROR"
-
-# 若 LOG_FORMAT=json，可用 jq 过滤
-docker compose logs backend | jq -c 'select(.level=="ERROR")'
-```
-
-### 如何定位常见问题
-
-| 现象 | 重点搜索字段 / 特征 |
-|------|----------------------|
-| Agnes 401（Key 无效/过期） | `error_code=AGNES_UNAUTHORIZED` 或日志中 `status=401` |
-| Agnes 429（限流） | `error_code=AGNES_RATE_LIMITED` 或 `status=429`、`retry_after` |
-| Agnes 超时 | `error_code=AGNES_TIMEOUT`、`type=timeout`、`retry_count` |
-| S3 权限不足 | `error_code=S3_ACCESS_DENIED`、`status=403`、`provider=s3` |
-| S3 桶不存在 | `error_code=S3_UPLOAD_FAILED`、AWS 报错 `NoSuchBucket` |
-| S3 连接失败 | `provider=s3` + `ConnectTimeoutError` / `EndpointConnectionError` |
-| 七牛上传失败 | `provider=qiniu` + `error_code=QINIU_UPLOAD_FAILED` |
-| SQLite 权限/写入失败 | `database` logger + `PermissionError` / `operational error`、`DATABASE_PATH` 不可写 |
-| 视频 poller 停止 | `video.poller` 日志消失、`Scheduler Video poller scheduler started` 缺失 |
-| backend 未健康 | `docker compose ps` 中 backend 不是 healthy；查 `health` 相关日志 |
-| frontend 无法代理 backend | frontend 日志中 `upstream` / `ECONNREFUSED` / `502` |
-
-### Request ID 与 Task ID 追踪
-
-- 每个 HTTP 请求都带 `request_id`（前端生成并透传 `X-Request-ID`，后端也自动生成），响应头 `X-Request-ID` 回传，错误响应体包含 `request_id` 与 `error_code`。
-- 图片 / 视频生成任务额外记录 `task_id`（数据库任务 ID），视频轮询用 `task_id` 串联整个生命周期：提交 → 轮询 → 完成/失败 → 下载 → 存储 → 入库。
-
-```bash
-# 拿到网页报错里的 Request ID 后，一键定位整条调用链
-docker compose logs backend | grep "9fd8ab"
-```
-
----
-
-> 默认仅对外暴露 `3000`（前端）；后端 `8000` 仅作为内部端口供前端访问，不对外网公开。如需调试后端，可临时在 `docker-compose.yml` 的 `backend` 服务上增加 `ports: - "8000:8000"`，调试完请移除。
-
-## API 文档
-
-后端启动后访问 [http://localhost:8000/docs](http://localhost:8000/docs) 查看 Swagger 文档。
-
-### 设置相关接口
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/settings/status` | 配置状态（是否有启用 Key、Base URL 等） |
-| GET | `/api/settings/base-url` | 获取 API Base URL |
-| PUT | `/api/settings/base-url` | 更新 API Base URL |
-| GET | `/api/settings/api-keys` | 列出所有 API Key（脱敏） |
-| POST | `/api/settings/api-keys` | 添加 API Key |
-| PATCH | `/api/settings/api-keys/{id}` | 编辑名称或 Key |
-| POST | `/api/settings/api-keys/{id}/activate` | 启用指定 Key |
-| DELETE | `/api/settings/api-keys/{id}` | 删除 Key |
-
-### 系统信息 / 更新检查接口
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/system/version` | 当前版本 / Git SHA / 构建时间 |
-| GET | `/api/system/update/check` | 手动检查最新 stable 版本（只读，不升级） |
-
-## 数据库
-
-- 建表 SQL：`backend/sql/schema.sql`
-- 默认数据库文件：`backend/database/aimodel.db`
-- 首次启动时自动初始化
-
-主要数据表：
-
-| 表名 | 用途 |
-|------|------|
-| `conversations` / `messages` | 对话与消息记录 |
-| `image_tasks` / `video_tasks` | 图片 / 视频生成任务 |
-| `uploads` | 上传文件记录 |
-| `api_keys` | Agnes AI API Key 配置 |
-| `app_settings` | 应用级配置（如 Base URL） |
-
-## 七牛云存储路径
-
-| 类型 | 路径 |
-|------|------|
-| 图片 | `data/img/` |
-| 视频 | `data/video/` |
-| 文档 | `data/document/` |
-| 其他 | `data/other/` |
-
-## AWS S3 存储
-
-灵动创影支持使用 **AWS S3**（或任何 S3 兼容存储）作为对象存储，与七牛云/不转存三种模式通过 `STORAGE_PROVIDER` 统一切换。业务代码只依赖统一的 Storage 层，不感知底层是七牛还是 S3。
-
-### 使用 Access Key 的本地 Docker 部署
-
-在根目录 `.env` 中配置：
+| `NEXT_PUBLIC_SITE_URL` | **生产必填** | 站点对外访问的完整域名，未设置会构建失败 |
+| `DATABASE_URL` | **是** | PostgreSQL 连接串 |
+| `REDIS_URL` | **是** | Redis 连接串 |
+| `CREDENTIAL_MASTER_KEY` | **是** | AES-GCM 加密 Provider Secret 的 32 字节 Master Key（`openssl rand -hex 32`） |
+| `SESSION_SECRET` | **是** | Session 签名密钥（`openssl rand -hex 32`） |
+| `STORAGE_PROVIDER` | 否 | `none` / `s3` / `qiniu`，默认 `none` |
+| `WELCOME_CREDITS` | 否 | 注册发放的 Welcome Credits，默认 `100` |
+| `INITIAL_ADMIN_EMAIL/PASSWORD` | 否 | 种子管理员账号（Admin 后台使用） |
+| `PAYMENT_MODE` | 否 | `sandbox` / `alipay` / `wechat`，默认 `sandbox` |
+
+> **安全**：生产禁止使用 `.env.example` 中的 dev 占位密钥；`CREDENTIAL_MASTER_KEY`、`SESSION_SECRET`、数据库 / Redis / 对象存储凭证只能通过服务端环境或 IAM / Role 注入。
+
+## 对象存储
+
+灵动创影支持 **AWS S3**（或任何 S3 兼容存储）与 **七牛云**，通过 `STORAGE_PROVIDER` 统一切换。业务代码只依赖 `packages/provider` 的 `ObjectStorage` 抽象接口，不感知底层实现。
+
+### 使用 Access Key 部署
 
 ```bash
 STORAGE_PROVIDER=s3
-AWS_REGION=ap-southeast-1
-AWS_S3_BUCKET=my-bucket
-AWS_ACCESS_KEY_ID=你的AccessKey
-AWS_SECRET_ACCESS_KEY=你的SecretKey
+S3_REGION=ap-southeast-1
+S3_BUCKET=my-bucket
+S3_ACCESS_KEY=你的AccessKey
+S3_SECRET_KEY=你的SecretKey
 ```
 
-### EC2 / ECS / EKS 使用 IAM Role 部署（推荐生产）
+### 使用 IAM Role 部署（推荐生产）
 
-**无需在 `.env` 中填写任何密钥**。boto3 会自动走 AWS 默认 Credential Provider Chain，从 EC2 Instance Profile / ECS Task Role / EKS IAM Role 获取凭据：
+无需在配置中填写密钥，服务通过 EC2 Instance Profile / ECS Task Role / EKS IAM Role 获取凭据：
 
 ```bash
 STORAGE_PROVIDER=s3
-AWS_REGION=ap-southeast-1
-AWS_S3_BUCKET=my-bucket
-AWS_S3_PREFIX=agnes-ai
-```
-
-```text
-EC2
- ↓
-IAM Instance Profile
- ↓
-S3
+S3_REGION=ap-southeast-1
+S3_BUCKET=my-bucket
+S3_PREFIX=agnes-ai
 ```
 
 ### 最小 IAM Policy
-
-只授予实际用到的 `s3:PutObject`（上传）与 `s3:GetObject`（读取/presigned URL），并把资源限制到 bucket 的前缀 `agnes-ai/*`，不使用 `s3:*`：
 
 ```json
 {
@@ -656,17 +280,9 @@ S3
 }
 ```
 
-### CloudFront / 自定义 CDN 域名
-
-配置后，应用返回稳定的公开 URL：`https://cdn.example.com/agnes-ai/images/...`。未配置时私有 bucket 使用 presigned URL。
-
-```bash
-AWS_S3_PUBLIC_BASE_URL=https://cdn.example.com
-```
-
 ### 私有 Bucket（presigned URL）
 
-如果 S3 bucket 是私有的，**数据库只保存稳定的对象 key**（`storage_provider` + `storage_key`），不会把会过期的 presigned URL 永久写入 SQLite。读取历史记录时，API 动态生成有效期 1 小时的 presigned GET URL。
+数据库只保存稳定的对象 key（`storage_provider` + `object_key`），不落会过期的 presigned URL；读取历史时 API 动态生成有效期 1 小时的 presigned GET URL。
 
 ### 对象 Key 规范
 
@@ -675,53 +291,284 @@ AWS_S3_PUBLIC_BASE_URL=https://cdn.example.com
 {prefix}/videos/{yyyy}/{mm}/{dd}/{uuid}.{ext}
 ```
 
-例如 `agnes-ai/images/2026/08/10/2f82...png`。使用 16 位随机 UUID 作为文件名，避免冲突与覆盖；不把原始 URL 的 query string 塞进 key。
-
-### Content-Type
-
-上传时按优先级设置：上游 HTTP `Content-Type` → 扩展名推断（png/jpeg/webp/mp4 等）→ 回退 `application/octet-stream`。
-
 ### 容错
 
-对象存储是附加能力：`S3 临时失败` 不会导致 AI 生成结果丢失，会降级保留 Agnes 原始 URL 并记录日志。
+对象存储是附加能力：转存失败会降级保留 Agnes 原始 URL 并记录日志，不会把 AI 生成结果判为失败。
 
-### 网页设置
+## 版本发布、更新与回滚
 
-也可在「设置 → 对象存储」页面选择 Provider 并填写非敏感配置（Region / Bucket / Prefix / Public Base URL / Endpoint）。凭据（Access Key / Secret / Session Token）不在网页中管理，仅通过 `backend/.env` 或 IAM Role 提供。修改存储配置后需重启后端生效。
+> 目标：**版本化发布（SemVer）+ 手动执行更新 + PostgreSQL 备份 + 真实健康检查 + 失败自动回滚 + 可人工回滚**。
+> 默认**禁止无人值守自动升级**生产；任何生产升级前必须有数据库备份；任何新版本必须通过真实 Health Check 才判定成功。
+
+### 版本与镜像
+
+- 根目录 `VERSION` 记录当前 SemVer（如 `1.2.0`）；Git Tag 带 `v` 前缀（`v1.2.0`），镜像 tag 不带 `v`。
+- Docker 镜像使用明确版本 tag，禁止依赖 `latest` 升级/回滚：
+
+```text
+ghcr.io/jadelike-wine/enova-video-api:1.2.0
+ghcr.io/jadelike-wine/enova-video-worker:1.2.0
+ghcr.io/jadelike-wine/enova-video-web:1.2.0
+ghcr.io/jadelike-wine/enova-video-deploy-tool:1.2.0
+```
+
+- 额外提供 `latest` 与 `sha-<commit>` tag，仅用于快速拉取；生产更新/回滚一律用明确版本或 digest。
+- 构建时注入 `APP_VERSION` / `GIT_SHA` / `BUILD_TIME`，API 可通过接口查询。
+
+### 发布一个版本
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+推送 `v*` tag 会触发 GitHub Actions `release.yml`：编译测试 → 登录 GHCR → 构建并推送 api / worker / web / deploy-tool（`linux/amd64`）→ 生成 `release.json`（版本 / Git SHA / 镜像 / digest）→ 创建 GitHub Release。
+
+### 检查更新（手动）
+
+管理后台 **设置 → System Update → Check for Updates**。页面只做「检查」，绝不自动升级。API 接口：
+
+```http
+GET /api/v1/admin/system-update/check
+```
+
+默认只检查 **stable** release；GitHub API 故障只影响本次检查，不影响主应用。
+
+### 升级到指定版本
+
+```bash
+./scripts/update.sh           # 升级到最新 stable
+./scripts/update.sh v1.2.0   # 升级到指定版本
+./scripts/update.sh --dry-run # 只查看升级计划，不修改任何东西
+```
+
+升级流程（任一步失败即中止，旧版本继续运行）：
+
+```text
+lock → 确定目标版本 → 预检(Docker/Compose) → 当前健康检查
+→ PostgreSQL 一致性备份 → 保存 deployment state → pull 新镜像
+→ 校验 digest → 切换 APP_VERSION → docker compose up -d --no-build
+→ 全链路健康检查(api /health + web /)
+→ 成功记录；失败自动回滚
+```
+
+### 代码回滚（推荐，保留当前数据库）
+
+```bash
+./scripts/rollback.sh --code-only
+```
+
+只回滚 api / worker / web 到上一个成功版本，**不**改动数据库（避免丢失新数据）。
+
+### 完整回滚（代码 + 恢复旧数据库）
+
+```bash
+./scripts/rollback.sh --restore-db
+```
+
+会恢复 pre-update PostgreSQL 备份，**会删除备份时间点之后产生的所有新数据**，脚本会要求确认。
+
+> **数据丢失风险**：`--restore-db` 会把数据库恢复到升级前快照；新版本已运行一段时间并产生新数据时，请优先使用 `--code-only`。
+
+### 更新 / 回滚日志与部署状态
+
+- 所有 update/rollback 都带唯一 `update_id`，日志保存到 `.deploy/logs/`。
+- `.deploy/` 保存 `state.json`（previous/current 版本与 digest、备份路径、update_id）、`history.json`、`version.env`（仅 `APP_VERSION`）、`update.lock`。**绝不存 Secret**。
+
+### GitHub Actions 手动部署 / 回滚
+
+`deploy.yml` 仅允许 `workflow_dispatch` 手动触发（不随 push 自动部署生产），通过 SSH 调用服务器脚本：
+
+| 输入 | 说明 |
+|------|------|
+| `action` | `deploy`（部署）或 `rollback`（回滚） |
+| `version` | 仅 deploy 生效。如 `v1.2.0`；留空则升级到最新 stable |
+| `restore_db` | 仅 rollback 生效。`false`（默认，code-only）或 `true`（恢复旧数据库） |
+
+**需要配置的 Secrets**（建议放在 `production` Environment Secrets）：
+
+```text
+DEPLOY_HOST      # 服务器 IP / 域名
+DEPLOY_PORT      # SSH 端口，默认 22
+DEPLOY_USER      # SSH 用户名
+DEPLOY_SSH_KEY   # SSH 私钥（github 账号可用的）multiline
+DEPLOY_PATH      # 服务器上仓库克隆路径（如 /opt/enova-video）
+```
+
+### 服务器需要哪些配置
+
+- Docker（含 Compose 插件）、能访问 GHCR。
+- 克隆仓库到 `DEPLOY_PATH`，`cp .env.example .env` 并填写 Postgres / Redis / Agnes / 存储等配置。
+- GHCR 镜像为 private 时，服务器需 `docker login ghcr.io` 并配置只读 token。
+- 更新脚本内置锁（flock），update 与 rollback 互斥。
+
+## 日志与故障排查
+
+应用日志（api / worker / web）统一输出到 **stdout / stderr**，不写入容器内 `.log` 文件，直接用 `docker compose logs`（或 `docker logs <container>`）即可查看。
+
+### 日志配置
+
+通过 `.env` 控制（默认值见 `.env.example`）：
+
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
+| `LOG_FORMAT` | `text`（人读）/ `json`（接 CloudWatch / Loki / ELK） | `text` |
+| `LOG_PROMPTS` | 是否把用户 prompt 写入日志 | `false` |
+
+> `LOG_PROMPTS=true` 仅为排障使用，生产不建议开启。**敏感信息（API Key / Secret / 支付凭证）始终脱敏**，不会写入日志。
+
+### 常用日志查询命令
+
+```bash
+docker compose logs -f api            # 跟踪 API 日志
+docker compose logs -f worker         # 跟踪 Worker 日志
+docker compose logs worker | grep "abc123"     # 按 Request ID 查调用链
+docker compose logs worker | grep "task_id=xxx" # 按生成任务 ID 查生命周期
+docker compose logs api | grep "ERROR"          # 只查错误
+```
+
+### 如何定位常见问题
+
+| 现象 | 重点搜索字段 / 特征 |
+|------|----------------------|
+| Agnes 401（Key 无效/过期） | `AGNES_UNAUTHORIZED` 或 `status=401` |
+| Agnes 429（限流） | `AGNES_RATE_LIMITED` 或 `status=429`、`retry_after` |
+| Agnes 超时 | `AGNES_TIMEOUT`、`type=timeout`、`retry_count` |
+| 凭证并发 / 冷却 | `CREDENTIAL_*`、`COOLDOWN`、错误码前缀 |
+| 视频轮询超时 | `pollCount` 达到上限、`VIDEO_MAX_POLLS` |
+| 钱包 / 结算异常 | `wallet`、`idempotency_key`、`GENERATION_SETTLE/RELEASE` |
+| API 未健康 | `docker compose ps` 中 api 不是 healthy；查 `health` 相关日志 |
+| Web 无法代理 API | web 日志中 `upstream` / `ECONNREFUSED` / `502` |
+
+### Request ID 与 Task ID 追踪
+
+- 每个 HTTP 请求都带 `request_id`（前端生成并透传 `X-Request-ID`，API 也自动生成），响应头回传，错误响应体包含 `request_id` 与 `error_code`。
+- 生成任务记录 `task_id`（`generation_jobs.id`）与 `provider_job_id`（上游任务 ID），worker 用其串联：提交 → 轮询 → 完成/失败 → 下载 → 转存 → 结算。
+
+## API 文档
+
+API 为 **NestJS + Fastify**，路由统一前缀 `/api/v1`。运行 `apps/api` 后访问 Swagger 文档（Fastify 下对应 OpenAPI JSON，见 `apps/api/openapi.json`）。
+
+### 鉴权
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/auth/register` | 注册（自动创建 Personal Workspace + Welcome Credits） |
+| POST | `/api/v1/auth/login` | 登录（HttpOnly Cookie 会话） |
+| POST | `/api/v1/auth/logout` | 登出 |
+| GET | `/api/v1/auth/me` | 当前用户信息 |
+| GET | `/api/v1/auth/turnstile-config` | Turnstile 人机校验配置 |
+
+### 对话
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/conversations` | 对话列表 |
+| POST | `/api/v1/conversations` | 新建对话 |
+| GET/PATCH/DELETE | `/api/v1/conversations/:id` | 对话详情 / 改名 / 删除 |
+| GET | `/api/v1/conversations/:id/messages` | 消息列表 |
+| POST | `/api/v1/conversations/:id/messages` | 发送消息（流式） |
+| POST | `/api/v1/conversations/:id/messages/batch` | 批量消息 |
+
+### 生成任务
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/generations` | 提交生成任务（图片 / 视频） |
+| GET | `/api/v1/generations` | 任务历史 |
+| GET | `/api/v1/generations/:id` | 任务详情与结果 |
+| POST | `/api/v1/generations/:id/cancel` | 取消任务 |
+
+### 计费与支付
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/billing/wallet` | 钱包余额与预留 |
+| GET | `/api/v1/billing/ledger` | 钱包账本流水 |
+| POST | `/api/v1/payment/recharge` | 充值下单 |
+| POST | `/api/v1/payment/notify/:channel` | 支付回调验签入账 |
+| POST | `/api/v1/payment/sandbox/:orderId/confirm` | sandbox 模拟确认 |
+
+### 管理后台（`/api/v1/admin/*`，需 ADMIN 角色）
+
+| 资源 | 说明 |
+|------|------|
+| `/admin/providers` | Provider CRUD |
+| `/admin/providers/:providerId/credentials` | Provider 凭证管理 |
+| `/admin/users` | 用户管理（状态 / 发放 credits） |
+| `/admin/stats` | 业务统计 |
+| `/admin/settings` | 动态配置 |
+| `/admin/audit-logs` | 审计日志 |
+| `/admin/system-update` | 系统更新 / 回滚 |
+
+### 健康检查
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/v1/health` | 存活检查 |
+| GET | `/api/v1/health/ready` | 就绪检查 |
+
+## 数据库
+
+新架构使用 **PostgreSQL 16 + Drizzle ORM**，schema 定义在 `packages/db/src/schema.ts`，版本化 migration 在 `packages/db/drizzle/`。
+
+主要数据表：
+
+| 域 | 表 | 用途 |
+|------|------|------|
+| Identity | `users` / `sessions` | 用户与会话（HttpOnly Cookie） |
+| Workspace | `workspaces` / `workspace_members` | 工作区与成员隔离 |
+| Conversation | `conversations` / `messages` | 对话与消息记录 |
+| Generation | `generation_jobs` / `assets` | 统一生成任务与产物 |
+| Provider | `providers` / `provider_credentials` | Provider 与 **AES-GCM 加密**凭证 |
+| Billing | `wallets` / `wallet_ledger` | 钱包余额 / 预留 / 账本（幂等） |
+| Pricing | `pricing_rules` / `usage_events` | 定价规则与用量 |
+| Payment | `orders` / `payment_transactions` | 充值订单与支付流水 |
+| Admin | `admin_audit_logs` / `settings` | 审计日志与动态配置 |
+| Legacy | `legacy_migration` | 旧 SQLite 数据迁移归集 |
+
+### 金额约定（避免浮点误差）
+
+- `credits`：整数（bigint），单位 = 1 credit。
+- `*_cost_usd`：整数（integer），单位 = 微美元（1e-6 USD），即 1 USD = 1_000_000。
+- 所有金额计算必须使用整数运算。
 
 ## 项目结构
 
 ```
 enova-video/
-├── backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI 入口 & 定时任务
-│   │   ├── config.py            # 环境变量与模型配置
-│   │   ├── database.py          # SQLite 连接与初始化
-│   │   ├── schemas.py           # 请求 / 响应模型
-│   │   ├── routers/             # chat / images / videos / settings
-│   │   └── services/            # Agnes API、Key 管理、七牛云、视频轮询
-│   ├── sql/schema.sql           # 数据库建表 SQL
-│   ├── database/                # SQLite 数据库文件（gitignore）
-│   ├── .env.example             # 环境变量示例
-│   └── requirements.txt
-├── frontend/                # Next.js 15（App Router）
-│   ├── app/
-│   │   ├── layout.tsx       # 根布局
-│   │   ├── page.tsx         # SEO 首页（/）
-│   │   ├── ai-chat/         # SEO 落地页（/ai-chat）
-│   │   ├── ai-image-generator/
-│   │   ├── ai-video-generator/
-│   │   ├── models/          # 模型列表与详情（/models/*）
-│   │   ├── docs/            # 文档（/docs/*）
-│   │   ├── app/             # 交互式应用（/app/chat | /app/images | /app/videos | /app/settings）
-│   │   ├── robots.ts        # /robots.txt
-│   │   └── sitemap.ts       # /sitemap.xml
-│   ├── components/
-│   │   ├── marketing/       # 官网 / SEO 组件
-│   │   └── application/     # 应用交互组件
-│   ├── lib/                 # api.ts / seo.ts / models.ts 等
-└── _needs/                      # 需求与设计说明
+├── apps/
+│   ├── api/                     # NestJS API（/api/v1 + OpenAPI）
+│   │   └── src/
+│   │       ├── auth/            # 注册 / 登录 / 会话 / Turnstile
+│   │       ├── conversations/   # 对话与消息
+│   │       ├── generations/     # 生成任务
+│   │       ├── billing/         # 钱包 / 定价
+│   │       ├── payment/         # 充值 / 回调
+│   │       ├── admin/           # 管理后台（Provider / User / Stats / Audit / System-update）
+│   │       ├── settings/        # 动态配置
+│   │       ├── health/          # 健康检查
+│   │       └── app.module.ts    # 应用装配
+│   ├── worker/
+│   │   └── src/
+│   │       ├── generation/      # pipeline / repo / state
+│   │       └── processors/      # BullMQ 消费者
+│   └── web/
+│       ├── app/                 # 营销页 + /app 交互区 + /auth + /docs + /models
+│       ├── components/          # marketing/ + application/ + auth/
+│       └── lib/                 # api.ts / seo.ts / models.ts / auth.tsx ...
+├── packages/
+│   ├── contracts/               # 类型 / 枚举 / 错误码 / 队列契约
+│   ├── config/                  # env 校验（Zod）
+│   ├── db/                      # Drizzle schema + migrations
+│   ├── provider/                # AIProvider + ObjectStorage + CredentialManager + SSRF
+│   ├── billing/                 # 钱包 / credits 领域逻辑
+│   ├── payment/                 # 支付抽象 + sandbox / alipay / wechat
+│   ├── sdk/                     # OpenAPI 生成客户端
+│   └── migrator/                # 旧 SQLite 迁移工具
+├── scripts/                     # update.sh / rollback.sh / lib.sh
+├── .github/workflows/           # ci / deploy / release
+├── docker-compose.dev.yml       # 本地 PostgreSQL + Redis
+└── docker-compose.prod.yml      # 生产 postgres + redis + api + worker + web
 ```
-
-

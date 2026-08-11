@@ -7,7 +7,7 @@
 #   ./scripts/update.sh --dry-run       # 只显示计划，不修改任何东西
 #
 # 流程（任一步失败即 abort，旧版本继续运行）：
-#   lock -> 确定目标版本 -> 预检 -> 当前健康检查 -> SQLite backup
+#   lock -> 确定目标版本 -> 预检 -> 当前健康检查 -> PostgreSQL backup
 #   -> 保存 deployment state -> pull 新镜像 -> 校验 digest
 #   -> 切换 APP_VERSION -> compose up -d --no-build
 #   -> 全链路健康检查 -> 成功记录；失败自动回滚。

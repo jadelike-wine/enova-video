@@ -20,7 +20,7 @@ import type { AgnesImageRequest, AgnesVideoRequest } from './agnes.types.js';
 /**
  * Agnes Provider：把平台归一化输入映射为 Agnes wire protocol，并归一化返回。
  * - baseUrl 为管理员配置，构造时已通过 SSRF 校验。
- * - 详细协议见旧 backend/app/services/agnes_client.py。
+ * - 详细协议见 ./agnes.client.ts。
  */
 
 export interface AgnesProviderOptions {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # 共享函数库：被 scripts/update.sh 与 scripts/rollback.sh 引用。
-# 职责：版本/SemVer、部署状态、更新锁、SQLite backup、镜像 digest、健康检查、
+# 职责：版本/SemVer、部署状态、更新锁、PostgreSQL backup、镜像 digest、健康检查、
 #       带 update_id 的统一日志（stdout + .deploy/logs/）。
 # 安全：绝不写入 Secret；绝不 down -v / prune；绝不依赖 latest 升级。
 # =============================================================================

@@ -1,7 +1,7 @@
 /**
  * Central model catalog.
  *
- * `apiId` is the exact model ID sent to FastAPI / Agnes API — DO NOT change it.
+ * `apiId` is the exact model ID sent to the Agnes API — DO NOT change it.
  * `slug` is the SEO URL slug and may differ from the API id.
  */
 

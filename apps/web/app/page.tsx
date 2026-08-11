@@ -41,7 +41,7 @@ const faqs = [
   },
   {
     q: '支持自托管部署吗？',
-    a: '可以。平台由 Next.js 前端与 FastAPI 后端组成，后端使用 SQLite 存储，支持本地或服务器部署。',
+    a: '可以。平台基于 Node.js（NestJS API + BullMQ Worker + Next.js 前端），使用 PostgreSQL 存储，支持本地或服务器部署。',
   },
   {
     q: '支持哪些模型？',

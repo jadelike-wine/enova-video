@@ -18,10 +18,6 @@ node_modules
 .git
 .gitignore
 
-# 旧架构（新架构镜像不包含）
-backend
-frontend
-
 # 备份 / 数据库 / 临时文件
 backups
 *.db

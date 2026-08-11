@@ -14,48 +14,55 @@ export default function GettingStartedPage() {
       <header>
         <h1 className="text-3xl font-extrabold">快速开始</h1>
         <p className="text-white/60 mt-2">
-          灵动创影由 Next.js 前端与 FastAPI 后端组成，后端使用 SQLite 存储。本文介绍如何在本地运行。
+          灵动创影是一个基于 Node.js 的 Modular Monolith：Next.js 前端（apps/web）+ NestJS API（apps/api）+ BullMQ Worker（apps/worker），
+          使用 PostgreSQL + Redis 存储。本文介绍如何在本地运行。
         </p>
       </header>
 
       <section>
         <h2 className="text-xl font-bold mb-3">项目架构</h2>
         <div className="glass p-5 rounded-3xl font-mono text-sm text-white/80 leading-relaxed">
-          <div>Public Website / SEO Pages</div>
-          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+</div>
-          <div>Application UI</div>
+          <div>Browser</div>
           <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|</div>
           <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v</div>
-          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Next.js</div>
-          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| &nbsp;/api/*</div>
+          <div>&nbsp;&nbsp;&nbsp;Web (Next.js :3000)</div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| &nbsp;/api/v1/*</div>
           <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v</div>
-          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;FastAPI</div>
+          <div>&nbsp;&nbsp;&nbsp;API (NestJS :3001)</div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|</div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+-- PostgreSQL / Redis</div>
           <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|</div>
           <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;v</div>
-          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;SQLite</div>
+          <div>&nbsp;&nbsp;&nbsp;Worker (BullMQ)</div>
+          <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;| 调用 Agnes → 轮询 → 转存 → 结算</div>
         </div>
       </section>
 
       <section>
-        <h2 className="text-xl font-bold mb-3">启动后端</h2>
+        <h2 className="text-xl font-bold mb-3">启动基础设施</h2>
         <pre className="glass p-4 rounded-2xl overflow-x-auto text-sm text-cyan-200 font-mono">
-{`cd backend
-pip install -r requirements.txt
-cp .env.example .env   # 可选：配置七牛云等
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`}
+{`cp .env.example .env
+docker compose -f docker-compose.dev.yml up -d   # PostgreSQL + Redis`}
+        </pre>
+      </section>
+
+      <section>
+        <h2 className="text-xl font-bold mb-3">启动 API 与 Worker</h2>
+        <pre className="glass p-4 rounded-2xl overflow-x-auto text-sm text-cyan-200 font-mono">
+{`pnpm install
+pnpm dev:api       # NestJS API，默认 :3001
+pnpm dev:worker    # BullMQ 生成任务消费者`}
         </pre>
       </section>
 
       <section>
         <h2 className="text-xl font-bold mb-3">启动前端</h2>
         <pre className="glass p-4 rounded-2xl overflow-x-auto text-sm text-cyan-200 font-mono">
-{`cd frontend
-npm install
-npm run dev`}
+{`pnpm --filter @enova/web dev`}
         </pre>
         <p className="text-white/60 text-sm mt-3">
           打开 <Link href="/" className="text-cyan-300 hover:underline">{siteUrl()}</Link>。
-          前端通过 <code className="text-cyan-300">/api/*</code> 转发到 FastAPI（默认 <code className="text-cyan-300">http://127.0.0.1:8000</code>）。
+          前端通过 <code className="text-cyan-300">/api/v1/*</code> 转发到 NestJS API（默认 <code className="text-cyan-300">http://localhost:3001</code>）。
         </p>
       </section>
 

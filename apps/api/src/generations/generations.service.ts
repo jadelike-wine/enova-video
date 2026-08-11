@@ -120,9 +120,32 @@ export class GenerationsService {
     if (!row) throw domainError(ERROR_CODES.GENERATION_NOT_FOUND, 'Generation not found', 404);
 
     const status = row.status as GenerationStatus;
-    const cancellable: GenerationStatus[] = [GENERATION_STATUSES.PENDING, GENERATION_STATUSES.QUEUED];
+    const cancellable: GenerationStatus[] = [
+      GENERATION_STATUSES.PENDING,
+      GENERATION_STATUSES.QUEUED,
+      GENERATION_STATUSES.RUNNING,
+    ];
     if (!cancellable.includes(status)) {
       throw domainError(ERROR_CODES.GENERATION_INVALID_STATUS_TRANSITION, 'Job cannot be canceled', 409);
+    }
+
+    // RUNNING（视频已在轮询循环）：无法从队列直接摘除（延迟 job 已飞走），
+    // 把取消交给 Worker——由它通知上游 cancelJob，再原子标记 CANCELED + 释放 credits。
+    if (status === GENERATION_STATUSES.RUNNING) {
+      const payload: GenerationJobPayload = {
+        generationJobId: row.id,
+        workspaceId: row.workspaceId,
+        userId: row.userId,
+        type: row.type,
+        provider: row.provider ?? 'agnes',
+        model: row.model ?? '',
+        input: (row.inputJson ?? {}) as Record<string, unknown>,
+        reservedCredits: row.reservedCredits,
+        idempotencyKey: `settle:${row.id}`,
+        stage: 'cancel',
+      };
+      await this.queue.add(GENERATION_JOB_NAMES.CANCEL, payload);
+      return this.toView(row);
     }
 
     await this.queue.remove(jobKey(id));

@@ -157,6 +157,44 @@ export class GenerationPipeline {
     }
   }
 
+  // ---- CANCEL ----
+
+  /**
+   * 取消：通知上游 cancelJob（尽力而为，不因上游失败而中止取消）+ 标记 CANCELED + 释放预留 credits。
+   * 幂等：job 已是终态则跳过；finalizeCancel 与 release 使用 idempotency_key 保证只执行一次。
+   * 仅 RUNNING 且已有 provider_job_id 时才需要通知上游（PENDING/QUEUED 由 API 端直接取消）。
+   */
+  async cancel(payload: GenerationJobPayload): Promise<void> {
+    const job = await this.deps.repo.load(payload.generationJobId);
+    if (!job) return;
+    if (isTerminal(job.status)) return;
+
+    if (job.status === 'RUNNING' && job.providerJobId) {
+      try {
+        await this.withCredential(job.provider ?? 'agnes', async (cred) => {
+          const provider = await this.deps.registry.getProvider(job.provider ?? 'agnes');
+          await provider.cancelJob(job.providerJobId!, cred.secret);
+        });
+      } catch (err) {
+        // 上游取消失败：不影响本地取消，best-effort 记录。
+        this.deps.logger.warn('upstream cancel failed (best-effort)', {
+          generationJobId: job.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    await this.deps.db.transaction(async (tx) => {
+      await this.deps.repo.finalizeCancelInTx(tx, { id: job.id });
+      await this.deps.wallet.releaseInTx(tx, job.workspaceId, job.id, `release:cancel:${job.id}`);
+    });
+
+    this.deps.logger.info('generation job canceled & released', {
+      generationJobId: job.id,
+      workspaceId: job.workspaceId,
+    });
+  }
+
   // ---- IMAGE ----
 
   private async runImage(job: GenerationJobRow): Promise<void> {
@@ -311,6 +349,7 @@ export class GenerationPipeline {
       duration?: number | null;
       metadata?: Record<string, unknown>;
     };
+    let displayUrl: string | null = sourceUrl;
 
     try {
       const stored = await this.deps.storage.uploadFile(dl.filePath, {
@@ -330,6 +369,13 @@ export class GenerationPipeline {
           height: providerResult.height ?? null,
           duration: providerResult.duration ?? null,
         };
+        // 优先使用公开/CDN 稳定地址；私有 bucket 生成 presigned URL（1 小时）。
+        displayUrl =
+          stored.url ||
+          (typeof this.deps.storage.getDisplayUrl === 'function'
+            ? await this.deps.storage.getDisplayUrl(stored.key)
+            : null) ||
+          sourceUrl;
       } else {
         // 未配置对象存储（dev 'none'）：降级记录上游 URL 到 metadata，不把 provider URL 当最终 objectKey。
         asset = {
@@ -348,7 +394,7 @@ export class GenerationPipeline {
       await cleanupTempFile(dl.filePath);
     }
 
-    await this.finalizeSuccess(job, mediaType, asset);
+    await this.finalizeSuccess(job, mediaType, asset, displayUrl);
   }
 
   private async finalizeSuccess(
@@ -365,10 +411,13 @@ export class GenerationPipeline {
       duration?: number | null;
       metadata?: Record<string, unknown>;
     },
+    displayUrl: string | null,
   ): Promise<void> {
     // MVP pricing policy：Provider 未返回足够信息计算真实成本，按保留额度结算。
     // 这不是临时 TODO，而是第一版明确的定价策略；后续可接入真实 Pricing 计算 actualCredits。
     const actualCredits = job.reservedCredits;
+    // 供应商成本由定价规则驱动（pricing_rules.pricingJson.providerCostUsd，微美元），缺省 0 不伪造。
+    const providerCostUsd = await this.deps.repo.providerCostUsd(job.type, job.provider ?? 'agnes', job.model ?? '');
 
     await this.deps.db.transaction(async (tx) => {
       await this.deps.repo.finalizeSuccessInTx(tx, {
@@ -393,11 +442,19 @@ export class GenerationPipeline {
         usage: {
           duration: mediaType === 'video' ? asset.duration ?? null : null,
           resolution: this.resolution(job),
-          providerCostUsd: 0, // Agnes 不返回成本，不伪造
+          providerCostUsd,
           creditsCharged: actualCredits,
           metadata: { provider: job.provider ?? 'agnes', model: job.model ?? '' },
         },
         actualCredits,
+        output: {
+          url: displayUrl,
+          width: asset.width ?? null,
+          height: asset.height ?? null,
+          duration: mediaType === 'video' ? asset.duration ?? null : null,
+          mimeType: asset.mimeType,
+          storageProvider: asset.storageProvider,
+        },
       });
       // settle 幂等（idempotency_key），与 asset/usage/job 状态同事务提交。
       await this.deps.wallet.settleInTx(

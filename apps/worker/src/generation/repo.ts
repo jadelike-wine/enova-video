@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { GENERATION_STATUSES } from '@enova/contracts';
 import type { Tx } from '@enova/billing';
-import { assets, generationJobs, usageEvents, type Database } from '@enova/db';
+import { generationJobs, pricingRules, usageEvents, assets, type Database } from '@enova/db';
 
 /**
  * GenerationJob 持久化仓库。
@@ -56,6 +56,15 @@ export interface FinalizeSuccessArgs {
   };
   actualCredits: number;
   actualCostUsd?: number;
+  /** 供前端展示的最终产物信息（持久化到 generation_jobs.output_json）。 */
+  output?: {
+    url?: string | null;
+    width?: number | null;
+    height?: number | null;
+    duration?: number | null;
+    mimeType?: string | null;
+    storageProvider?: string | null;
+  };
 }
 
 export class GenerationRepo {
@@ -130,6 +139,28 @@ export class GenerationRepo {
   }
 
   /**
+   * 解析定价规则中的供应商成本（微美元）。
+   * 单一数据源= pricing_rules.pricingJson.providerCostUsd；未配置或缺失时默认 0（不伪造成本）。
+   */
+  async providerCostUsd(type: string, provider: string, model: string): Promise<number> {
+    const rows = await this.db
+      .select({ pricingJson: pricingRules.pricingJson })
+      .from(pricingRules)
+      .where(
+        and(
+          eq(pricingRules.generationType, type as never),
+          eq(pricingRules.provider, provider),
+          eq(pricingRules.model, model),
+          eq(pricingRules.enabled, true),
+        ),
+      )
+      .limit(1);
+    const rule = rows[0];
+    const pc = rule?.pricingJson as { providerCostUsd?: unknown } | undefined;
+    return typeof pc?.providerCostUsd === 'number' ? pc.providerCostUsd : 0;
+  }
+
+  /**
    * 成功 finalize（事务内）：asset upsert（幂等）+ usage insert + job → SUCCEEDED。
    * 由调用方把本方法与本事务内的 WalletGateway.settleInTx 一并提交，保证原子一致。
    */
@@ -184,6 +215,7 @@ export class GenerationRepo {
         status: GENERATION_STATUSES.SUCCEEDED,
         actualCredits: args.actualCredits,
         actualCostUsd: args.actualCostUsd ?? 0,
+        outputJson: args.output ?? null,
         completedAt: new Date(),
       })
       .where(
@@ -209,6 +241,26 @@ export class GenerationRepo {
         status: GENERATION_STATUSES.FAILED,
         errorCode: args.errorCode,
         errorMessage: args.errorMessage,
+        completedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(generationJobs.id, args.id),
+          inArray(generationJobs.status, [
+            GENERATION_STATUSES.QUEUED,
+            GENERATION_STATUSES.RUNNING,
+          ]),
+        ),
+      );
+  }
+
+  /** 终态标记 CANCELED（供事务内取消使用）。仅 QUEUED / RUNNING 可迁移到 CANCELED。 */
+  async finalizeCancelInTx(tx: Tx, args: { id: string }): Promise<void> {
+    await tx
+      .update(generationJobs)
+      .set({
+        status: GENERATION_STATUSES.CANCELED,
+        canceledAt: new Date(),
         completedAt: new Date(),
       })
       .where(

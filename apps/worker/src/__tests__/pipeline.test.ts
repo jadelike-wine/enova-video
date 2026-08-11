@@ -49,8 +49,10 @@ function makeDeps(overrides: Partial<GenerationPipelineDeps> = {}): GenerationPi
       toRunning: vi.fn().mockResolvedValue(true),
       persistProviderJob: vi.fn().mockResolvedValue(true),
       incrementPoll: vi.fn().mockResolvedValue(1),
+      providerCostUsd: vi.fn().mockResolvedValue(0),
       finalizeSuccessInTx: vi.fn().mockResolvedValue(undefined),
       finalizeFailureInTx: vi.fn().mockResolvedValue(undefined),
+      finalizeCancelInTx: vi.fn().mockResolvedValue(undefined),
     } as never,
     registry: {
       getProvider: vi.fn().mockReturnValue({
@@ -238,5 +240,67 @@ describe('GenerationPipeline', () => {
     expect(deps.repo.finalizeFailureInTx).toHaveBeenCalledWith('TX', expect.objectContaining({ id: 'job-1', errorCode: 'PROVIDER_JOB_TIMEOUT' }));
     expect(deps.wallet.releaseInTx).toHaveBeenCalledWith('TX', 'ws-1', 'job-1', 'release:fail:job-1');
     expect(deps.queue.add).not.toHaveBeenCalled();
+  });
+
+  it('provider_cost_usd is driven by pricing rule (default 0)', async () => {
+    const deps = makeDeps();
+    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    (deps.repo.providerCostUsd as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(1234);
+    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.generateImage as ReturnType<typeof vi.fn>).mockResolvedValue({ sourceUrl: 'https://cdn.test/i.png' });
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.execute(makePayload());
+
+    expect(deps.repo.providerCostUsd).toHaveBeenCalledWith('IMAGE', 'agnes', 'agn-dream');
+    const args = (deps.repo.finalizeSuccessInTx as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(args.usage.providerCostUsd).toBe(1234);
+  });
+
+  it('cancel RUNNING job notifies upstream cancelJob then CANCELED + release', async () => {
+    const deps = makeDeps();
+    (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1' }),
+    );
+    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    const cancelJob = (provider.cancelJob as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.cancel(makePayload('cancel'));
+
+    expect(cancelJob).toHaveBeenCalledWith('task-1', 'sk-1');
+    expect(deps.repo.finalizeCancelInTx).toHaveBeenCalledWith('TX', { id: 'job-1' });
+    expect(deps.wallet.releaseInTx).toHaveBeenCalledWith('TX', 'ws-1', 'job-1', 'release:cancel:job-1');
+  });
+
+  it('cancel is best-effort when upstream cancelJob throws', async () => {
+    const deps = makeDeps();
+    (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1' }),
+    );
+    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.cancelJob as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('upstream down'));
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.cancel(makePayload('cancel'));
+
+    // 上游失败不阻断本地取消
+    expect(deps.repo.finalizeCancelInTx).toHaveBeenCalledWith('TX', { id: 'job-1' });
+    expect(deps.wallet.releaseInTx).toHaveBeenCalledWith('TX', 'ws-1', 'job-1', 'release:cancel:job-1');
+  });
+
+  it('cancel skips when job already terminal', async () => {
+    const deps = makeDeps();
+    (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeJob({ type: 'VIDEO', status: 'SUCCEEDED', providerJobId: 'task-1' }),
+    );
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.cancel(makePayload('cancel'));
+
+    expect(deps.repo.finalizeCancelInTx).not.toHaveBeenCalled();
+    expect(deps.wallet.releaseInTx).not.toHaveBeenCalled();
   });
 });

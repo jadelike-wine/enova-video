@@ -117,6 +117,8 @@ export const GENERATION_JOB_NAMES = {
   PROCESS: 'generation.process',
   /** 视频延迟轮询（同一队列，delay 触发）。 */
   POLL: 'generation.poll',
+  /** 取消（RUNNING 视频需通知上游 cancelJob 后释放，由 Worker 处理以免泄露凭据）。 */
+  CANCEL: 'generation.cancel',
 } as const;
 export type GenerationJobName =
   (typeof GENERATION_JOB_NAMES)[keyof typeof GENERATION_JOB_NAMES];
@@ -136,8 +138,8 @@ export interface GenerationJobPayload {
   /** 排入队列时已 reserve 的 credits，用于幂等结算。 */
   reservedCredits: number;
   idempotencyKey: string;
-  /** 执行阶段：execute=首次提交/分发；poll=视频延迟轮询。 */
-  stage?: 'execute' | 'poll';
+  /** 执行阶段：execute=首次提交/分发；poll=视频延迟轮询；cancel=取消（通知上游+释放）。 */
+  stage?: 'execute' | 'poll' | 'cancel';
   /** 视频轮询计数，达到上限判定超时。 */
   pollCount?: number;
   /** 已持久化的 Provider Job Id（视频提交后写入，重试不再重复提交）。 */

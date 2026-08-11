@@ -241,6 +241,18 @@ export const wallets = pgTable('wallets', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('wallets_workspace_id_unique').on(t.workspaceId)]);
 
+export const orders = pgTable('orders', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  amountCents: integer('amount_cents').notNull().default(0),
+  amountUsd: integer('amount_usd').notNull().default(0),
+  credits: bigint('credits', { mode: 'number' }).notNull().default(0),
+  status: paymentStatus('status').notNull().default('PENDING'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('orders_workspace_id_idx').on(t.workspaceId)]);
+
 export const walletLedger = pgTable('wallet_ledger', {
   id: uuid('id').primaryKey().defaultRandom(),
   workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
@@ -251,7 +263,7 @@ export const walletLedger = pgTable('wallet_ledger', {
   reservedBefore: bigint('reserved_before', { mode: 'number' }).notNull().default(0),
   reservedAfter: bigint('reserved_after', { mode: 'number' }).notNull().default(0),
   generationJobId: uuid('generation_job_id').references(() => generationJobs.id, { onDelete: 'set null' }),
-  orderId: uuid('order_id'),
+  orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
   idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
   description: text('description'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -320,19 +332,6 @@ export const subscriptions = pgTable('subscriptions', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('subscriptions_workspace_id_idx').on(t.workspaceId)]);
-
-export const orders = pgTable('orders', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  /** 实际支付金额（分，人民币）。CNY 充值以分为单位。 */
-  amountCents: integer('amount_cents').notNull().default(0),
-  amountUsd: integer('amount_usd').notNull().default(0),
-  credits: bigint('credits', { mode: 'number' }).notNull().default(0),
-  status: paymentStatus('status').notNull().default('PENDING'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index('orders_workspace_id_idx').on(t.workspaceId)]);
 
 export const paymentTransactions = pgTable('payment_transactions', {
   id: uuid('id').primaryKey().defaultRandom(),

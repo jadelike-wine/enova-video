@@ -45,25 +45,33 @@ COPY packages/migrator/package.json packages/migrator/package.json
 RUN pnpm install --frozen-lockfile --prod=false
 
 #############################
-# 阶段 2: 构建（编译 workspace 包 + api + worker + web）
+# 阶段 2: 公共构建（仅编译 workspace 包）
 #############################
-FROM deps AS build
-# 构建期变量（web 需要 NEXT_PUBLIC_SITE_URL，api/web 的 rewrite 需要 BACKEND_URL）
-ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
-ARG BACKEND_URL=http://localhost:3001
-ENV NODE_ENV=production \
-    NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL} \
-    BACKEND_URL=${BACKEND_URL}
+FROM deps AS build-common
+ENV NODE_ENV=production
 COPY . .
 # 先构建全部 workspace 包（顺序由 pnpm 依赖图决定）
 RUN pnpm --filter './packages/*' build
-# 各自应用构建
+
+#############################
+# 阶段 3: 按应用独立构建
+#############################
+FROM build-common AS build-api
 RUN pnpm --filter @enova/api build
+
+FROM build-common AS build-worker
 RUN pnpm --filter @enova/worker build
+
+FROM build-common AS build-web
+# 仅 Web 构建依赖这些公开配置，避免它们使 API / Worker 的缓存失效。
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
+ARG BACKEND_URL=http://localhost:3001
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL} \
+    BACKEND_URL=${BACKEND_URL}
 RUN pnpm --filter @enova/web build
 
 #############################
-# 阶段 3: API 运行时
+# 阶段 4: API 运行时
 #############################
 FROM base AS api
 ARG APP_VERSION
@@ -74,11 +82,14 @@ LABEL org.opencontainers.image.title="enova-video-api" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.created="${BUILD_TIME}"
 ENV NODE_ENV=production
-# 复制依赖（含 workspace 符号链接）与 workspace 包产物
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/packages ./packages
-COPY --from=build /app/apps/api/dist ./apps/api/dist
-COPY --from=build /app/apps/api/package.json ./apps/api/package.json
+# 复制依赖（含 workspace 符号链接）与 workspace 包产物。
+# pnpm 下应用私有依赖（如 reflect-metadata）以符号链接存在于 apps/api/node_modules，
+# 必须一并复制，否则运行时解析不到。
+COPY --from=build-api /app/node_modules ./node_modules
+COPY --from=build-api /app/apps/api/node_modules ./apps/api/node_modules
+COPY --from=build-api /app/packages ./packages
+COPY --from=build-api /app/apps/api/dist ./apps/api/dist
+COPY --from=build-api /app/apps/api/package.json ./apps/api/package.json
 WORKDIR /app/apps/api
 EXPOSE 3001
 # 傻瓜化：容器启动前先执行 Drizzle 迁移（幂等，失败即退出 -> 健康检查失败 -> 自动回滚）。
@@ -86,7 +97,7 @@ EXPOSE 3001
 CMD ["sh", "-c", "node /app/packages/db/dist/migrate.js \"$DATABASE_URL\" && exec node dist/main.js"]
 
 #############################
-# 阶段 4: Worker 运行时
+# 阶段 5: Worker 运行时
 #############################
 FROM base AS worker
 ARG APP_VERSION
@@ -97,15 +108,16 @@ LABEL org.opencontainers.image.title="enova-video-worker" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.created="${BUILD_TIME}"
 ENV NODE_ENV=production
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/packages ./packages
-COPY --from=build /app/apps/worker/dist ./apps/worker/dist
-COPY --from=build /app/apps/worker/package.json ./apps/worker/package.json
+COPY --from=build-worker /app/node_modules ./node_modules
+COPY --from=build-worker /app/apps/worker/node_modules ./apps/worker/node_modules
+COPY --from=build-worker /app/packages ./packages
+COPY --from=build-worker /app/apps/worker/dist ./apps/worker/dist
+COPY --from=build-worker /app/apps/worker/package.json ./apps/worker/package.json
 WORKDIR /app/apps/worker
 CMD ["node", "dist/main.js"]
 
 #############################
-# 阶段 5: Web（Next.js standalone）运行时
+# 阶段 6: Web（Next.js standalone）运行时
 #############################
 FROM base AS web
 ARG APP_VERSION
@@ -117,8 +129,8 @@ LABEL org.opencontainers.image.title="enova-video-web" \
       org.opencontainers.image.created="${BUILD_TIME}"
 ENV NODE_ENV=production
 # standalone 模式：私有依赖已内联
-COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
-COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build-web --chown=node:node /app/apps/web/.next/standalone ./
+COPY --from=build-web --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
 WORKDIR /app/apps/web
 USER node
 EXPOSE 3000

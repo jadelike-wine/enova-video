@@ -3,8 +3,8 @@
 # 手动回滚脚本。
 #
 #   ./scripts/rollback.sh                  # 回退到上一个成功版本（code-only）
-#   ./scripts/rollback.sh --code-only      # 只回滚 frontend/backend，保持当前数据库
-#   ./scripts/rollback.sh --restore-db     # 回滚代码 + 恢复 pre-update SQLite 备份
+#   ./scripts/rollback.sh --code-only      # 只回滚 api/worker/web，保持当前数据库
+#   ./scripts/rollback.sh --restore-db     # 回滚代码 + 恢复 pre-update PostgreSQL 备份
 #
 # 安全：
 #   - 默认 code-only：新版本已成功运行后，绝不偷偷恢复旧 DB（避免丢新数据）。
@@ -24,8 +24,8 @@ for arg in "$@"; do
     --restore-db) MODE="restore-db" ;;
     -h|--help)
       echo "用法: $0 [--code-only|--restore-db]"
-      echo "  --code-only    只回滚 frontend/backend（默认），保持当前数据库"
-      echo "  --restore-db   回滚代码 + 恢复 pre-update SQLite 备份（会丢新数据）"
+      echo "  --code-only    只回滚 api/worker/web（默认），保持当前数据库"
+      echo "  --restore-db   回滚代码 + 恢复 pre-update PostgreSQL 备份（会丢新数据）"
       exit 0
       ;;
     --*) echo "未知参数: $arg" >&2; exit 2 ;;
@@ -64,7 +64,7 @@ fi
 # ---- --restore-db 必须确认（数据丢失风险）----
 if [ "$MODE" = "restore-db" ]; then
   echo "==========================================================" >&2
-  echo "警告：--restore-db 会恢复 pre-update SQLite 备份，" >&2
+  echo "警告：--restore-db 会恢复 pre-update PostgreSQL 备份，" >&2
   echo "      将删除备份时间点之后产生的所有新数据。" >&2
   echo "==========================================================" >&2
   if [ "${AUTO_CONFIRM:-0}" != "1" ]; then

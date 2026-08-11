@@ -1,6 +1,6 @@
 name: Release
 
-# 推送 v* tag 时构建并发布 GHCR 镜像 + GitHub Release。
+# 推送 v* tag 时构建并发布 GHCR 镜像（新架构：api / worker / web）+ GitHub Release。
 # 只发布镜像，绝不自动部署生产服务器。
 on:
   push:
@@ -16,7 +16,7 @@ env:
   IMAGE_BASE: ghcr.io/${{ github.repository }}   # ghcr.io/jadelike-wine/enova-video
 
 jobs:
-  # 发布前必须通过测试：后端 compile+unittest、前端 lint+build。
+  # 发布前必须通过测试：新架构 monorepo 的 lint + typecheck + unit test。
   # 测试失败则整个 workflow 失败，禁止构建/推送镜像与发布 Release。
   test:
     name: Test before publish
@@ -24,52 +24,24 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-
-      - name: Backend compile + unittest
-        working-directory: backend
-        run: |
-          pip install -r requirements.txt
-          python -m compileall -q app
-          python -m unittest discover -s tests -v
-
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
 
-      - name: Frontend lint + build
-        working-directory: frontend
+      - name: Enable pnpm & install
         run: |
-          npm ci
-          npm run lint
-          npm run build
-        env:
-          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://example.com' }}
-          BACKEND_URL: http://backend:8000
+          corepack enable
+          pnpm install --frozen-lockfile
 
-      # 防回归：HTML 200 但 CSS/JS 404 的生产问题。Next.js 15.5.x 嵌套 layout
-      # 曾导致全局 CSS 被静默丢弃（构建成功但 .next/static/css 为空）。
-      # 此处强制校验构建产物确实生成了 CSS/JS 静态文件，缺失即失败。
-      - name: Check static CSS/JS artifacts
-        working-directory: frontend
-        run: |
-          css_count=$(find .next/static/css -name "*.css" 2>/dev/null | wc -l | tr -d ' ')
-          js_count=$(find .next/static/chunks -name "*.js" 2>/dev/null | wc -l | tr -d ' ')
-          echo "CSS files: $css_count"
-          echo "JS files: $js_count"
-          if [ "$css_count" -eq 0 ]; then
-            echo "::error::Build output has NO CSS files (missing or empty .next/static/css). Global styles were silently dropped. Aborting release."
-            exit 1
-          fi
-          if [ "$js_count" -eq 0 ]; then
-            echo "::error::Build output has NO JS chunks (.next/static/chunks empty). Aborting release."
-            exit 1
-          fi
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
 
   release:
     name: Build & Publish ${{ github.ref_name }}
@@ -101,43 +73,64 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ---- Backend ----
-      - name: Build & push backend
-        id: build-backend
+      # ---- API ----
+      - name: Build & push api
+        id: build-api
         uses: docker/build-push-action@v7
         with:
-          context: ./backend
-          file: backend/Dockerfile
+          context: .
+          file: Dockerfile
+          target: api
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.IMAGE_BASE }}-backend:${{ steps.meta.outputs.version }}
-            ${{ env.IMAGE_BASE }}-backend:latest
-            ${{ env.IMAGE_BASE }}-backend:sha-${{ github.sha }}
+            ${{ env.IMAGE_BASE }}-api:${{ steps.meta.outputs.version }}
+            ${{ env.IMAGE_BASE }}-api:latest
+            ${{ env.IMAGE_BASE }}-api:sha-${{ github.sha }}
           build-args: |
             APP_VERSION=${{ steps.meta.outputs.version }}
             GIT_SHA=${{ github.sha }}
             BUILD_TIME=${{ steps.meta.outputs.build_time }}
 
-      # ---- Frontend ----
-      - name: Build & push frontend
-        id: build-frontend
+      # ---- Worker ----
+      - name: Build & push worker
+        id: build-worker
         uses: docker/build-push-action@v7
         with:
-          context: ./frontend
-          file: frontend/Dockerfile
+          context: .
+          file: Dockerfile
+          target: worker
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.IMAGE_BASE }}-frontend:${{ steps.meta.outputs.version }}
-            ${{ env.IMAGE_BASE }}-frontend:latest
-            ${{ env.IMAGE_BASE }}-frontend:sha-${{ github.sha }}
+            ${{ env.IMAGE_BASE }}-worker:${{ steps.meta.outputs.version }}
+            ${{ env.IMAGE_BASE }}-worker:latest
+            ${{ env.IMAGE_BASE }}-worker:sha-${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
+
+      # ---- Web ----
+      - name: Build & push web
+        id: build-web
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          target: web
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.IMAGE_BASE }}-web:${{ steps.meta.outputs.version }}
+            ${{ env.IMAGE_BASE }}-web:latest
+            ${{ env.IMAGE_BASE }}-web:sha-${{ github.sha }}
           build-args: |
             APP_VERSION=${{ steps.meta.outputs.version }}
             GIT_SHA=${{ github.sha }}
             BUILD_TIME=${{ steps.meta.outputs.build_time }}
             NEXT_PUBLIC_SITE_URL=${{ vars.NEXT_PUBLIC_SITE_URL || 'https://example.com' }}
-            BACKEND_URL=http://backend:8000
+            BACKEND_URL=http://api:3001
 
       # ---- Release Manifest（release.json）----
       - name: Build release.json
@@ -146,22 +139,23 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           GIT_SHA: ${{ github.sha }}
           IMAGE_BASE: ${{ env.IMAGE_BASE }}
-          DIGEST_BACKEND: ${{ steps.build-backend.outputs.digest }}
-          DIGEST_FRONTEND: ${{ steps.build-frontend.outputs.digest }}
+          DIGEST_API: ${{ steps.build-api.outputs.digest }}
+          DIGEST_WORKER: ${{ steps.build-worker.outputs.digest }}
+          DIGEST_WEB: ${{ steps.build-web.outputs.digest }}
         run: |
           python3 - <<'PY'
           import json, os
           base = os.environ["IMAGE_BASE"]
           ver = os.environ["VERSION"]
-          digest_backend = os.environ["DIGEST_BACKEND"]
-          digest_frontend = os.environ["DIGEST_FRONTEND"]
           manifest = {
               "version": f"{ver}",
               "git_sha": os.environ["GIT_SHA"],
-              "frontend_image": f"{base}-frontend:{ver}",
-              "backend_image": f"{base}-backend:{ver}",
-              "frontend_digest": digest_frontend,
-              "backend_digest": digest_backend,
+              "api_image": f"{base}-api:{ver}",
+              "worker_image": f"{base}-worker:{ver}",
+              "web_image": f"{base}-web:{ver}",
+              "api_digest": os.environ["DIGEST_API"],
+              "worker_digest": os.environ["DIGEST_WORKER"],
+              "web_digest": os.environ["DIGEST_WEB"],
               "published_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
           }
           with open("release.json", "w") as f:
@@ -189,12 +183,14 @@ jobs:
             - **Build Time**: ${{ steps.meta.outputs.build_time }}
 
             ### Docker Images
-            - `${{ env.IMAGE_BASE }}-frontend:${{ steps.meta.outputs.version }}`
-            - `${{ env.IMAGE_BASE }}-backend:${{ steps.meta.outputs.version }}`
+            - `${{ env.IMAGE_BASE }}-api:${{ steps.meta.outputs.version }}`
+            - `${{ env.IMAGE_BASE }}-worker:${{ steps.meta.outputs.version }}`
+            - `${{ env.IMAGE_BASE }}-web:${{ steps.meta.outputs.version }}`
 
             ### Image Digests
-            backend: `${{ steps.build-backend.outputs.digest }}`
-            frontend: `${{ steps.build-frontend.outputs.digest }}`
+            api: `${{ steps.build-api.outputs.digest }}`
+            worker: `${{ steps.build-worker.outputs.digest }}`
+            web: `${{ steps.build-web.outputs.digest }}`
 
             ### Upgrade
             ```bash

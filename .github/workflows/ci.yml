@@ -11,47 +11,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend-test:
-    name: Backend (compile + unittest)
+  monorepo-test:
+    name: Monorepo (lint + typecheck + test)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Compile check
-        run: python -m compileall -q app
-      - name: Run tests
-        run: python -m unittest discover -s tests -v
-
-  frontend-build:
-    name: Frontend (npm ci + build)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install dependencies
-        run: npm ci
+          cache: pnpm
+      - name: Enable pnpm & install
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
       - name: Lint
-        run: npm run lint
-      - name: Build
-        run: npm run build
-        env:
-          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://example.com' }}
-          BACKEND_URL: http://backend:8000
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
 
   docker-compose-config:
     name: Docker Compose config
@@ -63,5 +41,5 @@ jobs:
       - name: Validate prod compose
         run: |
           mkdir -p .deploy
-          echo "APP_VERSION=1.1.0" > .deploy/version.env
+          echo "APP_VERSION=1.0.0" > .deploy/version.env
           docker compose -f docker-compose.prod.yml --env-file .deploy/version.env config -q

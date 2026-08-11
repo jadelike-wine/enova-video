@@ -199,33 +199,29 @@ image_digest() {
 }
 
 # =============================================================================
-# SQLite 一致性 backup
-# 通过 backend 容器内 sqlite3.Connection.backup() 生成一致性快照。
-# 输出：backups/<utc>_v<cur>_before_v<target>.db（宿主机路径）
+# PostgreSQL 一致性 backup
+# 通过 postgres 容器内 pg_dump 生成一致性快照（非 SQLite）。
+# 输出：backups/<utc>_v<cur>_before_v<target>.sql（宿主机路径）
 # =============================================================================
-backup_sqlite() {
+backup_database() {
   local cur="$1" target="$2"
-  local ts dbfile in_container_path
+  local ts dbfile user db
   ts="$(date -u +%Y%m%dT%H%M%SZ)"
-  dbfile="$BACKUP_DIR/${ts}_v${cur}_before_v${target}.db"
-  in_container_path="/backups/$(basename "$dbfile")"
+  dbfile="$BACKUP_DIR/${ts}_v${cur}_before_v${target}.sql"
   mkdir -p "$BACKUP_DIR"
 
-  info "database_backup=started target=$in_container_path"
-  if ! docker compose -f "$PROD_COMPOSE" exec -T backend python -c 'import sqlite3,sys
-src="/data/app.db"; dst=sys.argv[1]
-try:
-    s=sqlite3.connect(src); d=sqlite3.connect(dst)
-    s.backup(d); d.close(); s.close()
-    print("BACKUP_OK")
-except Exception as e:
-    print("BACKUP_ERR", e); sys.exit(1)
-' "$in_container_path"; then
+  # 从 postgres 容器读取实际用户/库名（避免硬编码，兼容 .env 覆盖）
+  user="$(docker compose -f "$PROD_COMPOSE" exec -T postgres printenv POSTGRES_USER 2>/dev/null | tr -d '\r' || echo enova)"
+  db="$(docker compose -f "$PROD_COMPOSE" exec -T postgres printenv POSTGRES_DB 2>/dev/null | tr -d '\r' || echo enova)"
+
+  info "database_backup=started file=$dbfile user=$user db=$db"
+  if ! docker compose -f "$PROD_COMPOSE" exec -T postgres pg_dump -U "$user" -d "$db" > "$dbfile" 2>>"$LOG_FILE"; then
     error "database_backup=failed error_code=DATABASE_BACKUP_FAILED"
+    rm -f "$dbfile"
     return 1
   fi
-
   if [ ! -s "$dbfile" ]; then
+    rm -f "$dbfile"
     error "database_backup=failed error_code=DATABASE_BACKUP_FAILED file_empty=1"
     return 1
   fi
@@ -238,9 +234,9 @@ prune_backups() {
   local keep="$UPDATE_BACKUP_KEEP"
   local protected="$1"  # 需保留的文件（当前/上一个部署仍可能需要）
   local list
-  list="$(ls -1 "$BACKUP_DIR"/*.db 2>/dev/null || true)"
+  list="$(ls -1 "$BACKUP_DIR"/*.sql 2>/dev/null || true)"
   [ -z "$list" ] && return 0
-  # 按修改时间倒序，保留前 keep 名
+  # 按名称排序（含 UTC 时间戳），保留前 keep 名
   local newest
   newest="$(printf '%s\n' "$list" | sort | tail -n "$keep")"
   local f
@@ -255,22 +251,16 @@ prune_backups() {
 # =============================================================================
 # 健康检查（真实 HTTP，不只看容器状态）
 # =============================================================================
-# backend /health（容器内直连）
-backend_health() {
-  docker compose -f "$PROD_COMPOSE" exec -T backend python -c \
-    "import urllib.request,sys
-try:
-    r=urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)
-    sys.exit(0 if r.status==200 else 1)
-except Exception:
-    sys.exit(1)
-"
+# api /health（容器内直连，验证 api 已就绪 -> 迁移已执行）
+api_health() {
+  docker compose -f "$PROD_COMPOSE" exec -T api sh -c \
+    'wget -q -O /dev/null http://127.0.0.1:3001/api/v1/health' 2>/dev/null
 }
 
 # 失败时保存 new 版本的 Docker 日志（Rollback 后仍可调查）
 save_failed_logs() {
   local tag="$1"
-  for svc in backend frontend; do
+  for svc in api worker web; do
     if docker compose -f "$PROD_COMPOSE" ps --services 2>/dev/null | grep -qx "$svc"; then
       docker compose -f "$PROD_COMPOSE" logs --tail=500 "$svc" > "$LOG_DIR/${tag}-${svc}-${UPDATE_ID}.log" 2>&1 || true
       info "failed_logs_saved svc=$svc file=${LOG_DIR}/${tag}-${svc}-${UPDATE_ID}.log"
@@ -278,18 +268,17 @@ save_failed_logs() {
   done
 }
 
-# 全链路健康检查：backend /health + frontend / + frontend /api/health
-# 返回 0 = 全部健康；返回 1 = 失败（参数决定是否输出保存日志）
+# 全链路健康检查：web / + web /api/v1/health（经 Next rewrite 代理到 api，等效检验 api）
+# 返回 0 = 全部健康；返回 1 = 失败
 wait_healthy() {
   local attempts="$HEALTH_ATTEMPTS" interval="$HEALTH_INTERVAL"
   local i
   for ((i=1; i<=attempts; i++)); do
     local ok=1
-    if ! backend_health; then ok=0; fi
     if ! curl -fsS --max-time 5 "$FRONTEND_URL/" >/dev/null 2>&1; then ok=0; fi
-    if ! curl -fsS --max-time 5 "$FRONTEND_URL/api/health" >/dev/null 2>&1; then ok=0; fi
+    if ! curl -fsS --max-time 5 "$FRONTEND_URL/api/v1/health" >/dev/null 2>&1; then ok=0; fi
     if [ "$ok" -eq 1 ]; then
-      info "healthcheck=ok attempts=$i backend=ok frontend=ok api_health=ok"
+      info "healthcheck=ok attempts=$i web=ok api_proxy=ok"
       return 0
     fi
     if [ "$i" -lt "$attempts" ]; then
@@ -312,14 +301,29 @@ precheck() {
 
 # =============================================================================
 # 数据库恢复（仅用于回滚，非常规操作）
+# PostgreSQL：停 api/worker -> drop+recreate 库 -> 导入备份 -> 由 perform_rollback 重启。
 # =============================================================================
 restore_database() {
   local file="$1"
-  info "database_restore=started file=$file"
-  docker compose -f "$PROD_COMPOSE" stop backend || true
-  docker compose -f "$PROD_COMPOSE" run --rm --no-deps -T backend sh -c \
-    "rm -f /data/app.db-wal /data/app.db-shm && cp '/backups/$(basename "$file")' /data/app.db && echo RESTORE_OK" \
-    || { error "database_restore=failed error_code=DATABASE_RESTORE_FAILED"; return 1; }
+  local user db
+  user="$(docker compose -f "$PROD_COMPOSE" exec -T postgres printenv POSTGRES_USER 2>/dev/null | tr -d '\r' || echo enova)"
+  db="$(docker compose -f "$PROD_COMPOSE" exec -T postgres printenv POSTGRES_DB 2>/dev/null | tr -d '\r' || echo enova)"
+  info "database_restore=started file=$file user=$user db=$db"
+
+  # 先停应用容器，避免恢复期间写入
+  docker compose -f "$PROD_COMPOSE" stop api worker || true
+
+  # drop + recreate（清空旧数据，再用备份覆盖；会丢失备份之后的新数据）
+  if ! docker compose -f "$PROD_COMPOSE" exec -T postgres sh -c \
+    "psql -v ON_ERROR_STOP=1 -U '$user' -d postgres -c 'DROP DATABASE IF EXISTS \"$db\"' -c 'CREATE DATABASE \"$db\" OWNER \"$user\"'" >/dev/null 2>>"$LOG_FILE"; then
+    error "database_restore=failed error_code=DATABASE_RESTORE_FAILED reason=drop_create"
+    return 1
+  fi
+
+  if ! docker compose -f "$PROD_COMPOSE" exec -T postgres sh -c "psql -v ON_ERROR_STOP=1 -U '$user' -d '$db'" < "$file" >>"$LOG_FILE" 2>&1; then
+    error "database_restore=failed error_code=DATABASE_RESTORE_FAILED reason=import"
+    return 1
+  fi
   info "database_restore=completed"
   return 0
 }
@@ -330,7 +334,7 @@ restore_database() {
 # =============================================================================
 perform_rollback() {
   local restore_db="$1"
-  local state prev db_backup frontend_img backend_img
+  local state prev db_backup api_img worker_img web_img
   state="$(read_state)"
   prev="$(printf '%s' "$state" | python3 -c 'import json,sys
 try:
@@ -342,8 +346,9 @@ except Exception:
     critical "rollback_failed error_code=UPDATE_ROLLBACK_FAILED reason=no_previous_version state=$STATE_FILE"
     return 1
   fi
-  frontend_img="${IMAGE_BASE}-frontend:${prev}"
-  backend_img="${IMAGE_BASE}-backend:${prev}"
+  api_img="${IMAGE_BASE}-api:${prev}"
+  worker_img="${IMAGE_BASE}-worker:${prev}"
+  web_img="${IMAGE_BASE}-web:${prev}"
   db_backup="$(printf '%s' "$state" | python3 -c 'import json,sys
 try:
     print(json.load(sys.stdin).get("database_backup") or "")
@@ -351,7 +356,7 @@ except Exception:
     print("")
 ')"
 
-  info "rollback previous_version=$prev frontend_image=$frontend_img backend_image=$backend_img restore_db=$restore_db"
+  info "rollback previous_version=$prev api_image=$api_img worker_image=$worker_img web_image=$web_img restore_db=$restore_db"
 
   # 停止当前（候选失败）版本
   info "rollback stop_current=start"

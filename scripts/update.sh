@@ -89,21 +89,24 @@ if [ "$cmp" -eq 1 ]; then
   warn "update downgrade=1 current=$CURRENT target=$TARGET (explicit downgrade allowed)"
 fi
 
-FRONTEND_IMG="${IMAGE_BASE}-frontend:${TARGET}"
-BACKEND_IMG="${IMAGE_BASE}-backend:${TARGET}"
+API_IMG="${IMAGE_BASE}-api:${TARGET}"
+WORKER_IMG="${IMAGE_BASE}-worker:${TARGET}"
+WEB_IMG="${IMAGE_BASE}-web:${TARGET}"
 
 # ---- dry-run：只打印计划 ----
 if [ "$DRY_RUN" -eq 1 ]; then
   info "update_plan dry_run=1 current=$CURRENT target=$TARGET"
-  info "update_plan frontend_image=$FRONTEND_IMG"
-  info "update_plan backend_image=$BACKEND_IMG"
+  info "update_plan api_image=$API_IMG"
+  info "update_plan worker_image=$WORKER_IMG"
+  info "update_plan web_image=$WEB_IMG"
   info "update_plan steps=precheck,database_backup,pull,verify,compose_up,healthcheck"
-  info "update_plan database_backup_file_placeholder=backups/<utc>_v${CURRENT}_before_v${TARGET}.db"
+  info "update_plan database_backup_file_placeholder=backups/<utc>_v${CURRENT}_before_v${TARGET}.sql"
   echo "--- DRY RUN (no changes) ---"
   echo "current: v$CURRENT"
   echo "target : v$TARGET"
-  echo "frontend: $FRONTEND_IMG"
-  echo "backend : $BACKEND_IMG"
+  echo "api    : $API_IMG"
+  echo "worker : $WORKER_IMG"
+  echo "web    : $WEB_IMG"
   exit 0
 fi
 
@@ -121,55 +124,56 @@ if ! wait_healthy; then
   exit 1
 fi
 
-# ---- SQLite backup（必须成功才能继续）----
-DB_BACKUP="$(backup_sqlite "$CURRENT" "$TARGET")" || {
+# ---- PostgreSQL backup（必须成功才能继续）----
+DB_BACKUP="$(backup_database "$CURRENT" "$TARGET")" || {
   critical "update_aborted error_code=UPDATE_BACKUP_FAILED"
   exit 1
 }
 
 # ---- 保存 deployment state（记录 previous 的一切，供回滚）----
 UPDATE_ID_FOR_STATE="$UPDATE_ID"
-prev_frontend_digest="$(image_digest "${IMAGE_BASE}-frontend:${CURRENT}" || true)"
-prev_backend_digest="$(image_digest "${IMAGE_BASE}-backend:${CURRENT}" || true)"
+prev_api_digest="$(image_digest "${IMAGE_BASE}-api:${CURRENT}" || true)"
+prev_worker_digest="$(image_digest "${IMAGE_BASE}-worker:${CURRENT}" || true)"
+prev_web_digest="$(image_digest "${IMAGE_BASE}-web:${CURRENT}" || true)"
 STATE="$(python3 -c 'import json,sys
 d={
  "previous_version": sys.argv[1],
  "current_version": sys.argv[2],
- "previous_frontend_image": sys.argv[3],
- "previous_backend_image": sys.argv[4],
- "previous_frontend_digest": sys.argv[5],
- "previous_backend_digest": sys.argv[6],
- "database_backup": sys.argv[7],
- "update_id": sys.argv[8],
+ "previous_api_image": sys.argv[3],
+ "previous_worker_image": sys.argv[4],
+ "previous_web_image": sys.argv[5],
+ "previous_api_digest": sys.argv[6],
+ "previous_worker_digest": sys.argv[7],
+ "previous_web_digest": sys.argv[8],
+ "database_backup": sys.argv[9],
+ "update_id": sys.argv[10],
  "status": "in_progress",
  "started_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
 }
 print(json.dumps(d, ensure_ascii=False))
-' "$CURRENT" "$TARGET" "${IMAGE_BASE}-frontend:${CURRENT}" "${IMAGE_BASE}-backend:${CURRENT}" \
-  "$prev_frontend_digest" "$prev_backend_digest" "$DB_BACKUP" "$UPDATE_ID_FOR_STATE")"
+' "$CURRENT" "$TARGET" \
+  "${IMAGE_BASE}-api:${CURRENT}" "${IMAGE_BASE}-worker:${CURRENT}" "${IMAGE_BASE}-web:${CURRENT}" \
+  "$prev_api_digest" "$prev_worker_digest" "$prev_web_digest" "$DB_BACKUP" "$UPDATE_ID_FOR_STATE")"
 write_state "$STATE"
 info "update state_saved previous=$CURRENT target=$TARGET backup=$DB_BACKUP"
 
 # ---- Pull 新镜像 ----
-info "update frontend_pull=start image=$FRONTEND_IMG"
-if ! docker pull "$FRONTEND_IMG"; then
-  critical "update_failed error_code=UPDATE_PULL_FAILED image=$FRONTEND_IMG"
-  exit 1
-fi
-info "update frontend_pull=completed image=$FRONTEND_IMG"
-info "update backend_pull=start image=$BACKEND_IMG"
-if ! docker pull "$BACKEND_IMG"; then
-  critical "update_failed error_code=UPDATE_PULL_FAILED image=$BACKEND_IMG"
-  exit 1
-fi
-info "update backend_pull=completed image=$BACKEND_IMG"
+for img in "$API_IMG" "$WORKER_IMG" "$WEB_IMG"; do
+  info "update pull=start image=$img"
+  if ! docker pull "$img"; then
+    critical "update_failed error_code=UPDATE_PULL_FAILED image=$img"
+    exit 1
+  fi
+  info "update pull=completed image=$img"
+done
 
 # ---- 校验 digest ----
-frontend_digest="$(image_digest "$FRONTEND_IMG" || true)"
-backend_digest="$(image_digest "$BACKEND_IMG" || true)"
-info "update frontend_digest=$frontend_digest backend_digest=$backend_digest"
-if [ -z "$frontend_digest" ] || [ -z "$backend_digest" ]; then
-  critical "update_failed error_code=UPDATE_IMAGE_VERIFY_FAILED reason=digest_missing frontend=$frontend_digest backend=$backend_digest"
+api_digest="$(image_digest "$API_IMG" || true)"
+worker_digest="$(image_digest "$WORKER_IMG" || true)"
+web_digest="$(image_digest "$WEB_IMG" || true)"
+info "update api_digest=$api_digest worker_digest=$worker_digest web_digest=$web_digest"
+if [ -z "$api_digest" ] || [ -z "$worker_digest" ] || [ -z "$web_digest" ]; then
+  critical "update_failed error_code=UPDATE_IMAGE_VERIFY_FAILED reason=digest_missing api=$api_digest worker=$worker_digest web=$web_digest"
   exit 1
 fi
 

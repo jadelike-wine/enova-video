@@ -1,0 +1,126 @@
+# syntax=docker/dockerfile:1
+# =============================================================================
+# 新架构（Monorepo）统一 Dockerfile。
+#
+# 一个仓库根级 Dockerfile，通过 --target 构建三个镜像：
+#   docker build --target api     -t <img>-api:      # NestJS API
+#   docker build --target worker  -t <img>-worker:   # BullMQ Worker
+#   docker build --target web     -t <img>-web:      # Next.js 前端
+#
+# 构建上下文 = 仓库根（COPY node_modules 等 autoclean 见 .dockerignore）。
+# 依赖 pnpm workspace，@enova/* 通过符号链接在 node_modules 中解析。
+# =============================================================================
+
+ARG APP_VERSION=dev
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+
+#############################
+# 阶段 0: 基础（pnpm 运行时）
+#############################
+FROM node:22-alpine AS base
+RUN apk add --no-cache libc6-compat
+# 启用 corepack 以锁定 pnpm 版本（与 packageManager 一致）
+RUN corepack enable
+WORKDIR /app
+
+#############################
+# 阶段 1: 安装全部依赖（含 workspace 符号链接）
+#############################
+FROM base AS deps
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY tsconfig.base.json ./
+# 先复制各子包 package.json，避免依赖变更时全量重新 resolve
+COPY apps/api/package.json apps/api/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/db/package.json packages/db/package.json
+COPY packages/provider/package.json packages/provider/package.json
+COPY packages/billing/package.json packages/billing/package.json
+COPY packages/payment/package.json packages/payment/package.json
+COPY packages/sdk/package.json packages/sdk/package.json
+COPY packages/migrator/package.json packages/migrator/package.json
+RUN pnpm install --frozen-lockfile --prod=false
+
+#############################
+# 阶段 2: 构建（编译 workspace 包 + api + worker + web）
+#############################
+FROM deps AS build
+# 构建期变量（web 需要 NEXT_PUBLIC_SITE_URL，api/web 的 rewrite 需要 BACKEND_URL）
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
+ARG BACKEND_URL=http://localhost:3001
+ENV NODE_ENV=production \
+    NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL} \
+    BACKEND_URL=${BACKEND_URL}
+COPY . .
+# 先构建全部 workspace 包（顺序由 pnpm 依赖图决定）
+RUN pnpm --filter './packages/*' build
+# 各自应用构建
+RUN pnpm --filter @enova/api build
+RUN pnpm --filter @enova/worker build
+RUN pnpm --filter @enova/web build
+
+#############################
+# 阶段 3: API 运行时
+#############################
+FROM base AS api
+ARG APP_VERSION
+ARG GIT_SHA
+ARG BUILD_TIME
+LABEL org.opencontainers.image.title="enova-video-api" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
+ENV NODE_ENV=production
+# 复制依赖（含 workspace 符号链接）与 workspace 包产物
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages ./packages
+COPY --from=build /app/apps/api/dist ./apps/api/dist
+COPY --from=build /app/apps/api/package.json ./apps/api/package.json
+WORKDIR /app/apps/api
+EXPOSE 3001
+# 傻瓜化：容器启动前先执行 Drizzle 迁移（幂等，失败即退出 -> 健康检查失败 -> 自动回滚）。
+# 迁移文件夹默认位于 /app/packages/db/drizzle（已随 packages 复制）。
+CMD ["sh", "-c", "node /app/packages/db/dist/migrate.js \"$DATABASE_URL\" && exec node dist/main.js"]
+
+#############################
+# 阶段 4: Worker 运行时
+#############################
+FROM base AS worker
+ARG APP_VERSION
+ARG GIT_SHA
+ARG BUILD_TIME
+LABEL org.opencontainers.image.title="enova-video-worker" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
+ENV NODE_ENV=production
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages ./packages
+COPY --from=build /app/apps/worker/dist ./apps/worker/dist
+COPY --from=build /app/apps/worker/package.json ./apps/worker/package.json
+WORKDIR /app/apps/worker
+CMD ["node", "dist/main.js"]
+
+#############################
+# 阶段 5: Web（Next.js standalone）运行时
+#############################
+FROM base AS web
+ARG APP_VERSION
+ARG GIT_SHA
+ARG BUILD_TIME
+LABEL org.opencontainers.image.title="enova-video-web" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${GIT_SHA}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
+ENV NODE_ENV=production
+# standalone 模式：私有依赖已内联
+COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
+COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+WORKDIR /app/apps/web
+USER node
+EXPOSE 3000
+ENV PORT=3000 HOSTNAME=0.0.0.0
+CMD ["node", "server.js"]

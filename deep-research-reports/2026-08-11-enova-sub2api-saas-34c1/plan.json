@@ -1,0 +1,548 @@
+{
+  "schema_version": "1.0",
+  "mode": "heavy",
+  "format_id": "source_evidenced_saas_comparison_report",
+  "strategy": {
+    "relevant_dimensions": [
+      "by_topic",
+      "by_entity",
+      "by_requirement",
+      "by_process_stage",
+      "by_risk",
+      "by_evidence_type"
+    ],
+    "primary_dimension": "by_topic",
+    "rationale": "以商业化 SaaS 的独立能力域拆分源码取证工作包，并在每个能力域内用同一口径比较 enova-video 新架构、enova-video 旧架构与 sub2api。每项判断必须沿数据库模型、后端服务/API、前端或管理端入口、配置与测试/部署证据核对，区分能力名称存在、后端实现存在、端到端产品闭环和管理员运行时可控四个成熟度层级。全部研究对象、能力清单和来源范围在规划时已明确，因此各维度可并行执行，无需人为建立依赖；跨维度评分、Gap 分级、路线图和 Top 10 由报告阶段基于统一证据综合。"
+  },
+  "dimensions": [
+    {
+      "id": "d1",
+      "name": "运行架构、新旧路径与部署边界源码审计",
+      "description": "还原三个实际分析单元的可运行边界、模块职责、前后端调用关系与部署路径，建立后续能力判断的架构事实底座，并识别限制商业化扩展和维护的边界问题。",
+      "key_questions": [
+        "enova-video 新架构、旧架构和 sub2api 各自的后端、前端、worker、共享包、数据库、缓存、队列与外部服务如何连接，实际入口和调用链分别是什么？",
+        "enova-video 的 apps/api、apps/worker、apps/web 与 backend、frontend 在启动脚本、API client、容器、反向代理和生产脚本中分别处于什么状态，哪些能力只存在于迁移目标而非当前产品路径？",
+        "两仓的同步请求、异步任务、provider 调用、结果存储和失败恢复流程有哪些状态边界、扩展瓶颈和单点风险？",
+        "两仓部署代码对数据库迁移、Redis/队列、对象存储、密钥注入、备份回滚、水平扩展与观测性的支持达到什么成熟度？",
+        "哪些架构事实能支撑或限制商业化 SaaS 的规模化、可维护性与安全运营评分，哪些生产状态因缺少真实环境证据必须标为未知？"
+      ],
+      "focus": "优先核对 package/workspace 配置、启动入口、路由注册、API client、队列生产消费、provider 注册、compose/镜像/反向代理/运维脚本与测试；明确记录当前工作树时点，避免用 README、dist 或目录名称替代可运行证据。",
+      "context_from_briefing": "enova-video 同时存在 monorepo 新架构和仍可运行部署的 FastAPI/SQLite 旧架构；实际线上使用路径未知，是能力归属判断的高优先级不确定项。",
+      "sources": [
+        {
+          "category": "developer",
+          "description": "两仓工作区配置、应用入口、路由注册、API client、任务队列、provider 与对象存储源码"
+        },
+        {
+          "category": "official",
+          "description": "仓库内架构说明、环境样例、容器编排、部署运维、更新回滚和数据库迁移说明"
+        },
+        {
+          "category": "data",
+          "description": "测试、锁文件、生成契约和启动脚本所揭示的实际依赖版本与可运行路径"
+        }
+      ],
+      "lenses": [
+        {
+          "axis": "stance",
+          "value": "runtime_skeptic",
+          "rationale": "检查目录或文档声明是否缺少实际注册、调用或部署闭环"
+        },
+        {
+          "axis": "risk",
+          "value": "migration_boundary",
+          "rationale": "专门检查新旧架构并存造成的数据、API 和运营能力错判"
+        }
+      ],
+      "depth": "thorough",
+      "time_sensitivity": "源码演进速度中等；以 2026-08-11 当前工作树为时间上界，历史迁移和提交痕迹只用于解释演进，不推断真实生产部署状态。",
+      "scope_ownership": {
+        "owns": [
+          "新旧架构实际运行边界与前后端调用归属",
+          "异步生成与 provider 基础执行链路",
+          "部署、迁移、备份回滚和水平扩展基础设施证据",
+          "架构可扩展性与可维护性的源码评分依据"
+        ],
+        "excludes": [
+          "商业化商品与交易能力清单，由 d2 负责",
+          "计费账本和单位经济模型，由 d5 与 d8 负责",
+          "数据库商业实体逐表比较，由 d7 负责"
+        ],
+        "shared_topics": [
+          "配置的部署注入边界"
+        ],
+        "overlap_policy": "d1 只取证环境与部署层如何注入和启动配置；配置项分类、后台编辑和热生效链路由 d4 独占。"
+      },
+      "wave": 1,
+      "depends_on": [],
+      "dependency_inputs": []
+    },
+    {
+      "id": "d2",
+      "name": "商业化商品、交易与增长机制全量盘点",
+      "description": "按用户要求的 SaaS 商业化全清单逐项审计两仓，从数据实体到 API、业务状态机、用户界面与管理入口核实能力存在性、完整度和可运营性。",
+      "key_questions": [
+        "两仓对免费用户、付费用户、VIP/Pro/Enterprise、Plan、Subscription、月付/年付、Trial、套餐额度、免费额度、新用户赠额、每日/月度刷新与超额处理分别有哪些可验证实体、状态和用户流程；逐项未找到时是否明确记录为未发现？",
+        "两仓对充值、订单、支付、支付回调、退款、Invoice、Promo Code、Coupon、Referral 与 Affiliate 分别有哪些 schema、服务、接口、页面、后台操作和测试闭环？",
+        "两仓的支付适配器如何处理签名验真、幂等、金额与币种、订单状态转换、重复回调、退款和异常补偿，哪些仅为 sandbox 或占位实现？",
+        "商品目录、套餐权益、价格、结算周期和用户资格在两仓中如何建模，管理员能否不发版地创建、上下架或调整，历史订单与在途订阅如何保持一致？",
+        "sub2api 的商业化机制中哪些是通用 SaaS 能力、哪些依赖 API 聚合业务；对应设计对 AI Video SaaS 应直接借鉴、仅参考还是不应照搬，证据理由是什么？",
+        "基于功能存在、状态机完整、前后端闭环、测试与安全控制，同口径下两仓 SaaS 商业化、Billing、Pricing 和总体商业化成熟度应获得什么证据化评分？"
+      ],
+      "focus": "建立逐项能力矩阵，每项至少记录未发现/仅模型或配置/后端可用/端到端闭环/可运营成熟五级状态，并附 schema、service、controller/handler、前端页面、回调和测试位置；支付生产状态无法由源码证明时明确保留证据缺口。",
+      "context_from_briefing": "预研显示 sub2api 可能拥有密集的套餐、支付、联盟与分组能力，enova 新架构已有 payment、billing 基础，但是否形成完整商品和订阅生命周期尚待源码验证。",
+      "sources": [
+        {
+          "category": "developer",
+          "description": "两仓套餐、订阅、充值、订单、支付适配器、回调、退款、促销和推荐业务源码"
+        },
+        {
+          "category": "data",
+          "description": "商业化表结构、迁移、约束、状态字段、种子数据与自动化测试"
+        },
+        {
+          "category": "review",
+          "description": "用户购买页面、套餐展示、订单记录与管理员商业化操作页面的闭环证据"
+        }
+      ],
+      "lenses": [
+        {
+          "axis": "stance",
+          "value": "commercial_claim_skeptic",
+          "rationale": "用状态机、回调和页面闭环反证仅凭模块命名得出的商业化能力声明"
+        },
+        {
+          "axis": "stakeholder",
+          "value": "finance_operator",
+          "rationale": "检查订单、退款、对账和历史价格是否足以支持财务与运营工作"
+        }
+      ],
+      "depth": "thorough",
+      "time_sensitivity": "能力实现随源码中速变化；以 2026-08-11 当前工作树为上界，迁移历史用于识别演进，真实渠道开通、税务和发票合规状态不作源码外推。",
+      "scope_ownership": {
+        "owns": [
+          "套餐、订阅、试用和用户商业等级生命周期",
+          "充值、订单、支付、退款、发票与促销增长机制",
+          "商业化能力逐项存在性与产品闭环矩阵",
+          "SaaS 商业化、Billing 和 Pricing 评分的商品交易侧证据"
+        ],
+        "excludes": [
+          "积分扣费、成本价和毛利归因，由 d5 负责",
+          "后台用户处置与经营看板，由 d3 负责",
+          "权限执行与风控边界，由 d6 负责"
+        ],
+        "shared_topics": [
+          "Plan 与 Pricing 的管理入口"
+        ],
+        "overlap_policy": "d2 负责商品、交易状态和用户购买闭环；d3 只评估管理端能执行哪些操作，d5 只评估用量定价和账本正确性。"
+      },
+      "wave": 1,
+      "depends_on": [],
+      "dependency_inputs": []
+    },
+    {
+      "id": "d3",
+      "name": "管理员后台、用户处置与运营分析控制面审计",
+      "description": "逐页逐接口核实两个项目的 Admin/Dashboard/Console 能做什么、谁能做、是否形成操作闭环，并衡量管理员不改代码不重部署时的日常运营能力。",
+      "key_questions": [
+        "两仓管理员后台的信息架构、路由、导航、页面和后端管理接口分别覆盖哪些模块，哪些页面或按钮是占位、只读或缺少后端闭环？",
+        "用户列表、搜索、详情、状态、Ban/Disable、余额或额度调整、套餐/角色/权限修改、配置重置、API Key、使用记录、登录记录、IP 与风控信息分别是否存在，操作的验证、审计和回滚边界是什么？",
+        "Plan、Subscription、Order、Payment、Credit、Pricing、Model Pricing、Coupon、Promotion、Trial 与 Revenue 管理分别提供哪些查询和变更能力，是否支持筛选、批量操作和异常处置？",
+        "Dashboard、DAU、MAU、新增/活跃用户、请求量、Token 或 Credits 消耗、图片/视频生成量、成功失败率、Revenue、Cost、Profit、API/模型统计和用户排行榜分别是否存在，指标口径和聚合查询是什么？",
+        "客服、运营、财务和超级管理员的典型任务在现有后台中能完成多少，哪些敏感操作缺少二次确认、审计日志、原因记录或最小权限控制？",
+        "两仓管理后台和运营能力应如何按功能覆盖、闭环、权限、安全与指标可信度评分，sub2api 的哪些具体页面/API 设计值得 enova 直接借鉴或避免？"
+      ],
+      "focus": "将前端 admin 路由、页面组件、API client 与后端 admin router/handler/service、数据库写入及审计记录一一映射；区分看见数据、能安全操作和能驱动经营决策三个层级。",
+      "context_from_briefing": "管理员控制面是本次重点；预研定位到 sub2api 的 backend/internal/handler/admin 与 frontend/src/views/admin，以及 enova 新架构 apps/api/src/admin，但实际功能闭环和角色边界未知。",
+      "sources": [
+        {
+          "category": "review",
+          "description": "管理员前端路由、导航、页面、表单、筛选、图表、状态反馈和 API client"
+        },
+        {
+          "category": "developer",
+          "description": "管理员 handler/controller/service、查询聚合、变更事务、导出和异常处理源码"
+        },
+        {
+          "category": "data",
+          "description": "后台指标查询、用户处置字段、操作日志、测试与种子数据"
+        }
+      ],
+      "lenses": [
+        {
+          "axis": "stakeholder",
+          "value": "support_and_operations",
+          "rationale": "检查客服与运营是否能在不发版情况下完成真实用户处置任务"
+        },
+        {
+          "axis": "stance",
+          "value": "ui_closure_skeptic",
+          "rationale": "检查页面存在但接口、权限、审计或状态反馈缺失的假闭环"
+        },
+        {
+          "axis": "stakeholder",
+          "value": "founder_metrics",
+          "rationale": "检查经营指标是否足以支撑收入、成本、毛利与用户活跃决策"
+        }
+      ],
+      "depth": "thorough",
+      "time_sensitivity": "管理功能随产品版本中速变化；以 2026-08-11 当前前后端源码为上界，不将演示数据或未接线组件视为当前运营能力。",
+      "scope_ownership": {
+        "owns": [
+          "管理员页面与后台 API 的逐项功能闭环",
+          "用户管理、商业化管理和系统运营的可执行操作",
+          "经营看板指标覆盖与聚合口径",
+          "管理后台、运营能力和数据分析评分依据"
+        ],
+        "excludes": [
+          "底层认证授权模型和中间件执行，由 d6 负责",
+          "系统设置的数据模型与热生效，由 d4 负责",
+          "商业交易状态机正确性，由 d2 负责"
+        ],
+        "shared_topics": [
+          "管理员敏感操作的权限与审计"
+        ],
+        "overlap_policy": "d3 记录后台暴露的操作、用户体验和运营闭环；d6 专门审计权限判定、最小授权和审计强制执行，不重复盘点页面。"
+      },
+      "wave": 1,
+      "depends_on": [],
+      "dependency_inputs": []
+    },
+    {
+      "id": "d4",
+      "name": "System Settings、动态配置与安全边界审计",
+      "description": "建立两仓配置来源与运行时生效矩阵，核实 sub2api 的 settings 设计及 enova 写死项，判断 enova 是否需要统一 System Settings 系统及其安全分层。",
+      "key_questions": [
+        "两仓 env、配置文件、代码常量、数据库 settings、缓存和 feature flags 分别承载哪些配置，读取优先级、类型校验、默认值、作用域和重启要求是什么？",
+        "模型、Provider、Endpoint、API Key、Pricing、Default Model、Feature Flag、Signup、Invite Code、Maintenance Mode、Rate/并发/User Limit、Credit/Trial Rules、Payment、SMTP、OAuth、Storage、CDN、Webhook、Notification、System Prompt、Branding、Logo、Site Name 与 SEO 能否由管理员动态修改；逐项未发现时如何记录？",
+        "sub2api 的 settings/system config 是否具备 schema 或类型注册、敏感值脱敏/加密、权限、审计、缓存失效、并发更新和多实例一致性，配置变更是否真正到达业务读取点？",
+        "enova-video 哪些产品行为当前写死在 env、代码常量或静态配置中，改变它们是否需要重启或重新部署，对运营效率和安全的影响是什么？",
+        "哪些配置适合进入统一数据库 Settings，哪些敏感密钥或基础设施参数应留在环境/IAM 层，哪些应建成独立领域实体而非通用 key-value？",
+        "统一 System Settings 的命名空间、类型、版本、校验、缓存、审计、密钥引用、灰度发布和回滚应如何设计，且如何兼容 enova 新旧架构迁移？"
+      ],
+      "focus": "从定义、管理接口、前端表单、持久化、缓存和最终业务读取点完整跟踪配置；把可编辑与可安全热生效分开，尤其避免建议将支付、数据库、对象存储和 provider 真密钥无条件后台化。",
+      "context_from_briefing": "动态配置范围是主要争议点；预研假设 sub2api 覆盖更广，但 settings 的类型、安全、热生效和审计边界仍未核实，enova 已有 settings 基础但环境变量依赖可能较多。",
+      "sources": [
+        {
+          "category": "developer",
+          "description": "配置 schema、settings registry/model/service、缓存、业务读取点、管理接口与前端表单源码"
+        },
+        {
+          "category": "data",
+          "description": "settings 表与迁移、默认配置、约束、版本字段、审计记录及配置相关测试"
+        },
+        {
+          "category": "official",
+          "description": "环境变量样例、部署配置和运维说明中关于重启、密钥与运行时配置的约束"
+        }
+      ],
+      "lenses": [
+        {
+          "axis": "tradeoff",
+          "value": "operability_vs_secret_safety",
+          "rationale": "同时检查后台化提升运营效率与扩大敏感配置攻击面的冲突"
+        },
+        {
+          "axis": "stance",
+          "value": "runtime_effect_skeptic",
+          "rationale": "反证只写入 settings 表却未被业务服务热读取的伪动态配置"
+        }
+      ],
+      "depth": "thorough",
+      "time_sensitivity": "配置能力随版本中速变化；以 2026-08-11 当前工作树为上界，真实生产密钥和值不可见，相关结论仅限机制而非部署状态。",
+      "scope_ownership": {
+        "owns": [
+          "配置来源、优先级、校验、缓存与运行时生效矩阵",
+          "用户点名系统配置项的逐项动态可控性",
+          "统一 System Settings 架构与敏感配置分层建议",
+          "系统配置成熟度评分依据"
+        ],
+        "excludes": [
+          "provider 生成执行链路，由 d1 与 d8 负责",
+          "Plan 和模型价格的业务计费语义，由 d2 与 d5 负责",
+          "管理员其他页面功能，由 d3 负责"
+        ],
+        "shared_topics": [
+          "后台配置表单",
+          "配置的部署注入边界"
+        ],
+        "overlap_policy": "d4 独占配置从编辑到生效的全链路；d3 只记录设置页面在后台信息架构中的存在和操作体验，d1 只记录环境与部署注入方式。"
+      },
+      "wave": 1,
+      "depends_on": [],
+      "dependency_inputs": []
+    },
+    {
+      "id": "d5",
+      "name": "Credit、用量计费、Pricing 与财务一致性审计",
+      "description": "审计两仓余额、积分、配额、用量、价格和扣退费账本，区分售价与成本，评价按请求、模型和资源计费以及限额策略的正确性和商业可用性。",
+      "key_questions": [
+        "两仓的法币余额、Credit/Points/Token/Quota、套餐额度、赠额和可用余额如何定义并映射到表、类型和 API，是否存在概念混用或不可审计的原地余额修改？",
+        "按请求、模型、资源、输入输出 token、图片、视频时长/分辨率/质量、存储或第三方 API 的计价规则如何表示，是否区分成本价、售价、倍率和 Margin？",
+        "预留、扣费、结算、释放、失败退款、重试与重复事件的状态机和事务边界是什么，幂等键、账本记录和余额一致性如何保证？",
+        "新用户赠额、每日/月度额度、套餐刷新、免费额度、超额处理、不同用户等级和模型的限额/限流/并发/API Rate Limit 如何执行，分布式部署下是否仍一致？",
+        "用户与管理员能查询哪些用量明细、余额变动、价格快照和异常记录，是否足以解释一笔扣费并支持对账与申诉？",
+        "两仓 Billing、Pricing 与相关可维护性应获什么评分，sub2api 的倍率、分组或 token 模型中哪些可直接抽象复用，哪些不适合异步视频任务？"
+      ],
+      "focus": "沿价格定义、报价、预留、任务执行、最终结算、失败补偿和明细展示追踪一笔完整交易；优先检查事务、幂等、价格快照、不可变账本、分布式限流与测试，不以余额字段存在代替计费系统成熟。",
+      "context_from_briefing": "enova 新架构已有 billing、wallet、credits 与 worker 最终失败幂等释放不变量；sub2api 可能采用 API 聚合的 group/rate/token 模型，二者业务单位不可直接等同。",
+      "sources": [
+        {
+          "category": "developer",
+          "description": "钱包、积分、用量、价格、预留扣退费、限流并发和任务结算领域源码"
+        },
+        {
+          "category": "data",
+          "description": "账本、余额、usage、pricing、配额表结构，事务约束、迁移、队列契约与故障测试"
+        },
+        {
+          "category": "review",
+          "description": "用户用量/账单页面与管理员余额、定价、用量查询操作的可解释性证据"
+        }
+      ],
+      "lenses": [
+        {
+          "axis": "stakeholder",
+          "value": "billing_auditor",
+          "rationale": "检查每笔扣费、退款和余额变动能否重放与对账"
+        },
+        {
+          "axis": "failure_mode",
+          "value": "duplicate_and_partial_failure",
+          "rationale": "覆盖任务重试、重复回调、worker 崩溃和部分失败下的资金一致性"
+        },
+        {
+          "axis": "domain_fit",
+          "value": "async_video_vs_api_tokens",
+          "rationale": "检验 sub2api 倍率计费对异步、多资源视频任务的迁移边界"
+        }
+      ],
+      "depth": "thorough",
+      "time_sensitivity": "计费实现随版本中速变化且高风险；以 2026-08-11 当前源码和迁移为上界，真实价格、成本和经营数据未知时不得虚构 Margin 或 Revenue。",
+      "scope_ownership": {
+        "owns": [
+          "余额、积分、配额、用量与不可变账本语义",
+          "按请求、模型和资源定价与限额执行",
+          "预留扣费、结算、失败退款与并发幂等",
+          "Billing 和 Pricing 评分的计费正确性证据"
+        ],
+        "excludes": [
+          "套餐购买、订单和支付回调，由 d2 负责",
+          "AI Video 实际成本事件和毛利数据模型，由 d8 负责",
+          "用户权限和管理员角色，由 d6 负责"
+        ],
+        "shared_topics": [
+          "生成任务的计费结算",
+          "Plan 与 Pricing 的管理入口"
+        ],
+        "overlap_policy": "d5 只审计用户侧售价、额度与账本结算；d8 只审计并设计资源实际成本归因与单位经济分析，d2 只审计商品购买和支付。"
+      },
+      "wave": 1,
+      "depends_on": [],
+      "dependency_inputs": []
+    },
+    {
+      "id": "d6",
+      "name": "身份、用户生命周期、RBAC、风控与审计审计",
+      "description": "核实两仓认证、用户状态、角色权限、API Key、范围控制、登录安全、限流风控和审计能力，判断 enova 当前模型能否支撑多类后台岗位与企业化。",
+      "key_questions": [
+        "两仓用户注册、登录、session/token、OAuth、密码或验证码、注销、找回与账号状态生命周期如何实现，敏感信息、session secret 和 API Key 如何存储与轮换？",
+        "user、admin、super admin、role、permission、scope 与资源归属在 schema、middleware/guard、route 和前端导航中如何表达，是否只是管理员布尔值或真正 RBAC？",
+        "现有权限模型能否分别表达用户后台、Admin、Operator、Customer Support、Finance、Developer 与 Super Admin 的最小权限，敏感操作是否有服务端强制校验？",
+        "Ban/Disable、注册开关、Invite Code、IP、登录记录、异常行为、API Rate Limit、并发限制和不同用户等级限制如何执行，是否存在分布式一致性或绕过风险？",
+        "用户、权限、配置、余额和订单等关键变更是否形成包含操作者、目标、前后值、原因、IP、时间和请求关联的审计记录，能否查询与追责？",
+        "团队、组织、企业租户、成员角色、租户级配额与数据隔离是否存在；未发现时，当前模型的演进阻力和适宜阶段是什么？",
+        "两仓用户体系与权限体系应获什么评分，sub2api 的哪些权限/用户管理设计值得借鉴，哪些二元管理员设计会限制 enova 后续运营？"
+      ],
+      "focus": "从数据库字段到认证 middleware/guard、controller/handler、资源查询条件和前端 guard 验证服务端授权；重点检查布尔 admin、越权、密钥暴露、无审计余额调整与多租户缺口。",
+      "context_from_briefing": "sub2api 管理权限可能仅有管理员二元角色；enova 未来需要 Admin、Operator、客服、财务、开发者和 Super Admin，组织与企业客户属于中期扩展方向。",
+      "sources": [
+        {
+          "category": "developer",
+          "description": "认证、session/token、middleware/guard、角色权限、API Key、限流、用户状态与资源查询源码"
+        },
+        {
+          "category": "data",
+          "description": "users、roles、permissions、sessions、api_keys、login/audit logs、组织租户与限流相关 schema、迁移和测试"
+        },
+        {
+          "category": "review",
+          "description": "登录注册、用户安全设置、管理员角色配置与审计查询页面的前端证据"
+        }
+      ],
+      "lenses": [
+        {
+          "axis": "stakeholder",
+          "value": "least_privilege_operator",
+          "rationale": "从运营、客服、财务岗位职责检查权限粒度是否可落地"
+        },
+        {
+          "axis": "stance",
+          "value": "authorization_bypass_skeptic",
+          "rationale": "检查只在 UI 隐藏或只校验 admin 标志而缺少服务端资源授权的路径"
+        },
+        {
+          "axis": "risk",
+          "value": "tenant_isolation",
+          "rationale": "检查未来组织化时用户级模型、查询条件与配额隔离的演进风险"
+        }
+      ],
+      "depth": "thorough",
+      "time_sensitivity": "身份与权限实现随版本中速变化且安全敏感；以 2026-08-11 当前源码为上界，生产风控规则与真实登录数据不可见时只评价机制。",
+      "scope_ownership": {
+        "owns": [
+          "认证与用户账号生命周期",
+          "RBAC、scope、服务端授权和后台岗位适配性",
+          "API Key、登录安全、限流风控与审计强制执行",
+          "用户体系和权限体系评分依据"
+        ],
+        "excludes": [
+          "后台用户列表和操作体验，由 d3 负责",
+          "额度扣费与计费幂等，由 d5 负责",
+          "组织计费产品方案，由路线图综合阶段处理"
+        ],
+        "shared_topics": [
+          "管理员敏感操作的权限与审计"
+        ],
+        "overlap_policy": "d6 独占服务端认证授权、风控和审计机制；d3 仅记录管理端可见功能和操作闭环，不重复分析 guard 与资源过滤。"
+      },
+      "wave": 1,
+      "depends_on": [],
+      "dependency_inputs": []
+    },
+    {
+      "id": "d7",
+      "name": "商业数据模型、迁移、状态机与可维护性对比",
+      "description": "系统比较两仓核心商业实体、关系、约束、迁移与一致性设计，提炼值得 enova 借鉴的表结构，并识别架构债务和不可照搬部分。",
+      "key_questions": [
+        "两仓 users、plans、subscriptions、orders、payments、credits/wallet、usage、billing、pricing、configs/settings 与 audit_logs 分别有哪些表、关键字段、外键、索引、唯一约束和生命周期状态？",
+        "同一业务概念在 enova 新 PostgreSQL 架构、旧 SQLite 架构和 sub2api 中如何映射，哪些表存在但没有服务或页面消费，哪些代码使用了未迁移或兼容字段？",
+        "订单支付、订阅、钱包账本、生成任务、provider 凭证和设置变更的状态转换如何由数据库约束、事务、乐观锁、幂等键或事件保证一致性？",
+        "迁移文件是否与当前 schema、ORM model 和部署流程一致，是否存在只改 schema 未生成 migration、危险默认值、弱外键、数据删除或回滚风险？",
+        "sub2api 哪些表或 entity 设计能以低耦合方式增强 enova，哪些设计绑定其 API 聚合、倍率分组或单体架构而不应照搬？",
+        "两仓数据模型、可扩展性与可维护性应获什么评分，评分如何区分设计完整、实现消费和迁移可落地三个层次？"
+      ],
+      "focus": "以 schema 与全部迁移为主线，交叉核对 ORM、repository/service、查询与测试；输出统一实体映射和关键约束差异，避免把表名存在等同于业务能力。",
+      "context_from_briefing": "enova 新架构采用 Drizzle/PostgreSQL，旧架构采用 SQLite；sub2api 基础迁移和后续演进需完整核查。新旧 schema 不应混写，迁移一致性是商业化高风险边界。",
+      "sources": [
+        {
+          "category": "data",
+          "description": "两仓完整 schema、ORM entity、SQL/Drizzle migrations、索引、约束、种子数据和迁移测试"
+        },
+        {
+          "category": "developer",
+          "description": "repository、事务服务、状态机、幂等和数据读写调用点源码"
+        },
+        {
+          "category": "official",
+          "description": "数据库生成、迁移、备份回滚和旧数据迁移工具的仓库内说明与脚本"
+        }
+      ],
+      "lenses": [
+        {
+          "axis": "stance",
+          "value": "schema_consumption_skeptic",
+          "rationale": "检查孤立表、死字段和只存在 migration 名称的伪能力"
+        },
+        {
+          "axis": "failure_mode",
+          "value": "migration_and_state_inconsistency",
+          "rationale": "覆盖 schema 漂移、状态竞争、重复事件和回滚失败的边界"
+        }
+      ],
+      "depth": "thorough",
+      "time_sensitivity": "schema 当前状态变化中等但历史累积重要；以 2026-08-11 当前 schema 与最新 migration 为上界，回看全部迁移解释演进与兼容债务。",
+      "scope_ownership": {
+        "owns": [
+          "商业核心表的字段关系、索引约束与统一实体映射",
+          "schema、migration、ORM 与实际读写的一致性",
+          "状态机的数据层保障和历史兼容债务",
+          "数据模型、可扩展性和可维护性评分依据"
+        ],
+        "excludes": [
+          "商业功能的前端与 API 闭环，由 d2 和 d3 负责",
+          "计费算法和业务扣退费过程，由 d5 负责",
+          "系统设置热生效机制，由 d4 负责"
+        ],
+        "shared_topics": [
+          "商业实体的状态字段与幂等约束"
+        ],
+        "overlap_policy": "d7 只拥有数据结构、迁移和数据库一致性证据；其他维度可引用相关表，但不重复进行全表和迁移审计。"
+      },
+      "wave": 1,
+      "depends_on": [],
+      "dependency_inputs": []
+    },
+    {
+      "id": "d8",
+      "name": "AI Video 统一成本、Credit 与单位经济模型专项",
+      "description": "围绕视频、图片、LLM、TTS、存储、GPU 与第三方 API 的异构成本，核实 enova 当前成本归因能力并设计与订阅、积分和生成任务连接的双账本架构。",
+      "key_questions": [
+        "enova 当前 generation/job 记录是否能稳定关联 user、job、model、provider、generation_type、输入输出摘要、credit_cost、actual_cost、duration、status 与 created_at；每个字段的实际来源和缺口是什么？",
+        "图片、视频、LLM、TTS、存储、GPU 和第三方 API 成本分别按哪些可观测单位产生，provider 返回值、worker 运行信息和对象存储元数据中目前能采集哪些实际成本驱动字段？",
+        "用户报价/积分预留、最终售价结算与 provider 实际成本结算如何分离，失败、重试、多 provider fallback、部分结果、长任务和存储生命周期应生成哪些不可变事件？",
+        "现有数据能否计算 Revenue、Cost、Gross Margin、Cost per User、Cost per Video 与 Cost per Model；不能计算的指标分别缺少价格快照、成本事件、收入分摊还是查询聚合？",
+        "适合 enova 的 User→Subscription→Plan→Credits→Generation Job 模型应如何拆分实体、字段、索引、状态、货币与精度、幂等键、价格版本和审计关系？",
+        "sub2api 的 usage、模型倍率、channel/provider、日志与统计中哪些设计可作为通用定价和用量抽象，哪些因 token 同步请求模型无法表达异步视频多资源成本？",
+        "成本事件、信用账本、价格目录和经营聚合如何与 enova 现有 packages/billing、packages/provider、apps/api、apps/worker 和 packages/db 分层集成，并兼容最终失败幂等退款不变量？"
+      ],
+      "focus": "从生成请求到 worker、provider 响应、媒体转存和最终状态逐字段追踪可观测成本；设计售价账本与实际成本账本分离的事件模型，明确货币、credits、资源量和估算/最终成本不可混用，并为指标给出可查询的数据结构。",
+      "context_from_briefing": "预研认为 enova 更适合事件化双账本而非直接复制 token 倍率；现有 generation 成本归因粒度未知，而 worker 最终失败必须幂等释放预留 credits 是明确不变量。",
+      "sources": [
+        {
+          "category": "developer",
+          "description": "enova generation、worker、provider、billing、payment、storage 与 admin analytics 源码，以及 sub2api usage/channel/pricing/log 相关实现"
+        },
+        {
+          "category": "data",
+          "description": "生成任务、信用账本、用量日志、provider、媒体、价格与成本相关 schema、迁移、队列 payload 和测试"
+        },
+        {
+          "category": "analyst",
+          "description": "基于源码可证字段构建单位经济指标口径、数据血缘和缺口矩阵，不引入虚构运营数据"
+        }
+      ],
+      "lenses": [
+        {
+          "axis": "stakeholder",
+          "value": "saas_founder_unit_economics",
+          "rationale": "检查模型是否能回答收入、成本、毛利和单用户/单任务经济性"
+        },
+        {
+          "axis": "failure_mode",
+          "value": "async_job_actual_cost",
+          "rationale": "覆盖失败重试、fallback、部分产出和存储尾部成本导致的估算偏差"
+        },
+        {
+          "axis": "stance",
+          "value": "api_billing_transfer_skeptic",
+          "rationale": "主动寻找 sub2api token/倍率模型不适配视频 SaaS 的反例和耦合"
+        }
+      ],
+      "depth": "thorough",
+      "time_sensitivity": "成本字段和 provider 接口随版本与供应商价格变化较快；实现审计截至 2026-08-11 当前工作树，价格数值必须使用仓库可证版本或标注未知，架构建议需支持后续价格版本化。",
+      "scope_ownership": {
+        "owns": [
+          "AI Video 多资源实际成本驱动与现有采集缺口",
+          "售价信用账本和实际成本账本分离模型",
+          "Revenue、Cost、Gross Margin 及单位经济指标数据血缘",
+          "统一成本与 Credit 数据模型和模块集成建议"
+        ],
+        "excludes": [
+          "通用套餐订阅和支付产品闭环，由 d2 负责",
+          "用户余额和额度账本正确性，由 d5 负责",
+          "完整数据库迁移历史审计，由 d7 负责"
+        ],
+        "shared_topics": [
+          "生成任务的计费结算",
+          "商业实体的状态字段与幂等约束"
+        ],
+        "overlap_policy": "d8 只研究异构资源实际成本、收入成本连接和单位经济模型；d5 处理用户侧 Credit 扣退费，d7 处理通用 schema 与 migration 一致性。"
+      },
+      "wave": 1,
+      "depends_on": [],
+      "dependency_inputs": []
+    }
+  ],
+  "notes": "所有维度必须对 enova-video 新架构、enova-video 旧架构和 sub2api 使用相同证据门槛；重要结论附具体文件路径与核心逻辑，逐项未找到实现时写“未发现该能力”，并把生产配置、真实运营数据和线上路径不可见明确列为限制。研究阶段为每项能力保留“存在性、产品闭环、动态可配置、安全/一致性成熟度”四层证据标签，以支持报告阶段生成指定十四章、统一 /10 评分、Gap 矩阵、P0/P1/P2、直接学习/仅参考/不建议学习、三阶段路线图和 Top 10。"
+}

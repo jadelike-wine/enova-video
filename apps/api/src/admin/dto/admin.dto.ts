@@ -166,3 +166,10 @@ export class AdjustCreditsDto {
   @MaxLength(500)
   description?: string;
 }
+
+export class UpdateSettingDto {
+  @ApiProperty({ example: '100', description: '字符串形式的新值' })
+  @IsString()
+  @MaxLength(4000)
+  value!: string;
+}

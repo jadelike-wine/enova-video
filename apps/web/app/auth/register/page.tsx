@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { authApi } from '../../../lib/api'
+import { authApi, turnstileApi, type TurnstileConfig } from '../../../lib/api'
 import { BRAND } from '../../../lib/brand'
 import { formatErrorMessage } from '../../../lib/errorMessage'
+import TurnstileWidget, { type TurnstileHandle } from '../../../components/auth/TurnstileWidget'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -14,6 +15,24 @@ export default function RegisterPage() {
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [turnstile, setTurnstile] = useState<TurnstileConfig>({ enabled: false, siteKey: '' })
+  const [turnstileToken, setTurnstileToken] = useState('')
+  const turnstileRef = useRef<TurnstileHandle>(null)
+
+  useEffect(() => {
+    let active = true
+    turnstileApi
+      .config()
+      .then((cfg) => {
+        if (active) setTurnstile(cfg)
+      })
+      .catch(() => {
+        /* 容错：配置获取失败则静默跳过验证码 */
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -26,13 +45,19 @@ export default function RegisterPage() {
       setError('两次输入的密码不一致')
       return
     }
+    if (turnstile.enabled && !turnstileToken) {
+      setError('请先完成安全验证')
+      return
+    }
     setBusy(true)
     try {
-      await authApi.register(email, password)
+      await authApi.register(email, password, turnstile.enabled ? turnstileToken : undefined)
       router.replace('/app/chat')
       router.refresh()
     } catch (err) {
       setError(formatErrorMessage(err) || '注册失败')
+      turnstileRef.current?.reset()
+      setTurnstileToken('')
     } finally {
       setBusy(false)
     }
@@ -85,6 +110,17 @@ export default function RegisterPage() {
             placeholder="再次输入密码"
           />
         </div>
+
+        {turnstile.enabled && turnstile.siteKey && (
+          <div>
+            <TurnstileWidget
+              ref={turnstileRef}
+              siteKey={turnstile.siteKey}
+              onVerify={setTurnstileToken}
+              onExpire={() => setTurnstileToken('')}
+            />
+          </div>
+        )}
 
         {error && <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-400/30 rounded-xl px-3 py-2">{error}</p>}
 

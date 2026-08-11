@@ -30,6 +30,1102 @@
           "health"
         ]
       }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "operationId": "AuthController_register",
+        "summary": "注册：创建 User + Personal Workspace + Welcome Credits + Session",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "summary": "登录",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/turnstile-config": {
+      "get": {
+        "operationId": "AuthController_turnstileConfig",
+        "summary": "返回 Turnstile 公开配置（是否启用 + site key）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "summary": "登出：删除 Session 并清除 Cookie",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "operationId": "AuthController_me",
+        "summary": "返回当前用户、Personal Workspace 与余额",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/conversations": {
+      "get": {
+        "operationId": "ConversationsController_list",
+        "summary": "列出当前 Workspace 的会话",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "conversations"
+        ]
+      },
+      "post": {
+        "operationId": "ConversationsController_create",
+        "summary": "创建会话",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}": {
+      "get": {
+        "operationId": "ConversationsController_get",
+        "summary": "获取会话（Workspace 隔离）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "conversations"
+        ]
+      },
+      "patch": {
+        "operationId": "ConversationsController_update",
+        "summary": "重命名会话",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConversationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "conversations"
+        ]
+      },
+      "delete": {
+        "operationId": "ConversationsController_remove",
+        "summary": "删除会话及其消息",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}/messages": {
+      "get": {
+        "operationId": "ConversationsController_listMessages",
+        "summary": "列出会话消息（Workspace 隔离）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "conversations"
+        ]
+      },
+      "post": {
+        "operationId": "ConversationsController_appendOne",
+        "summary": "追加一条消息",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}/messages/batch": {
+      "post": {
+        "operationId": "ConversationsController_appendBatch",
+        "summary": "批量追加消息（端内保存对话）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveMessagesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/billing/wallet": {
+      "get": {
+        "operationId": "BillingController_wallet",
+        "summary": "当前 Workspace 钱包余额",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/ledger": {
+      "get": {
+        "operationId": "BillingController_ledger",
+        "summary": "当前 Workspace 的余额流水（Workspace 隔离）",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/generations": {
+      "post": {
+        "operationId": "GenerationsController_create",
+        "summary": "创建生成任务：定价 → 预留 Credits → 入队 → 返回 jobId",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGenerationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "generations"
+        ]
+      },
+      "get": {
+        "operationId": "GenerationsController_list",
+        "summary": "列出当前 Workspace 的生成任务（Workspace 隔离）",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "generations"
+        ]
+      }
+    },
+    "/api/v1/generations/{id}": {
+      "get": {
+        "operationId": "GenerationsController_get",
+        "summary": "获取生成任务（Workspace 隔离）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "generations"
+        ]
+      }
+    },
+    "/api/v1/generations/{id}/cancel": {
+      "post": {
+        "operationId": "GenerationsController_cancel",
+        "summary": "取消任务并释放已预留 Credits",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "generations"
+        ]
+      }
+    },
+    "/api/v1/admin/providers": {
+      "get": {
+        "operationId": "ProvidersAdminController_list",
+        "summary": "列出所有 Provider",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/providers"
+        ]
+      },
+      "post": {
+        "operationId": "ProvidersAdminController_create",
+        "summary": "创建 Provider（base_url 需通过 SSRF 校验）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProviderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/providers"
+        ]
+      }
+    },
+    "/api/v1/admin/providers/{id}": {
+      "patch": {
+        "operationId": "ProvidersAdminController_update",
+        "summary": "更新 Provider",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProviderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/providers"
+        ]
+      },
+      "delete": {
+        "operationId": "ProvidersAdminController_remove",
+        "summary": "删除 Provider（级联删除其 Credential）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/providers"
+        ]
+      }
+    },
+    "/api/v1/admin/providers/{providerId}/credentials": {
+      "get": {
+        "operationId": "CredentialsAdminController_listByProvider",
+        "summary": "列出指定 Provider 的 Credential（不含 Secret 明文）",
+        "parameters": [
+          {
+            "name": "providerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/credentials"
+        ]
+      },
+      "post": {
+        "operationId": "CredentialsAdminController_create",
+        "summary": "创建 Credential（Secret 加密入库）",
+        "parameters": [
+          {
+            "name": "providerId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCredentialDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/credentials"
+        ]
+      }
+    },
+    "/api/v1/admin/credentials/{id}": {
+      "patch": {
+        "operationId": "CredentialsAdminController_update",
+        "summary": "更新 Credential（仅传新 secret 时重新加密）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCredentialDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/credentials"
+        ]
+      },
+      "delete": {
+        "operationId": "CredentialsAdminController_remove",
+        "summary": "删除 Credential",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/credentials"
+        ]
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "operationId": "UsersAdminController_list",
+        "summary": "列出用户（含主要 Workspace 与余额）",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/users"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}/status": {
+      "patch": {
+        "operationId": "UsersAdminController_setStatus",
+        "summary": "启用/禁用用户",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUserStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/users"
+        ]
+      }
+    },
+    "/api/v1/admin/users/{id}/credits": {
+      "post": {
+        "operationId": "UsersAdminController_adjustCredits",
+        "summary": "调整用户主要 Workspace 余额（正负均可）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustCreditsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/users"
+        ]
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "operationId": "AuditAdminController_list",
+        "summary": "查询管理员操作审计日志",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/audit-logs"
+        ]
+      }
+    },
+    "/api/v1/admin/stats": {
+      "get": {
+        "operationId": "StatsAdminController_summary",
+        "summary": "全局统计：用户/工作区/任务规模与余额总量",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/stats"
+        ]
+      }
+    },
+    "/api/v1/admin/settings": {
+      "get": {
+        "operationId": "SettingsAdminController_list",
+        "summary": "列出全部动态配置（敏感值脱敏）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/settings"
+        ]
+      }
+    },
+    "/api/v1/admin/settings/{key}": {
+      "patch": {
+        "operationId": "SettingsAdminController_update",
+        "summary": "更新单个动态配置（实时生效）",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/settings"
+        ]
+      }
+    },
+    "/api/v1/admin/system-update/status": {
+      "get": {
+        "operationId": "SystemUpdateController_status",
+        "summary": "系统更新状态（当前/最新版本、是否可更新）",
+        "parameters": [
+          {
+            "name": "force",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/system-update"
+        ]
+      }
+    },
+    "/api/v1/admin/system-update/check": {
+      "get": {
+        "operationId": "SystemUpdateController_check",
+        "summary": "强制刷新并返回更新信息",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/system-update"
+        ]
+      }
+    },
+    "/api/v1/admin/system-update/rollback-versions": {
+      "get": {
+        "operationId": "SystemUpdateController_rollbackVersions",
+        "summary": "可回滚/可切换的历史稳定版本列表",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/system-update"
+        ]
+      }
+    },
+    "/api/v1/admin/system-update/update": {
+      "post": {
+        "operationId": "SystemUpdateController_update",
+        "summary": "触发后台更新（到最新或指定版本）",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/system-update"
+        ]
+      }
+    },
+    "/api/v1/admin/system-update/rollback": {
+      "post": {
+        "operationId": "SystemUpdateController_rollback",
+        "summary": "触发后台回滚（回退上一个版本，或指定版本）",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackVersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/system-update"
+        ]
+      }
+    },
+    "/api/v1/admin/system-update/operations/{operationId}": {
+      "get": {
+        "operationId": "SystemUpdateController_operation",
+        "summary": "查询一次后台更新/回滚操作的实时进度",
+        "parameters": [
+          {
+            "name": "operationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/system-update"
+        ]
+      }
+    },
+    "/api/v1/payment/recharge": {
+      "post": {
+        "operationId": "PaymentController_createRecharge",
+        "summary": "创建充值订单并返回支付参数（payUrl/qrCode）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRechargeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "payment"
+        ]
+      }
+    },
+    "/api/v1/payment/sandbox/{orderId}/confirm": {
+      "post": {
+        "operationId": "PaymentController_simulateConfirm",
+        "summary": "sandbox 模拟确认支付（仅演示模式）",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "payment"
+        ]
+      }
+    },
+    "/api/v1/payment/notify/{channel}": {
+      "post": {
+        "operationId": "PaymentController_notify",
+        "summary": "支付渠道异步通知回调（验签入账）",
+        "parameters": [
+          {
+            "name": "channel",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "payment"
+        ]
+      }
     }
   },
   "info": {
@@ -46,6 +1142,345 @@
   ],
   "servers": [],
   "components": {
-    "schemas": {}
+    "schemas": {
+      "RegisterDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "user@example.com"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "turnstileToken": {
+            "type": "string",
+            "description": "Cloudflare Turnstile 验证码 token（启用时必填）"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "user@example.com"
+          },
+          "password": {
+            "type": "string"
+          },
+          "turnstileToken": {
+            "type": "string",
+            "description": "Cloudflare Turnstile 验证码 token（启用时必填）"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "CreateConversationDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "我的新对话"
+          }
+        }
+      },
+      "UpdateConversationDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "重命名对话"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "CreateMessageDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "example": "user"
+          },
+          "content": {
+            "type": "string",
+            "example": "你好，生成一张图片"
+          },
+          "provider": {
+            "type": "string",
+            "example": "agnes"
+          },
+          "model": {
+            "type": "string",
+            "example": "model-x"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ]
+      },
+      "SaveMessagesDto": {
+        "type": "object",
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreateMessageDto"
+            }
+          }
+        },
+        "required": [
+          "messages"
+        ]
+      },
+      "CreateGenerationDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "IMAGE",
+              "VIDEO",
+              "AUDIO",
+              "UPSCALE",
+              "LIPSYNC",
+              "IMAGE_TO_VIDEO",
+              "VIDEO_TO_VIDEO"
+            ],
+            "example": "IMAGE"
+          },
+          "provider": {
+            "type": "string",
+            "example": "agnes"
+          },
+          "model": {
+            "type": "string",
+            "example": "model-image-1"
+          },
+          "input": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "type",
+          "provider",
+          "model"
+        ]
+      },
+      "CreateProviderDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "agnes"
+          },
+          "name": {
+            "type": "string",
+            "example": "Agnes AI"
+          },
+          "baseUrl": {
+            "type": "string",
+            "example": "https://api.agnes.example.com"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ]
+          },
+          "config": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "baseUrl"
+        ]
+      },
+      "UpdateProviderDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Agnes AI"
+          },
+          "baseUrl": {
+            "type": "string",
+            "example": "https://api.agnes.example.com"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ]
+          },
+          "config": {
+            "type": "object"
+          }
+        }
+      },
+      "CreateCredentialDto": {
+        "type": "object",
+        "properties": {
+          "secret": {
+            "type": "string",
+            "example": "sk-xxxx"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "COOLDOWN",
+              "ERROR",
+              "DISABLED"
+            ]
+          },
+          "priority": {
+            "type": "number",
+            "example": 0
+          },
+          "weight": {
+            "type": "number",
+            "example": 1
+          },
+          "maxConcurrency": {
+            "type": "number",
+            "example": 1
+          }
+        },
+        "required": [
+          "secret"
+        ]
+      },
+      "UpdateCredentialDto": {
+        "type": "object",
+        "properties": {
+          "secret": {
+            "type": "string",
+            "example": "sk-xxxx"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "COOLDOWN",
+              "ERROR",
+              "DISABLED"
+            ]
+          },
+          "priority": {
+            "type": "number",
+            "example": 0
+          },
+          "weight": {
+            "type": "number",
+            "example": 1
+          },
+          "maxConcurrency": {
+            "type": "number",
+            "example": 1
+          },
+          "clearBackoff": {
+            "type": "boolean",
+            "example": true,
+            "description": "清除 cooldown/lastError，手动恢复"
+          }
+        }
+      },
+      "SetUserStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DISABLED"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "AdjustCreditsDto": {
+        "type": "object",
+        "properties": {
+          "delta": {
+            "type": "number",
+            "example": 1000,
+            "description": "正数增加，负数扣减"
+          },
+          "description": {
+            "type": "string",
+            "example": "补偿用户"
+          }
+        },
+        "required": [
+          "delta"
+        ]
+      },
+      "UpdateSettingDto": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "example": "100",
+            "description": "字符串形式的新值"
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "UpdateVersionDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "example": "1.2.1",
+            "description": "目标版本（缺省为最新 stable）"
+          }
+        }
+      },
+      "RollbackVersionDto": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string",
+            "example": "1.1.2",
+            "description": "回退到指定版本；缺省回退到上一个版本"
+          }
+        }
+      },
+      "CreateRechargeDto": {
+        "type": "object",
+        "properties": {
+          "amountCents": {
+            "type": "number",
+            "description": "充值金额（分，人民币），需不小于最小充值金额",
+            "example": 1000,
+            "minimum": 1
+          }
+        },
+        "required": [
+          "amountCents"
+        ]
+      }
+    }
   }
 }

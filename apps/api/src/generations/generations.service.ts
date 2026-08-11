@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { and, desc, eq } from 'drizzle-orm';
 import {
@@ -7,13 +6,13 @@ import {
   ERROR_CODES,
   GENERATION_JOB_NAMES,
   GENERATION_STATUSES,
-  QUEUES,
   type GenerationJobPayload,
   type GenerationStatus,
   type GenerationType,
 } from '@enova/contracts';
 import { generationJobs, type Database } from '@enova/db';
 import { DATABASE } from '../database/database.module.js';
+import { GENERATION_QUEUE } from '../queue/queue.module.js';
 import { PricingService } from '../billing/pricing.service.js';
 import { WalletService } from '../billing/wallet.service.js';
 
@@ -45,7 +44,7 @@ export class GenerationsService {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(WalletService) private readonly wallet: WalletService,
     @Inject(PricingService) private readonly pricing: PricingService,
-    @InjectQueue(QUEUES.GENERATION) private readonly queue: Queue<GenerationJobPayload>,
+    @Inject(GENERATION_QUEUE) private readonly queue: Queue<GenerationJobPayload>,
   ) {}
 
   async create(

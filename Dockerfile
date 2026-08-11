@@ -25,6 +25,14 @@ RUN corepack enable
 WORKDIR /app
 
 #############################
+# 部署工具运行时（供后台更新临时容器使用）
+#############################
+FROM alpine:3.20 AS deploy-tool
+RUN apk add --no-cache docker-cli docker-cli-compose bash curl python3 coreutils
+WORKDIR /repo
+ENTRYPOINT ["bash"]
+
+#############################
 # 阶段 1: 安装全部依赖（含 workspace 符号链接）
 #############################
 FROM base AS deps
@@ -82,6 +90,8 @@ LABEL org.opencontainers.image.title="enova-video-api" \
       org.opencontainers.image.revision="${GIT_SHA}" \
       org.opencontainers.image.created="${BUILD_TIME}"
 ENV NODE_ENV=production
+# 后台一键更新依赖：通过挂载的 /var/run/docker.sock 触发宿主机 deploy-tool 容器。
+RUN apk add --no-cache docker-cli
 # 复制依赖（含 workspace 符号链接）与 workspace 包产物。
 # pnpm 下应用私有依赖（如 reflect-metadata）以符号链接存在于 apps/api/node_modules，
 # 必须一并复制，否则运行时解析不到。

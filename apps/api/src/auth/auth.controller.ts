@@ -12,6 +12,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService, type AuthResult } from './auth.service.js';
 import { SESSION_COOKIE, SESSION_TTL_SECONDS } from './session.service.js';
+import { TurnstileService, type TurnstileConfig } from './turnstile.service.js';
 import { LoginDto, RegisterDto } from './dto/auth.dto.js';
 import { AuthGuard } from '../common/guards/auth.guard.js';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
@@ -20,22 +21,39 @@ import { parseCookie } from '../common/http/cookies.js';
 @ApiTags('auth')
 @Controller('api/v1/auth')
 export class AuthController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(TurnstileService) private readonly turnstile: TurnstileService,
+  ) {}
 
   @Post('register')
   @ApiOperation({ summary: '注册：创建 User + Personal Workspace + Welcome Credits + Session' })
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: FastifyReply): Promise<AuthResult> {
-    const result = await this.auth.register(dto.email, dto.password);
+  async register(
+    @Body() dto: RegisterDto,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AuthResult> {
+    const result = await this.auth.register(dto.email, dto.password, dto.turnstileToken, req.ip);
     this.setSessionCookie(res, result);
     return this.toPublic(result);
   }
 
   @Post('login')
   @ApiOperation({ summary: '登录' })
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: FastifyReply): Promise<AuthResult> {
-    const result = await this.auth.login(dto.email, dto.password);
+  async login(
+    @Body() dto: LoginDto,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ): Promise<AuthResult> {
+    const result = await this.auth.login(dto.email, dto.password, dto.turnstileToken, req.ip);
     this.setSessionCookie(res, result);
     return this.toPublic(result);
+  }
+
+  @Get('turnstile-config')
+  @ApiOperation({ summary: '返回 Turnstile 公开配置（是否启用 + site key）' })
+  async turnstileConfig(): Promise<TurnstileConfig> {
+    return this.turnstile.getConfig();
   }
 
   @Post('logout')

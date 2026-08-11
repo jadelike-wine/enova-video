@@ -1,0 +1,26 @@
+{
+  "container": "markdown",
+  "selected_format": {
+    "id": "source_evidenced_saas_comparison_report",
+    "label": "源码证据驱动的 SaaS 对比研究报告",
+    "best_for": "供 Founder、CTO 与产品负责人复核差距并确定升级优先级",
+    "defining_features": [
+      "严格保持用户指定的十四章结构并追加 Top 10",
+      "结论前置且重要判断附具体文件与核心逻辑",
+      "同口径覆盖能力存在性、成熟度与实现闭环",
+      "使用评分表、Gap 矩阵和 P0/P1/P2 清单支撑决策",
+      "明确区分直接借鉴、仅参考与不应照搬",
+      "把通用 SaaS 能力与 AI Video 特殊成本模型分开",
+      "未找到实现时明确标注未发现且不作猜测",
+      "路线图同时标注复杂度、收益和参考代码位置"
+    ],
+    "rationale": "用户已明确报告结构、证据标准、对比维度和决策用途"
+  },
+  "structure_preference": {
+    "requested_type": null,
+    "custom_type": null,
+    "strength": "auto",
+    "notes": "用户固定十四章与 Top 10，但未指定单一主信息载体"
+  },
+  "confirmed_by_user": true
+}

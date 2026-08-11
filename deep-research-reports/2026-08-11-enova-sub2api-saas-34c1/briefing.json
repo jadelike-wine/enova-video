@@ -1,0 +1,527 @@
+{
+  "recommended_mode": "heavy",
+  "mode_rationale": "双仓源码、多维评分且需反复交叉核验",
+  "user_confirmations_needed": {
+    "blocking": [],
+    "high_value": [],
+    "optional": []
+  },
+  "task_interpretation": {
+    "user_goal": "识别 sub2api 对 enova-video 商业化升级的可借鉴设计与边界",
+    "requested_output_inferred": "源码证据驱动的系统对比、差距分级、路线图与数据架构建议",
+    "research_type_inferred": "tech_evaluation",
+    "audience_inferred": "SaaS Founder、CTO、产品与研发负责人",
+    "time_focus": "current",
+    "explicit_constraints": [
+      "深入阅读两仓核心源码而非只看 README",
+      "重要结论附具体文件和核心逻辑证据",
+      "逐项明确未发现能力且禁止猜测",
+      "按指定十四章与 Top 10 输出",
+      "区分直接借鉴、仅参考和不应照搬",
+      "围绕 AI Video 成本与规模化运营"
+    ],
+    "implicit_scope_hints": [
+      "区分 enova-video 新旧架构边界",
+      "核对前后端、迁移和部署的一致性",
+      "以管理员无需重部署的控制面为重点",
+      "评分需以可运行实现而非文件名为依据"
+    ]
+  },
+  "context_entities": [
+    {
+      "name": "enova-video 新架构",
+      "type": "product",
+      "explicit_or_inferred": "explicit",
+      "why_it_matters": "主要升级目标与当前开发路径",
+      "confidence": "high"
+    },
+    {
+      "name": "enova-video 旧架构",
+      "type": "product",
+      "explicit_or_inferred": "inferred",
+      "why_it_matters": "仍可运行部署且影响能力判断",
+      "confidence": "high"
+    },
+    {
+      "name": "sub2api",
+      "type": "product",
+      "explicit_or_inferred": "explicit",
+      "why_it_matters": "商业化与运营能力参照对象",
+      "confidence": "high"
+    },
+    {
+      "name": "管理员控制面",
+      "type": "concept",
+      "explicit_or_inferred": "explicit",
+      "why_it_matters": "衡量无需改代码的运营能力",
+      "confidence": "high"
+    },
+    {
+      "name": "统一成本与积分系统",
+      "type": "concept",
+      "explicit_or_inferred": "explicit",
+      "why_it_matters": "连接收入、成本与生成任务",
+      "confidence": "high"
+    },
+    {
+      "name": "订阅与套餐生命周期",
+      "type": "concept",
+      "explicit_or_inferred": "explicit",
+      "why_it_matters": "决定经常性收入和额度治理",
+      "confidence": "high"
+    },
+    {
+      "name": "AI Provider 与模型路由",
+      "type": "technology",
+      "explicit_or_inferred": "inferred",
+      "why_it_matters": "影响成本、可用性和动态配置",
+      "confidence": "high"
+    },
+    {
+      "name": "组织与企业客户",
+      "type": "concept",
+      "explicit_or_inferred": "inferred",
+      "why_it_matters": "影响 RBAC、配额和企业化路径",
+      "confidence": "medium"
+    }
+  ],
+  "terminology": [
+    {
+      "term": "Credit",
+      "aliases": ["Points", "Token", "Quota", "余额"],
+      "note": "需区分货币余额、赠额和资源配额"
+    },
+    {
+      "term": "Plan",
+      "aliases": ["套餐", "Group", "用户等级"],
+      "note": "可能混合权益、价格与路由策略"
+    },
+    {
+      "term": "Subscription",
+      "aliases": ["订阅", "会员", "VIP"],
+      "note": "需区分状态、周期和额度刷新"
+    },
+    {
+      "term": "Pricing",
+      "aliases": ["售价", "计费规则", "倍率"],
+      "note": "需拆开售价、成本与结算单位"
+    },
+    {
+      "term": "Admin",
+      "aliases": ["管理员", "运营后台", "Console"],
+      "note": "页面存在不等于权限和操作闭环"
+    },
+    {
+      "term": "Settings",
+      "aliases": ["系统配置", "Runtime Config", "Feature Flag"],
+      "note": "需区分环境变量、数据库与热更新"
+    }
+  ],
+  "subdomain_partitions": {
+    "partition_basis": "by_topic",
+    "subdomains": [
+      {
+        "name": "产品架构与新旧路径",
+        "scope_hint": "运行边界、模块职责与演进约束"
+      },
+      {
+        "name": "商业化商品与交易",
+        "scope_hint": "套餐、订阅、订单、支付和促销"
+      },
+      {
+        "name": "计费、积分与成本归因",
+        "scope_hint": "扣费、定价、用量和毛利核算"
+      },
+      {
+        "name": "管理员与运营控制面",
+        "scope_hint": "用户、配置、监控和经营分析"
+      },
+      {
+        "name": "身份、权限与风控",
+        "scope_hint": "角色、范围、限流和审计能力"
+      },
+      {
+        "name": "数据模型与一致性",
+        "scope_hint": "表结构、状态机、幂等和迁移"
+      },
+      {
+        "name": "部署、配置与可扩展性",
+        "scope_hint": "环境配置、运行时控制和运维"
+      },
+      {
+        "name": "AI Video 特殊经济模型",
+        "scope_hint": "多资源成本与生成任务生命周期"
+      }
+    ]
+  },
+  "knowledge_topology": {
+    "consensus": [
+      {
+        "fact": "有效商业化判断必须核对数据库、服务、API 与前端闭环",
+        "source_hint": "两仓源码、迁移、路由和页面入口"
+      },
+      {
+        "fact": "AI Video 定价需区分用户售价与实际资源成本",
+        "source_hint": "生成任务、provider、billing 与 usage 代码"
+      },
+      {
+        "fact": "后台可见配置不代表能安全地运行时生效",
+        "source_hint": "settings schema、缓存、服务读取和审计"
+      }
+    ],
+    "disputes": [
+      {
+        "issue": "API 聚合 SaaS 的分组倍率模型能否迁移到视频 SaaS",
+        "positions_exist": [
+          "可复用为通用定价与限流抽象",
+          "资源异构导致只能参考思想"
+        ],
+        "representative_sources": []
+      },
+      {
+        "issue": "动态配置的范围应覆盖多少敏感基础设施参数",
+        "positions_exist": [
+          "提升运营效率应尽量后台化",
+          "密钥和基础设施应留在环境层"
+        ],
+        "representative_sources": []
+      }
+    ],
+    "blanks": [
+      {
+        "blank": "两仓文件名所示能力是否均有完整调用闭环",
+        "blank_nature": "proprietary"
+      },
+      {
+        "blank": "enova-video 实际线上仍使用新架构还是旧架构",
+        "blank_nature": "proprietary"
+      },
+      {
+        "blank": "两仓生产环境的真实配置与运营数据",
+        "blank_nature": "proprietary"
+      },
+      {
+        "blank": "真实支付渠道上线状态与合规覆盖范围",
+        "blank_nature": "proprietary"
+      }
+    ]
+  },
+  "information_landscape": {
+    "primary_source_categories": [
+      "数据库 schema 与 migrations",
+      "后端 controller、service、middleware",
+      "前端路由、页面、组件与 API client",
+      "配置 schema、settings registry 与 env 样例",
+      "部署脚本、compose 与运维文档",
+      "测试和生成契约"
+    ],
+    "secondary_source_categories": [
+      "仓库 README 与架构文档",
+      "历史 migration 命名与演进痕迹"
+    ],
+    "data_source_categories": [
+      "静态源码符号与调用关系",
+      "数据库迁移顺序和约束",
+      "前后端路由覆盖矩阵"
+    ],
+    "expert_or_industry_sources": [
+      "SaaS 商业化产品与工程评审视角",
+      "AI 生成服务单位经济模型视角"
+    ],
+    "weak_or_risky_sources": [
+      "仅依据 README 的能力声明",
+      "仅依据文件名推断已实现能力",
+      "dist 产物与源码版本不一致"
+    ],
+    "high_value_urls": [
+      {
+        "url": "file:///Users/yanpu.lv/Documents/vscode/GitHub/enova-video/packages/db/src/schema.ts",
+        "category": "official",
+        "why": "enova 新架构核心数据模型入口"
+      },
+      {
+        "url": "file:///Users/yanpu.lv/Documents/vscode/GitHub/sub2api/backend/migrations/001_init.sql",
+        "category": "data",
+        "why": "sub2api 基础表结构起点"
+      },
+      {
+        "url": "file:///Users/yanpu.lv/Documents/vscode/GitHub/sub2api/frontend/src/views/admin",
+        "category": "review",
+        "why": "管理员页面和运营功能入口"
+      },
+      {
+        "url": "file:///Users/yanpu.lv/Documents/vscode/GitHub/sub2api/backend/internal/handler/admin",
+        "category": "analyst",
+        "why": "后台 API 权限与操作闭环入口"
+      },
+      {
+        "url": "file:///Users/yanpu.lv/Documents/vscode/GitHub/enova-video/apps/api/src/admin",
+        "category": "forum",
+        "why": "enova 管理端服务边界入口"
+      }
+    ],
+    "search_terms": [
+      {
+        "term": "subscription plan payment order promo affiliate",
+        "language": "en",
+        "use_case": "定位商品、交易与增长能力"
+      },
+      {
+        "term": "settings runtime config feature flag admin",
+        "language": "en",
+        "use_case": "定位动态配置链路"
+      },
+      {
+        "term": "usage cost pricing margin generation provider",
+        "language": "en",
+        "use_case": "定位成本与计费归因"
+      },
+      {
+        "term": "role permission scope audit ban rate limit",
+        "language": "en",
+        "use_case": "定位权限风控与审计"
+      }
+    ],
+    "time_sensitivity": {
+      "rate": "moderate",
+      "recommended_window": "以当前工作树为准，历史迁移用于解释演进",
+      "reason": "源码持续变化但不依赖外部实时事实"
+    },
+    "access_barriers": []
+  },
+  "critical_unknowns": [
+    {
+      "unknown": "enova 新旧前端与 API 的实际调用归属",
+      "why_it_matters": "避免把未上线代码视为现有能力",
+      "evidence_needed": "启动脚本、API client、部署配置和路由",
+      "can_be_resolved_by_research": true,
+      "importance": "high"
+    },
+    {
+      "unknown": "两仓商业化实体是否形成端到端状态机",
+      "why_it_matters": "区分表结构存在与可运营闭环",
+      "evidence_needed": "schema、service、controller、页面和测试",
+      "can_be_resolved_by_research": true,
+      "importance": "high"
+    },
+    {
+      "unknown": "sub2api settings 的类型、安全和热生效边界",
+      "why_it_matters": "决定哪些动态配置值得借鉴",
+      "evidence_needed": "settings 模型、缓存、校验、审计与读取点",
+      "can_be_resolved_by_research": true,
+      "importance": "high"
+    },
+    {
+      "unknown": "enova 现有 generation 记录的成本归因粒度",
+      "why_it_matters": "决定统一成本系统的改造幅度",
+      "evidence_needed": "generation schema、worker 与 provider 结果",
+      "can_be_resolved_by_research": true,
+      "importance": "high"
+    },
+    {
+      "unknown": "sub2api 管理权限是否仅有管理员二元角色",
+      "why_it_matters": "影响未来运营岗位权限设计",
+      "evidence_needed": "user model、middleware、router 和 UI guard",
+      "can_be_resolved_by_research": true,
+      "importance": "medium"
+    },
+    {
+      "unknown": "两仓支付适配器是否达到真实生产完整度",
+      "why_it_matters": "影响商业化上线 P0 判断",
+      "evidence_needed": "回调、签名、幂等、退款和订单测试",
+      "can_be_resolved_by_research": true,
+      "importance": "high"
+    }
+  ],
+  "candidate_lenses": [
+    {
+      "lens": "SaaS Founder 单位经济模型",
+      "useful_for": "识别收入、成本、毛利和增长杠杆",
+      "may_miss": "底层实现细节和迁移风险",
+      "binding_strength": "suggestive"
+    },
+    {
+      "lens": "CTO 架构与一致性",
+      "useful_for": "识别边界、状态机和扩展瓶颈",
+      "may_miss": "运营日常效率与页面可用性",
+      "binding_strength": "suggestive"
+    },
+    {
+      "lens": "运营管理员控制面",
+      "useful_for": "衡量无需发布可控制的产品行为",
+      "may_miss": "用户端体验和底层成本",
+      "binding_strength": "suggestive"
+    },
+    {
+      "lens": "财务与计费审计",
+      "useful_for": "发现扣费、退款和对账风险",
+      "may_miss": "功能丰富度和增长机制",
+      "binding_strength": "suggestive"
+    },
+    {
+      "lens": "AI Video 产品差异化",
+      "useful_for": "过滤 API SaaS 不适配的照搬项",
+      "may_miss": "通用后台能力的复用价值",
+      "binding_strength": "suggestive"
+    },
+    {
+      "lens": "客服与风控岗位",
+      "useful_for": "识别用户处置、审计和支持缺口",
+      "may_miss": "长期平台演进和单位经济",
+      "binding_strength": "suggestive"
+    }
+  ],
+  "coverage_boundary": {
+    "adjacent_fields_not_explored": [
+      "各地区税务与电子发票合规",
+      "隐私法规和内容安全全景",
+      "市场获客渠道与竞品定价"
+    ],
+    "opposing_perspectives_not_searched": [
+      "终端用户对套餐和积分的理解",
+      "财务人员的会计确认口径",
+      "客服团队的后台操作需求"
+    ],
+    "second_order_effects_not_explored": [
+      "动态定价对老用户信任的影响",
+      "企业租户对数据隔离的压力",
+      "成本优化对生成质量的影响"
+    ],
+    "alternative_paths_not_explored": [
+      "引入第三方订阅计费平台",
+      "完全按法币而非积分计费",
+      "先 API 商业化再做订阅产品"
+    ],
+    "scan_scope": {
+      "zoom_level": "domain",
+      "scanned_angles": [
+        "核心目录和商业化命名入口",
+        "数据库迁移和管理端分布",
+        "新旧架构边界提示"
+      ],
+      "unscanned_angles": [
+        "完整调用链和测试行为",
+        "所有迁移的语义演进",
+        "部署环境真实运行状态"
+      ]
+    },
+    "lists_known_partial": {
+      "entities": {
+        "more_likely_in": [
+          "provider 实现和管理页面",
+          "部署脚本和旧架构模型"
+        ]
+      },
+      "subdomains": {
+        "alternative_partitions_exist": [
+          "by_value_chain",
+          "by_stakeholder",
+          "by_timeline"
+        ]
+      },
+      "terminology": {
+        "jargon_pockets_not_covered": [
+          "sub2api group 与 channel 术语",
+          "enova provider 租约语义"
+        ]
+      },
+      "unknowns": {
+        "research_will_surface_more": true
+      },
+      "disputes": {
+        "more_likely_in": [
+          "积分与订阅的会计边界",
+          "动态配置的安全边界"
+        ]
+      },
+      "risks": {
+        "more_likely_in": [
+          "支付回调与迁移兼容逻辑",
+          "旧架构残留和生成代码"
+        ]
+      }
+    }
+  },
+  "hypotheses_to_test": [
+    {
+      "claim": "sub2api 的后台运营与动态配置覆盖更广，但部分抽象偏 API 聚合场景",
+      "basis": "迁移与前端目录显示套餐、支付、联盟、运维和分组能力密集",
+      "confidence": "medium",
+      "disconfirming_evidence": "核心 handler 缺失闭环或页面仅为占位实现"
+    },
+    {
+      "claim": "enova 已有支付、钱包、后台和 settings 基础，但经营分析与成本归因仍可能不足",
+      "basis": "新架构存在 billing、payment、admin、settings 与 generation 分层",
+      "confidence": "medium",
+      "disconfirming_evidence": "源码显示完整套餐订阅、成本账本和经营看板"
+    },
+    {
+      "claim": "enova 更适合事件化双账本，而非直接复制 token 倍率计费",
+      "basis": "视频任务异步且成本含模型、时长、存储与失败退款",
+      "confidence": "high",
+      "disconfirming_evidence": "现有统一用量单位已可无损表达全部资源成本"
+    }
+  ],
+  "risk_flags": [
+    {
+      "risk": "时效性",
+      "why_it_matters": "工作树可能继续快速演进",
+      "mitigation": "记录研究时点、提交状态和文件版本",
+      "severity": "medium"
+    },
+    {
+      "risk": "来源偏见",
+      "why_it_matters": "比较仓库可能被预设优劣带偏",
+      "mitigation": "对两仓采用同一证据和评分口径",
+      "severity": "high"
+    },
+    {
+      "risk": "口径不一致",
+      "why_it_matters": "积分、余额、额度概念可能混用",
+      "mitigation": "先定义术语再逐项映射数据实体",
+      "severity": "high"
+    },
+    {
+      "risk": "数据过时",
+      "why_it_matters": "dist 和文档可能落后源码",
+      "mitigation": "优先源码与迁移，产物仅作交叉验证",
+      "severity": "medium"
+    },
+    {
+      "risk": "地区差异",
+      "why_it_matters": "支付发票和隐私要求因地区不同",
+      "mitigation": "把合规边界与工程能力分开表述",
+      "severity": "medium"
+    },
+    {
+      "risk": "法规不确定",
+      "why_it_matters": "支付和用户数据涉及动态法规",
+      "mitigation": "避免法律结论并标注需专项评估",
+      "severity": "medium"
+    },
+    {
+      "risk": "营销话术",
+      "why_it_matters": "README 能力声明可能未落地",
+      "mitigation": "以 schema、调用链和测试作为证据",
+      "severity": "high"
+    },
+    {
+      "risk": "缺一手证据",
+      "why_it_matters": "无真实运营数据和生产配置",
+      "mitigation": "区分源码可证与生产状态未知",
+      "severity": "high"
+    },
+    {
+      "risk": "幸存者偏差",
+      "why_it_matters": "现存模块无法展示失败设计",
+      "mitigation": "结合迁移、废弃字段和兼容代码",
+      "severity": "medium"
+    },
+    {
+      "risk": "benchmark不可比",
+      "why_it_matters": "API 聚合与视频 SaaS 成本不同",
+      "mitigation": "区分通用控制面和领域特定机制",
+      "severity": "high"
+    }
+  ]
+}

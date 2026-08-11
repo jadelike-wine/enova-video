@@ -16,3 +16,5 @@ export function createDbFromPool(pool: Pool) {
 
 export { schema };
 export * from './schema.js';
+export * from './settings-registry.js';
+export * from './settings-store.js';

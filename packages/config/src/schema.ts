@@ -18,6 +18,9 @@ export const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3001),
   HOST: z.string().default('0.0.0.0'),
 
+  // 版本（Docker build 时注入，system-update 展示当前版本）
+  APP_VERSION: z.string().default('0.0.0-development'),
+
   // 数据库
   DATABASE_URL: z
     .string()
@@ -96,6 +99,9 @@ export const envSchema = z.object({
   WELCOME_CREDITS: z.coerce.number().int().nonnegative().default(100),
   INITIAL_ADMIN_EMAIL: z.string().email().optional().describe('seed admin email'),
   INITIAL_ADMIN_PASSWORD: z.string().optional().describe('seed admin password'),
+  TURNSTILE_ENABLED: envBool(false),
+  TURNSTILE_SITE_KEY: z.string().optional().default(''),
+  TURNSTILE_SECRET_KEY: z.string().optional().default(''),
 
   // ---- Phase 7：支付 ----
   /** 支付模式：sandbox=本地演示（无需商户密钥）；alipay/wechat=真实渠道。 */
@@ -119,6 +125,35 @@ export const envSchema = z.object({
   WECHAT_API_V3_KEY: z.string().optional().default(''),
   WECHAT_SERIAL_NO: z.string().optional().default(''),
   WECHAT_PRIVATE_KEY: z.string().optional().default(''),
+
+  // ---- System Update / Rollback（后台一键更新，参考 sub2api）----
+  /** 是否启用后台更新/回滚能力。需在 docker-compose 挂载 /var/run/docker.sock 与仓库目录，默认关闭。 */
+  UPDATE_ENABLED: envBool(false),
+  /** 当前部署的 GitHub 仓库（owner/repo），用于检查与回滚版本列表。 */
+  UPDATE_GITHUB_REPOSITORY: z
+    .string()
+    .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'must be an owner/repository name')
+    .default('jadelike-wine/enova-video'),
+  /** 私有仓库只读 token（可选），严禁写入日志。 */
+  UPDATE_GITHUB_TOKEN: z.string().optional().default(''),
+  /** 更新检查结果缓存 TTL（毫秒），默认 20 分钟。 */
+  UPDATE_CHECK_CACHE_TTL_MS: z.coerce.number().int().positive().default(20 * 60 * 1000),
+  /** 更新检查请求超时（毫秒）。 */
+  UPDATE_CHECK_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
+  /** 执行更新/回滚的超时（毫秒），客户端断开后仍继续。 */
+  UPDATE_EXEC_TIMEOUT_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
+  /** Docker daemon socket exposed to the API container for the deploy-tool runner. */
+  UPDATE_DOCKER_SOCKET: z.string().default('/var/run/docker.sock'),
+  /** 触发脚本的 deploy-tool 容器镜像（含 docker CLI + compose + bash + curl + python3）。 */
+  UPDATE_DEPLOY_TOOL_IMAGE: z
+    .string()
+    .default('docker:cli-git'),
+  /** 仓库在 api 容器内的挂载路径（与 docker-compose 卷映射一致）。 */
+  UPDATE_REPO_MOUNT: z.string().default('/host/repo'),
+  /** 仓库内 scripts 目录相对路径。 */
+  UPDATE_SCRIPTS_SUBDIR: z.string().default('scripts'),
+  /** 回滚版本列表最多暴露当前版本之前的 N 个稳定版本。 */
+  UPDATE_MAX_ROLLBACK_VERSIONS: z.coerce.number().int().min(1).max(10).default(3),
 });
 
 export type Env = z.infer<typeof envSchema>;

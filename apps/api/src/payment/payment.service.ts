@@ -12,10 +12,9 @@ import {
   type PaymentProvider,
   type PaymentProviderKey,
 } from '@enova/payment';
-import type { Env } from '@enova/config';
 import type { AuthUser } from '../auth/auth.service.js';
-import { ENV } from '../config/config.module.js';
 import { DATABASE } from '../database/database.module.js';
+import { SettingsService } from '../settings/settings.service.js';
 import { WalletService } from '../billing/wallet.service.js';
 
 export interface RechargeResult {
@@ -36,61 +35,84 @@ export interface RechargeResult {
  */
 @Injectable()
 export class PaymentService {
-  private readonly registry: PaymentRegistry;
-  private readonly activeProvider: PaymentProviderKey;
-  private readonly creditsPerCny: number;
-  private readonly minRechargeCents: number;
-  private readonly notifyUrl: string;
-  private readonly returnBaseUrl: string;
-
   constructor(
-    @Inject(ENV) env: Env,
     @Inject(DATABASE) private readonly db: Database,
+    @Inject(SettingsService) private readonly settings: SettingsService,
     @Inject(WalletService) private readonly wallet: WalletService,
-  ) {
+  ) {}
+
+  /**
+   * 从动态配置构建支付渠道 registry（每次下单实时读取，后台改支付参数立即生效）。
+   * 商户密钥等敏感项从 settings 解密获取；未配置时走 sandbox 兜底。
+   */
+  private async buildConfig(): Promise<{
+    registry: PaymentRegistry;
+    activeProvider: PaymentProviderKey;
+    notifyUrl: string;
+    returnBaseUrl: string;
+  }> {
+    const mode = ((await this.settings.getString('payment.mode')) ?? 'sandbox') as PaymentEnvConfig['mode'];
+    const creditsPerCny = (await this.settings.getNumber('payment.creditsPerCny')) ?? 100;
+    const minRechargeCents = (await this.settings.getNumber('payment.minRechargeCents')) ?? 100;
+    const returnBaseUrl = (await this.settings.getString('payment.returnBaseUrl')) ?? 'http://localhost:3001';
+    const notifyUrl = (await this.settings.getString('payment.notifyUrl')) ?? 'http://localhost:3001/api/v1/payment/notify';
+
+    const alipayAppId = await this.settings.getString('payment.alipayAppId');
+    const alipayPrivateKey = await this.settings.getString('payment.alipayPrivateKey');
+    const alipayPublicKey = await this.settings.getString('payment.alipayPublicKey');
+    const alipayGateway = (await this.settings.getString('payment.alipayGateway')) ?? 'https://openapi.alipay.com/gateway.do';
+    const wechatAppId = await this.settings.getString('payment.wechatAppId');
+    const wechatMchId = await this.settings.getString('payment.wechatMchId');
+    const wechatApiV3Key = await this.settings.getString('payment.wechatApiV3Key');
+    const wechatSerialNo = await this.settings.getString('payment.wechatSerialNo');
+    const wechatPrivateKey = await this.settings.getString('payment.wechatPrivateKey');
+
     const cfg: PaymentEnvConfig = {
-      mode: env.PAYMENT_MODE,
-      creditsPerCny: env.PAYMENT_CREDITS_PER_CNY,
-      minRechargeCents: env.PAYMENT_MIN_RECHARGE_CENTS,
-      returnBaseUrl: env.PAYMENT_RETURN_BASE_URL,
-      notifyUrl: env.PAYMENT_NOTIFY_URL,
+      mode,
+      creditsPerCny,
+      minRechargeCents,
+      returnBaseUrl,
+      notifyUrl,
       alipay:
-        env.ALIPAY_APP_ID && env.ALIPAY_PRIVATE_KEY && env.ALIPAY_PUBLIC_KEY
-          ? { appId: env.ALIPAY_APP_ID, privateKey: env.ALIPAY_PRIVATE_KEY, publicKey: env.ALIPAY_PUBLIC_KEY, gateway: env.ALIPAY_GATEWAY }
+        alipayAppId && alipayPrivateKey && alipayPublicKey
+          ? { appId: alipayAppId, privateKey: alipayPrivateKey, publicKey: alipayPublicKey, gateway: alipayGateway }
           : undefined,
       wechat:
-        env.WECHAT_APP_ID && env.WECHAT_MCH_ID && env.WECHAT_API_V3_KEY && env.WECHAT_SERIAL_NO && env.WECHAT_PRIVATE_KEY
+        wechatAppId && wechatMchId && wechatApiV3Key && wechatSerialNo && wechatPrivateKey
           ? {
-              appId: env.WECHAT_APP_ID,
-              mchId: env.WECHAT_MCH_ID,
-              apiV3Key: env.WECHAT_API_V3_KEY,
-              serialNo: env.WECHAT_SERIAL_NO,
-              privateKey: env.WECHAT_PRIVATE_KEY,
+              appId: wechatAppId,
+              mchId: wechatMchId,
+              apiV3Key: wechatApiV3Key,
+              serialNo: wechatSerialNo,
+              privateKey: wechatPrivateKey,
             }
           : undefined,
     };
     const built = buildPaymentRegistry(cfg);
-    this.registry = built.registry;
-    this.activeProvider = built.activeProvider;
-    this.creditsPerCny = cfg.creditsPerCny;
-    this.minRechargeCents = cfg.minRechargeCents;
-    this.notifyUrl = cfg.notifyUrl;
-    this.returnBaseUrl = cfg.returnBaseUrl;
+    return {
+      registry: built.registry,
+      activeProvider: built.activeProvider,
+      notifyUrl,
+      returnBaseUrl,
+    };
   }
 
   /** 创建充值订单并调渠道下单。 */
   async createRecharge(user: AuthUser, amountCents: number): Promise<RechargeResult> {
-    if (amountCents < this.minRechargeCents) {
-      throw domainError(ERROR_CODES.VALIDATION_ERROR, `Recharge amount below minimum of ${this.minRechargeCents} cents`, 400, {
-        min: this.minRechargeCents,
+    const { registry, activeProvider, notifyUrl, returnBaseUrl } = await this.buildConfig();
+    const minRechargeCents = (await this.settings.getNumber('payment.minRechargeCents')) ?? 0;
+    const creditsPerCny = (await this.settings.getNumber('payment.creditsPerCny')) ?? 0;
+    if (amountCents < minRechargeCents) {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, `Recharge amount below minimum of ${minRechargeCents} cents`, 400, {
+        min: minRechargeCents,
       });
     }
-    const credits = creditsFromCents(amountCents, this.creditsPerCny);
+    const credits = creditsFromCents(amountCents, creditsPerCny);
     if (credits <= 0) {
       throw domainError(ERROR_CODES.PAYMENT_CREDITS_NOT_POSITIVE, 'Recharge credits must be positive', 400);
     }
 
-    const provider: PaymentProvider = this.registry.get(this.activeProvider);
+    const provider: PaymentProvider = registry.get(activeProvider);
     const orderId = randomUUID();
     const subject = `充值 ${credits} credits`;
 
@@ -107,13 +129,13 @@ export class PaymentService {
       orderId,
       amountCents,
       subject,
-      notifyUrl: this.notifyUrl,
-      returnUrl: `${this.returnBaseUrl}/payment/result?orderId=${orderId}`,
+      notifyUrl,
+      returnUrl: `${returnBaseUrl}/payment/result?orderId=${orderId}`,
     });
 
     await this.db.insert(paymentTransactions).values({
       orderId,
-      provider: this.activeProvider,
+      provider: activeProvider,
       providerRef: created.tradeNo,
       status: 'PENDING',
     });
@@ -122,7 +144,7 @@ export class PaymentService {
       orderId,
       amountCents,
       credits,
-      channel: this.activeProvider,
+      channel: activeProvider,
       tradeNo: created.tradeNo,
       payUrl: created.payUrl,
       qrCode: created.qrCode,
@@ -131,7 +153,8 @@ export class PaymentService {
 
   /** 渠道异步通知入口：验签后幂等入账。返回 received=false 表示无关回调（应返回 200 忽略）。 */
   async notify(providerKey: PaymentProviderKey, rawBody: string, headers: Record<string, string>): Promise<{ received: boolean }> {
-    const provider = this.registry.get(providerKey);
+    const { registry } = await this.buildConfig();
+    const provider = registry.get(providerKey);
     const notification: PaymentNotification | null = await provider.verifyNotification(rawBody, headers);
     if (!notification) return { received: false };
     if (notification.status === 'success') {

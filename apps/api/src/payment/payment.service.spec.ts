@@ -7,23 +7,6 @@ function tableKey(table: unknown): string {
   return typeof name === 'string' ? name : String(table);
 }
 
-const env: Record<string, unknown> = {
-  PAYMENT_MODE: 'sandbox',
-  PAYMENT_CREDITS_PER_CNY: 100,
-  PAYMENT_MIN_RECHARGE_CENTS: 100,
-  PAYMENT_RETURN_BASE_URL: 'http://localhost:3001',
-  PAYMENT_NOTIFY_URL: 'http://localhost:3001/api/v1/payment/notify',
-  ALIPAY_APP_ID: '',
-  ALIPAY_PRIVATE_KEY: '',
-  ALIPAY_PUBLIC_KEY: '',
-  ALIPAY_GATEWAY: '',
-  WECHAT_APP_ID: '',
-  WECHAT_MCH_ID: '',
-  WECHAT_API_V3_KEY: '',
-  WECHAT_SERIAL_NO: '',
-  WECHAT_PRIVATE_KEY: '',
-};
-
 function createDb(handlers: Record<string, () => any>) {
   const calls: Record<string, number> = {};
   const next = (key: string) => {
@@ -86,19 +69,35 @@ function makeWallet() {
   };
 }
 
+function makeSettings() {
+  return {
+    getNumber: vi.fn(async (key: string) => {
+      if (key === 'payment.minRechargeCents') return 100;
+      if (key === 'payment.creditsPerCny') return 100;
+      return null;
+    }),
+    getString: vi.fn(async (key: string) => {
+      if (key === 'payment.mode') return 'sandbox';
+      if (key === 'payment.returnBaseUrl') return 'http://localhost:3001';
+      if (key === 'payment.notifyUrl') return 'http://localhost:3001/api/v1/payment/notify';
+      return null;
+    }),
+  };
+}
+
 const user = { userId: 'u1', workspaceId: 'ws1', email: 'a@b.c', role: 'USER', status: 'ACTIVE' } as any;
 
 describe('PaymentService', () => {
   describe('createRecharge', () => {
     it('rejects amounts below the minimum', async () => {
       const db = createDb({});
-      const svc = new PaymentService(env as any, db as any, makeWallet() as any);
+      const svc = new PaymentService(db as any, makeSettings() as any, makeWallet() as any);
       await expect(svc.createRecharge(user, 50)).rejects.toThrowError(/below minimum/i);
     });
 
     it('creates a PENDING order, calls provider, and records a transaction', async () => {
       const db = createDb({});
-      const svc = new PaymentService(env as any, db as any, makeWallet() as any);
+      const svc = new PaymentService(db as any, makeSettings() as any, makeWallet() as any);
       const res = await svc.createRecharge(user, 1000);
       expect(res.amountCents).toBe(1000);
       expect(res.credits).toBe(1000); // 10 元 = 1000 credits
@@ -118,7 +117,7 @@ describe('PaymentService', () => {
         'sel:wallets': () => [{ balance: 200 }],
       });
       const wallet = makeWallet();
-      const svc = new PaymentService(env as any, db as any, wallet as any);
+      const svc = new PaymentService(db as any, makeSettings() as any, wallet as any);
       const res = await svc.simulateConfirm(user, 'o1');
       expect(res.credits).toBe(1000);
       expect(res.balance).toBe(200);
@@ -127,7 +126,7 @@ describe('PaymentService', () => {
 
     it('rejects orders from another workspace (IDOR)', async () => {
       const db = createDb({ 'sel:orders': () => [{ id: 'o1', workspaceId: 'ws-other' }] });
-      const svc = new PaymentService(env as any, db as any, makeWallet() as any);
+      const svc = new PaymentService(db as any, makeSettings() as any, makeWallet() as any);
       const other = { userId: 'u1', workspaceId: 'ws1' } as any;
       await expect(svc.simulateConfirm(other, 'o1')).rejects.toThrowError(/does not belong/i);
     });
@@ -136,7 +135,7 @@ describe('PaymentService', () => {
   describe('notify', () => {
     it('throws on invalid sandbox notification body', async () => {
       const db = createDb({});
-      const svc = new PaymentService(env as any, db as any, makeWallet() as any);
+      const svc = new PaymentService(db as any, makeSettings() as any, makeWallet() as any);
       await expect(svc.notify('sandbox', JSON.stringify({ hello: 1 }), {})).rejects.toThrow(/missing orderId\/tradeNo/);
     });
 
@@ -144,7 +143,7 @@ describe('PaymentService', () => {
       const orderRow = { id: 'o1', workspaceId: 'ws1', userId: 'u1', amountCents: 1000, credits: 1000, status: 'PENDING' };
       const db = createDb({ 'sel:orders': () => [orderRow] });
       const wallet = makeWallet();
-      const svc = new PaymentService(env as any, db as any, wallet as any);
+      const svc = new PaymentService(db as any, makeSettings() as any, wallet as any);
       const res = await svc.notify(
         'sandbox',
         JSON.stringify({ orderId: 'o1', tradeNo: 'T1', amountCents: 1000, status: 'success' }),
@@ -157,7 +156,7 @@ describe('PaymentService', () => {
     it('rejects amount mismatch', async () => {
       const orderRow = { id: 'o1', workspaceId: 'ws1', userId: 'u1', amountCents: 1000, credits: 1000, status: 'PENDING' };
       const db = createDb({ 'sel:orders': () => [orderRow] });
-      const svc = new PaymentService(env as any, db as any, makeWallet() as any);
+      const svc = new PaymentService(db as any, makeSettings() as any, makeWallet() as any);
       await expect(
         svc.notify('sandbox', JSON.stringify({ orderId: 'o1', tradeNo: 'T1', amountCents: 999, status: 'success' }), {}),
       ).rejects.toThrowError(/amount mismatch/i);

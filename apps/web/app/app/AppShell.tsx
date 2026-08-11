@@ -7,11 +7,13 @@ import { SessionProvider, useSession } from '../../lib/auth'
 import { BRAND } from '../../lib/brand'
 
 const navItems = [
-  { path: '/app/chat', label: '文本对话', icon: '💬', gradient: 'from-violet-500 to-fuchsia-500' },
-  { path: '/app/images', label: '图片生成', icon: '🎨', gradient: 'from-pink-500 to-orange-400' },
-  { path: '/app/videos', label: '视频生成', icon: '🎬', gradient: 'from-cyan-400 to-blue-500' },
-  { path: '/app/wallet', label: '钱包', icon: '💰', gradient: 'from-emerald-400 to-cyan-500' },
-  { path: '/app/settings', label: '设置', icon: '⚙️', gradient: 'from-slate-400 to-zinc-500' },
+  { path: '/app/chat', label: '文本对话', icon: '💬', gradient: 'from-violet-500 to-fuchsia-500', adminOnly: false },
+  { path: '/app/images', label: '图片生成', icon: '🎨', gradient: 'from-pink-500 to-orange-400', adminOnly: false },
+  { path: '/app/videos', label: '视频生成', icon: '🎬', gradient: 'from-cyan-400 to-blue-500', adminOnly: false },
+  { path: '/app/wallet', label: '钱包', icon: '💰', gradient: 'from-emerald-400 to-cyan-500', adminOnly: false },
+  { path: '/app/settings', label: '设置', icon: '⚙️', gradient: 'from-slate-400 to-zinc-500', adminOnly: false },
+  { path: '/app/admin/settings', label: '系统配置', icon: '🛠️', gradient: 'from-amber-400 to-rose-500', adminOnly: true },
+  { path: '/app/admin/system-update', label: '系统更新', icon: '🔄', gradient: 'from-cyan-400 to-blue-500', adminOnly: true },
 ]
 
 function ShellInner({ children }: { children: React.ReactNode }) {
@@ -51,25 +53,27 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         </Link>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          {navItems.map((item) => {
-            const active = pathname.startsWith(item.path)
-            return (
-              <Link
-                key={item.path}
-                href={item.path}
-                className={`nav-item ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
-              >
-                <span
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg ${
-                    active ? `bg-gradient-to-br ${item.gradient} shadow-glow-cyan` : 'bg-white/10'
-                  }`}
+          {navItems
+            .filter((item) => !item.adminOnly || user?.role === 'ADMIN')
+            .map((item) => {
+              const active = pathname.startsWith(item.path)
+              return (
+                <Link
+                  key={item.path}
+                  href={item.path}
+                  className={`nav-item ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
                 >
-                  {item.icon}
-                </span>
-                {item.label}
-              </Link>
-            )
-          })}
+                  <span
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg ${
+                      active ? `bg-gradient-to-br ${item.gradient} shadow-glow-cyan` : 'bg-white/10'
+                    }`}
+                  >
+                    {item.icon}
+                  </span>
+                  {item.label}
+                </Link>
+              )
+            })}
         </nav>
 
         <div className="p-5 border-t border-white/10 space-y-3">

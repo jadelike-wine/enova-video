@@ -27,6 +27,11 @@ export interface AuthResult {
   reservedBalance: number
 }
 
+export interface TurnstileConfig {
+  enabled: boolean
+  siteKey: string
+}
+
 export interface Conversation {
   id: string
   title: string
@@ -164,12 +169,16 @@ async function json<T>(url: string, options: RequestInit = {}): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export const authApi = {
-  register: (email: string, password: string) =>
-    json<AuthResult>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) }),
-  login: (email: string, password: string) =>
-    json<AuthResult>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  register: (email: string, password: string, turnstileToken?: string) =>
+    json<AuthResult>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, turnstileToken }) }),
+  login: (email: string, password: string, turnstileToken?: string) =>
+    json<AuthResult>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, turnstileToken }) }),
   logout: () => json<{ ok: true }>('/auth/logout', { method: 'POST' }),
   me: () => json<AuthResult>('/auth/me'),
+}
+
+export const turnstileApi = {
+  config: () => json<TurnstileConfig>('/auth/turnstile-config'),
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +236,90 @@ export const paymentApi = {
     json<{ orderId: string; credits: number; balance: number }>(`/payment/sandbox/${orderId}/confirm`, {
       method: 'POST',
     }),
+}
+
+// ---------------------------------------------------------------------------
+// 系统配置（管理员）
+// ---------------------------------------------------------------------------
+
+export interface SettingView {
+  key: string
+  value: string
+  valueType: 'string' | 'number' | 'boolean' | 'enum'
+  group: string
+  label: string
+  description?: string
+  isSecret: boolean
+  options?: string[]
+  persisted: boolean
+}
+
+export const settingsApi = {
+  list: () => json<SettingView[]>('/admin/settings'),
+  update: (key: string, value: string) =>
+    json<SettingView>(`/admin/settings/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ value }),
+    }),
+}
+
+// ---------------------------------------------------------------------------
+// 系统更新（管理员）
+// ---------------------------------------------------------------------------
+
+export interface SystemUpdateInfo {
+  enabled: boolean
+  current_version: string
+  latest_version: string
+  has_update: boolean
+  cached: boolean
+  warning?: string
+  release_info?: {
+    name: string
+    body: string
+    published_at: string
+    html_url: string
+  }
+}
+
+export interface RollbackVersion {
+  version: string
+  published_at: string
+  html_url: string
+}
+
+export interface SystemUpdateOperation {
+  operation_id: string
+  status: 'running' | 'success' | 'failed'
+  action: 'update' | 'rollback'
+  target?: string
+  output?: string
+  exit_code?: number
+  started_at?: string
+  finished_at?: string
+}
+
+function idempotencyKey(): string {
+  return newRequestId()
+}
+
+export const systemUpdateApi = {
+  status: (force = false) => json<SystemUpdateInfo>(`/admin/system-update/status?force=${force}`),
+  check: () => json<SystemUpdateInfo>('/admin/system-update/check'),
+  rollbackVersions: () => json<{ versions: RollbackVersion[] }>('/admin/system-update/rollback-versions'),
+  update: (version?: string) =>
+    json<SystemUpdateOperation>('/admin/system-update/update', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey() },
+      body: JSON.stringify(version ? { version } : {}),
+    }),
+  rollback: (version?: string) =>
+    json<SystemUpdateOperation>('/admin/system-update/rollback', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey() },
+      body: JSON.stringify(version ? { version } : {}),
+    }),
+  operation: (id: string) => json<SystemUpdateOperation>(`/admin/system-update/operations/${encodeURIComponent(id)}`),
 }
 
 // ---------------------------------------------------------------------------

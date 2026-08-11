@@ -9,6 +9,7 @@ import { GenerationsModule } from './generations/generations.module.js';
 import { QueueModule } from './queue/queue.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { PaymentModule } from './payment/payment.module.js';
+import { SettingsModule } from './settings/settings.module.js';
 import { RequestIdMiddleware } from './common/request-id/request-id.middleware.js';
 
 @Module({
@@ -23,6 +24,7 @@ import { RequestIdMiddleware } from './common/request-id/request-id.middleware.j
     QueueModule,
     AdminModule,
     PaymentModule,
+    SettingsModule,
   ],
 })
 export class AppModule implements NestModule {

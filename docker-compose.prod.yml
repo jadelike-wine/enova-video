@@ -42,6 +42,14 @@ services:
     image: ghcr.io/jadelike-wine/enova-video-api:${APP_VERSION}
     expose:
       - "3001"
+    # 后台一键更新依赖的挂载：
+    #   - docker.sock：api 通过它触发宿主机 deploy-tool 容器执行 scripts/update.sh
+    #   - 仓库目录：deploy-tool 需在“与 api 容器内 UPDATE_REPO_MOUNT 相同绝对路径”
+    #     （默认 /host/repo）访问仓库。宿主机务必把仓库放在该路径（或建 symlink），
+    #     否则 deploy-tool 的 -v /host/repo:/host/repo 解析不到。
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${UPDATE_HOST_REPO_PATH:-/host/repo}:/host/repo
     # 健康检查：api 启动前自动执行迁移；就绪后返回 200。
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3001/api/v1/health"]
@@ -53,6 +61,20 @@ services:
       NODE_ENV: production
       PORT: 3001
       HOST: 0.0.0.0
+      # system-update 展示当前版本（与镜像 tag 保持一致）
+      APP_VERSION: ${APP_VERSION}
+      # ---- 后台一键更新/回滚（默认关闭；开启需挂载 docker.sock 与仓库目录）----
+      UPDATE_ENABLED: ${UPDATE_ENABLED:-false}
+      UPDATE_GITHUB_REPOSITORY: ${UPDATE_GITHUB_REPOSITORY:-jadelike-wine/enova-video}
+      UPDATE_GITHUB_TOKEN: ${UPDATE_GITHUB_TOKEN:-}
+      UPDATE_CHECK_CACHE_TTL_MS: ${UPDATE_CHECK_CACHE_TTL_MS:-1200000}
+      UPDATE_CHECK_TIMEOUT_MS: ${UPDATE_CHECK_TIMEOUT_MS:-8000}
+      UPDATE_EXEC_TIMEOUT_MS: ${UPDATE_EXEC_TIMEOUT_MS:-900000}
+      UPDATE_DOCKER_SOCKET: ${UPDATE_DOCKER_SOCKET:-/var/run/docker.sock}
+      UPDATE_DEPLOY_TOOL_IMAGE: ${UPDATE_DEPLOY_TOOL_IMAGE:-ghcr.io/jadelike-wine/enova-video-deploy-tool:${APP_VERSION}}
+      UPDATE_REPO_MOUNT: ${UPDATE_REPO_MOUNT:-/host/repo}
+      UPDATE_SCRIPTS_SUBDIR: ${UPDATE_SCRIPTS_SUBDIR:-scripts}
+      UPDATE_MAX_ROLLBACK_VERSIONS: ${UPDATE_MAX_ROLLBACK_VERSIONS:-3}
       DATABASE_URL: postgresql://${POSTGRES_USER:-enova}:${POSTGRES_PASSWORD:-enova}@postgres:5432/${POSTGRES_DB:-enova}
       REDIS_URL: redis://redis:6379
       BULLMQ_PREFIX: ${BULLMQ_PREFIX:-enova}
@@ -128,6 +150,7 @@ services:
       BULLMQ_JOB_ATTEMPTS: ${BULLMQ_JOB_ATTEMPTS:-5}
       BULLMQ_JOB_BACKOFF_MS: ${BULLMQ_JOB_BACKOFF_MS:-5000}
       CREDENTIAL_MASTER_KEY: ${CREDENTIAL_MASTER_KEY}
+      SESSION_SECRET: ${SESSION_SECRET}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-text}
       LOG_PROMPTS: ${LOG_PROMPTS:-false}

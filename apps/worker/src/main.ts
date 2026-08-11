@@ -3,7 +3,7 @@ import IORedis from 'ioredis';
 import { eq } from 'drizzle-orm';
 import { loadEnv } from '@enova/config';
 import { QUEUES, type GenerationJobPayload } from '@enova/contracts';
-import { createDb, providers, type Database } from '@enova/db';
+import { createDb, providers, SettingsStore, type Database } from '@enova/db';
 import { WalletGateway } from '@enova/billing';
 import {
   CredentialCrypto,
@@ -28,16 +28,38 @@ async function main(): Promise<void> {
     maxRetriesPerRequest: null,
   });
 
-  // ---- SSRF guard（base_url 与上游下载 URL 校验） ----
-  const guard: UrlGuardOptions = {
-    allowHttp: env.SSRF_ALLOW_HTTP,
-    resolveDns: env.SSRF_RESOLVE_DNS,
-    devAllowlist: env.NODE_ENV !== 'production' ? env.SSRF_DEV_ALLOW_LIST.split(',').map((s) => s.trim()).filter(Boolean) : [],
-  };
-
   // ---- Provider / Credential / Storage ----
   const crypto = CredentialCrypto.fromEnv(env.CREDENTIAL_MASTER_KEY);
-  const credentials = new RedisCredentialManager({ db, redis: connection, crypto, leaseTtlMs: env.CREDENTIAL_LEASE_TTL_MS });
+  // 动态配置：环境变量兜底 + 管理员后台 DB 覆盖（启动时读取，改配置后重启 Worker 生效）。
+  const settings = new SettingsStore(db, env, crypto);
+  const cfgGetNum = async (key: string, fallback: number): Promise<number> =>
+    (await settings.getNumber(key)) ?? fallback;
+  const cfgGetBool = async (key: string, fallback: boolean): Promise<boolean> =>
+    (await settings.getBoolean(key)) ?? fallback;
+  const cfgGetStr = async (key: string, fallback: string): Promise<string> =>
+    (await settings.getString(key)) ?? fallback;
+
+  const pollIntervalMs = await cfgGetNum('video.pollIntervalMs', env.VIDEO_POLL_INTERVAL_MS);
+  const maxPolls = await cfgGetNum('video.maxPolls', env.VIDEO_MAX_POLLS);
+  const maxWaitMs = await cfgGetNum('video.maxWaitMs', env.VIDEO_MAX_WAIT_MS);
+  const credentialRetryAttempts = await cfgGetNum('credential.retryAttempts', env.CREDENTIAL_RETRY_ATTEMPTS);
+  const credentialLeaseTtlMs = await cfgGetNum('credential.leaseTtlMs', env.CREDENTIAL_LEASE_TTL_MS);
+  const providerHttpTimeoutMs = await cfgGetNum('provider.httpTimeoutMs', env.PROVIDER_HTTP_TIMEOUT_MS);
+  const storageMaxBytes = await cfgGetNum('storage.maxBytes', env.STORAGE_MAX_BYTES);
+  const storageDownloadTimeoutMs = await cfgGetNum('storage.downloadTimeoutMs', env.STORAGE_DOWNLOAD_TIMEOUT_MS);
+  const allowedContentTypes = await cfgGetStr('storage.allowedContentTypes', env.STORAGE_ALLOWED_CONTENT_TYPES);
+  const ssrfAllowHttp = await cfgGetBool('ssrf.allowHttp', env.SSRF_ALLOW_HTTP);
+  const ssrfDevAllowList = await cfgGetStr('ssrf.devAllowList', env.SSRF_DEV_ALLOW_LIST);
+  const ssrfResolveDns = await cfgGetBool('ssrf.resolveDns', env.SSRF_RESOLVE_DNS);
+
+  // ---- SSRF guard（base_url 与上游下载 URL 校验） ----
+  const guard: UrlGuardOptions = {
+    allowHttp: ssrfAllowHttp,
+    resolveDns: ssrfResolveDns,
+    devAllowlist: env.NODE_ENV !== 'production' ? ssrfDevAllowList.split(',').map((s) => s.trim()).filter(Boolean) : [],
+  };
+
+  const credentials = new RedisCredentialManager({ db, redis: connection, crypto, leaseTtlMs: credentialLeaseTtlMs });
   const registry = new ProviderRegistry({
     loadProvider: async (code) => {
       const rows = await db
@@ -50,7 +72,7 @@ async function main(): Promise<void> {
       return { code: row.code, name: row.name, baseUrl: row.baseUrl, status: row.status, config: row.config ?? undefined };
     },
     guard,
-    timeoutMs: env.PROVIDER_HTTP_TIMEOUT_MS,
+    timeoutMs: providerHttpTimeoutMs,
   });
   const storage = createObjectStorage(
     env.STORAGE_PROVIDER === 's3'
@@ -61,8 +83,8 @@ async function main(): Promise<void> {
           publicBaseUrl: env.S3_PUBLIC_BASE_URL,
           endpointUrl: env.S3_ENDPOINT_URL,
           credentials: env.S3_ACCESS_KEY ? { accessKeyId: env.S3_ACCESS_KEY, secretAccessKey: env.S3_SECRET_KEY } : undefined,
-          download: { guard, maxBytes: env.STORAGE_MAX_BYTES, timeoutMs: env.STORAGE_DOWNLOAD_TIMEOUT_MS },
-          allowedContentTypePrefixes: env.STORAGE_ALLOWED_CONTENT_TYPES.split(','),
+          download: { guard, maxBytes: storageMaxBytes, timeoutMs: storageDownloadTimeoutMs },
+          allowedContentTypePrefixes: allowedContentTypes.split(','),
         } }
       : { kind: 'none' },
   );
@@ -81,12 +103,12 @@ async function main(): Promise<void> {
     queue,
     logger,
     config: {
-      pollIntervalMs: env.VIDEO_POLL_INTERVAL_MS,
-      maxPolls: env.VIDEO_MAX_POLLS,
-      maxWaitMs: env.VIDEO_MAX_WAIT_MS,
-      credentialRetryAttempts: env.CREDENTIAL_RETRY_ATTEMPTS,
-      download: { guard, maxBytes: env.STORAGE_MAX_BYTES, timeoutMs: env.STORAGE_DOWNLOAD_TIMEOUT_MS },
-      allowedContentTypePrefixes: env.STORAGE_ALLOWED_CONTENT_TYPES.split(','),
+      pollIntervalMs,
+      maxPolls,
+      maxWaitMs,
+      credentialRetryAttempts,
+      download: { guard, maxBytes: storageMaxBytes, timeoutMs: storageDownloadTimeoutMs },
+      allowedContentTypePrefixes: allowedContentTypes.split(','),
     },
   });
 

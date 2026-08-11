@@ -364,6 +364,22 @@ export const adminAuditLogs = pgTable('admin_audit_logs', {
 }, (t) => [index('admin_audit_logs_actor_user_id_idx').on(t.actorUserId)]);
 
 // ---------------------------------------------------------------------------
+// Settings (动态配置，管理员后台可改)
+// ---------------------------------------------------------------------------
+export const settings = pgTable('settings', {
+  key: varchar('key', { length: 120 }).primaryKey(),
+  /** 字符串形式存储；按 schema 注册的 valueType 解析。 */
+  value: text('value').notNull().default(''),
+  /** 解析类型：string / number / boolean / enum。 */
+  valueType: varchar('value_type', { length: 20 }).notNull().default('string'),
+  /** 分组，用于后台界面分类展示。 */
+  group: varchar('group', { length: 80 }).notNull().default('general'),
+  /** 是否敏感（如密钥）；返回后台时脱敏。 */
+  isSecret: boolean('is_secret').notNull().default(false),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('settings_group_idx').on(t.group)]);
+
+// ---------------------------------------------------------------------------
 // Legacy (单租户历史数据迁移归集)
 // ---------------------------------------------------------------------------
 export const legacyMigration = pgTable('legacy_migration', {

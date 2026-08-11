@@ -100,6 +100,23 @@ jobs:
             GIT_SHA=${{ github.sha }}
             BUILD_TIME=${{ steps.meta.outputs.build_time }}
 
+      # ---- Deploy tool（供 API 通过 docker.sock 执行 update.sh/rollback.sh）----
+      - name: Build & push deploy-tool
+        id: build-deploy-tool
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          target: deploy-tool
+          push: true
+          platforms: linux/amd64
+          cache-from: type=registry,ref=${{ env.IMAGE_BASE }}-deploy-tool:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_BASE }}-deploy-tool:buildcache,mode=max
+          tags: |
+            ${{ env.IMAGE_BASE }}-deploy-tool:${{ steps.meta.outputs.version }}
+            ${{ env.IMAGE_BASE }}-deploy-tool:latest
+            ${{ env.IMAGE_BASE }}-deploy-tool:sha-${{ github.sha }}
+
       # ---- Worker ----
       - name: Build & push worker
         id: build-worker
@@ -152,6 +169,7 @@ jobs:
           GIT_SHA: ${{ github.sha }}
           IMAGE_BASE: ${{ env.IMAGE_BASE }}
           DIGEST_API: ${{ steps.build-api.outputs.digest }}
+          DIGEST_DEPLOY_TOOL: ${{ steps.build-deploy-tool.outputs.digest }}
           DIGEST_WORKER: ${{ steps.build-worker.outputs.digest }}
           DIGEST_WEB: ${{ steps.build-web.outputs.digest }}
         run: |
@@ -163,9 +181,11 @@ jobs:
               "version": f"{ver}",
               "git_sha": os.environ["GIT_SHA"],
               "api_image": f"{base}-api:{ver}",
+              "deploy_tool_image": f"{base}-deploy-tool:{ver}",
               "worker_image": f"{base}-worker:{ver}",
               "web_image": f"{base}-web:{ver}",
               "api_digest": os.environ["DIGEST_API"],
+              "deploy_tool_digest": os.environ["DIGEST_DEPLOY_TOOL"],
               "worker_digest": os.environ["DIGEST_WORKER"],
               "web_digest": os.environ["DIGEST_WEB"],
               "published_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
@@ -196,11 +216,13 @@ jobs:
 
             ### Docker Images
             - `${{ env.IMAGE_BASE }}-api:${{ steps.meta.outputs.version }}`
+            - `${{ env.IMAGE_BASE }}-deploy-tool:${{ steps.meta.outputs.version }}`
             - `${{ env.IMAGE_BASE }}-worker:${{ steps.meta.outputs.version }}`
             - `${{ env.IMAGE_BASE }}-web:${{ steps.meta.outputs.version }}`
 
             ### Image Digests
             api: `${{ steps.build-api.outputs.digest }}`
+            deploy-tool: `${{ steps.build-deploy-tool.outputs.digest }}`
             worker: `${{ steps.build-worker.outputs.digest }}`
             web: `${{ steps.build-web.outputs.digest }}`
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 import {
   domainError,
   ERROR_CODES,
@@ -19,9 +19,10 @@ import {
   type Database,
 } from '@enova/db';
 import { DATABASE } from '../database/database.module.js';
-import { ENV, type Env } from '../config/config.module.js';
+import { SettingsService } from '../settings/settings.service.js';
 import { PasswordService } from './password.service.js';
 import { SessionService, SESSION_TTL_SECONDS } from './session.service.js';
+import { TurnstileService } from './turnstile.service.js';
 
 export interface AuthUser {
   userId: string;
@@ -46,13 +47,20 @@ function fail(code: ErrorCode, message: string, statusCode = 400): never {
 export class AuthService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
-    @Inject(ENV) private readonly env: Env,
+    @Inject(SettingsService) private readonly settings: SettingsService,
     private readonly password: PasswordService,
     private readonly session: SessionService,
+    private readonly turnstile: TurnstileService,
   ) {}
 
   /** 注册：事务内创建 User + Personal Workspace + Member + Wallet + Welcome Credits + Session。 */
-  async register(email: string, plainPassword: string): Promise<AuthResult & { token: string }> {
+  async register(
+    email: string,
+    plainPassword: string,
+    turnstileToken?: string,
+    remoteIP?: string,
+  ): Promise<AuthResult & { token: string }> {
+    await this.turnstile.verify(turnstileToken, remoteIP ?? '');
     const normalized = email.trim().toLowerCase();
 
     const existing = await this.db
@@ -67,6 +75,8 @@ export class AuthService {
     const passwordHash = await this.password.hash(plainPassword);
     const token = this.session.issueToken();
     const tokenHash = this.session.hashToken(token);
+    const welcome = (await this.settings.getNumber('billing.welcomeCredits')) ?? 0;
+    const isAdmin = await this.isInitialAdmin(normalized);
 
     const result = await this.db.transaction(async (tx) => {
       const [user] = await tx
@@ -75,7 +85,7 @@ export class AuthService {
           email: normalized,
           passwordHash,
           // 配置的首个管理员邮箱注册即授予 ADMIN（配置驱动，避免额外提权流程）。
-          role: this.isInitialAdmin(normalized) ? USER_ROLES.ADMIN : USER_ROLES.USER,
+          role: isAdmin ? USER_ROLES.ADMIN : USER_ROLES.USER,
           status: USER_STATUSES.ACTIVE,
         })
         .returning();
@@ -95,7 +105,6 @@ export class AuthService {
         role: WORKSPACE_MEMBER_ROLES.OWNER,
       });
 
-      const welcome = this.env.WELCOME_CREDITS;
       const [wallet] = await tx
         .insert(wallets)
         .values({ workspaceId: workspace.id, balance: welcome, reservedBalance: 0 })
@@ -137,7 +146,13 @@ export class AuthService {
   }
 
   /** 登录：校验密码 + 状态，创建新的 Session。 */
-  async login(email: string, plainPassword: string): Promise<AuthResult & { token: string }> {
+  async login(
+    email: string,
+    plainPassword: string,
+    turnstileToken?: string,
+    remoteIP?: string,
+  ): Promise<AuthResult & { token: string }> {
+    await this.turnstile.verify(turnstileToken, remoteIP ?? '');
     const normalized = email.trim().toLowerCase();
     const rows = await this.db.select().from(users).where(eq(users.email, normalized)).limit(1);
     const user = rows[0];
@@ -192,10 +207,14 @@ export class AuthService {
     return this.session.hashToken(rawToken);
   }
 
-  /** 是否为配置的首个管理员邮箱（INITIAL_ADMIN_EMAIL）。 */
-  private isInitialAdmin(email: string): boolean {
-    const configured = this.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
-    return Boolean(configured && configured === email);
+  /** 是否为配置的首个管理员邮箱（支持后台动态配置 INITIAL_ADMIN_EMAIL）。 */
+  private async isInitialAdmin(email: string): Promise<boolean> {
+    const configured = (await this.settings.getString('auth.initialAdminEmail'))?.trim().toLowerCase();
+    // 显式配置：仅该邮箱注册时被授予管理员（配置驱动，避免额外提权流程）。
+    if (configured) return configured === email;
+    // 未显式配置时，采用 sub2api 式引导：空库时首个注册用户成为管理员。
+    const [row] = await this.db.select({ n: count() }).from(users);
+    return (row?.n ?? 0) === 0;
   }
 
   /** 解析用户身份 + 其 Personal Workspace + Wallet 余额。 */

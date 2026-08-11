@@ -9,6 +9,8 @@ __pycache__/
 *.pyc
 .DS_Store
 _needs/
+# 深度研究报告产物（本地 scratch，不入仓库）
+deep-research-reports/
 
 # ---- 版本发布 / 更新系统 ----
 # 部署状态与日志（含 update_id、state.json、history.json、version.env）

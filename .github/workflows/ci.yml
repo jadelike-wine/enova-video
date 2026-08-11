@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Validate dev compose
-        run: docker compose config -q
+        run: docker compose -f docker-compose.dev.yml config -q
       - name: Validate prod compose
         run: |
           mkdir -p .deploy

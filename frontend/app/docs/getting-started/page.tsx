@@ -4,7 +4,7 @@ import { buildMetadata, siteUrl } from '../../../lib/seo'
 
 export const metadata: Metadata = buildMetadata({
   title: '快速开始',
-  description: 'Agnes AI Creator 快速入门指南：了解项目架构、本地部署与开发方式。',
+  description: '灵动创影快速入门指南：了解项目架构、本地部署与开发方式。',
   path: '/docs/getting-started',
 })
 
@@ -14,7 +14,7 @@ export default function GettingStartedPage() {
       <header>
         <h1 className="text-3xl font-extrabold">快速开始</h1>
         <p className="text-white/60 mt-2">
-          Agnes AI Creator 由 Next.js 前端与 FastAPI 后端组成，后端使用 SQLite 存储。本文介绍如何在本地运行。
+          灵动创影由 Next.js 前端与 FastAPI 后端组成，后端使用 SQLite 存储。本文介绍如何在本地运行。
         </p>
       </header>
 

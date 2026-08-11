@@ -4,7 +4,7 @@ import { buildMetadata } from '../../../lib/seo'
 
 export const metadata: Metadata = buildMetadata({
   title: 'API Key',
-  description: 'Agnes AI Creator 的 API Key 配置指南：如何获取并启用 Agnes AI API Key。',
+  description: '灵动创影的 API Key 配置指南：如何获取并启用 Agnes AI API Key。',
   path: '/docs/api-key',
 })
 

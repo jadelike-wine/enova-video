@@ -5,7 +5,7 @@ import { buildMetadata } from '../../lib/seo'
 export const metadata: Metadata = buildMetadata({
   title: 'AI Image Generator',
   description:
-    'Agnes AI Creator 的 AI 图片生成功能：基于 Agnes Image 2.1 Flash 的文生图、单图编辑与多图合成，支持多种尺寸，生成结果自动转存对象存储。免费、开源、可自托管。',
+    '灵动创影的 AI 图片生成功能：基于 Agnes Image 2.1 Flash 的文生图、单图编辑与多图合成，支持多种尺寸，生成结果自动转存对象存储。',
   path: '/ai-image-generator',
 })
 
@@ -17,7 +17,7 @@ export default function AiImageGeneratorPage() {
         subtitle:
           '基于 Agnes Image 2.1 Flash 的高画质图片生成，支持文生图、单图编辑与多图合成，多种尺寸可选。',
         intro: [
-          'Agnes AI Creator 的 AI 图片生成功能，让您无需专业设计能力即可通过文字描述生成高质量图片。支持文生图、单图编辑（img2img）与多图合成（multi_img）三种模式。',
+          '灵动创影的 AI 图片生成功能，让您无需专业设计能力即可通过文字描述生成高质量图片。支持文生图、单图编辑（img2img）与多图合成（multi_img）三种模式。',
           '提供多种纵横比尺寸，满足社交媒体、插画、产品图等不同场景需求。生成的图片会自动转存到七牛云对象存储，方便长期保存与分享。',
         ],
         features: [

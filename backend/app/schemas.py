@@ -61,6 +61,11 @@ class ApiKeyUpdate(BaseModel):
     api_key: Optional[str] = None
 
 
+class ApiKeyPoolToggle(BaseModel):
+    """开关某个 Key 是否参与视频 Token Pool。"""
+    enabled: bool = True
+
+
 class VideoGenerateRequest(BaseModel):
     model: str = "agnes-video-v2.0"
     prompt: str

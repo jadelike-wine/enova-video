@@ -1,0 +1,41 @@
+{
+  "name": "enova-video",
+  "version": "0.0.0",
+  "private": true,
+  "description": "灵动创影 · EnovaMotion — AI Creator SaaS (Modular Monolith)",
+  "packageManager": "pnpm@10.27.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@nestjs/core",
+      "msgpackr-extract"
+    ],
+    "overrides": {
+      "fastify": "4.29.1"
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "eslint": "^9.13.0",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.13.0",
+    "globals": "^15.11.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' --filter './apps/*' build",
+    "build:api": "pnpm --filter @enova/api build",
+    "build:worker": "pnpm --filter @enova/worker build",
+    "dev": "pnpm --parallel --filter './packages/*' --filter './apps/*' --stream dev",
+    "dev:api": "pnpm --filter @enova/api dev",
+    "dev:worker": "pnpm --filter @enova/worker dev",
+    "lint": "pnpm -r --filter './packages/*' --filter './apps/*' lint",
+    "test": "pnpm -r --filter './packages/*' --filter './apps/*' test",
+    "typecheck": "pnpm -r --filter './packages/*' --filter './apps/*' typecheck",
+    "db:generate": "pnpm --filter @enova/db generate",
+    "db:migrate": "pnpm --filter @enova/db migrate",
+    "sdk:generate": "pnpm --filter @enova/sdk generate"
+  }
+}

@@ -4,7 +4,7 @@ import { buildMetadata } from '../../../lib/seo'
 
 export const metadata: Metadata = buildMetadata({
   title: '图片生成',
-  description: 'Agnes AI Creator 图片生成功能使用指南：文生图、单图编辑与多图合成。',
+  description: '灵动创影图片生成功能使用指南：文生图、单图编辑与多图合成。',
   path: '/docs/image-generation',
 })
 
@@ -14,7 +14,7 @@ export default function ImageGenerationPage() {
       <header>
         <h1 className="text-3xl font-extrabold">图片生成</h1>
         <p className="text-white/60 mt-2">
-          Agnes AI Creator 提供文生图、单图编辑与多图合成三种图片生成模式。
+          灵动创影提供文生图、单图编辑与多图合成三种图片生成模式。
         </p>
       </header>
 

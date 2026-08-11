@@ -36,7 +36,7 @@ def get_active_api_key_info() -> dict:
 def list_api_keys() -> list[dict]:
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT id, name, api_key, is_active, created_at, updated_at
+            """SELECT id, name, api_key, is_active, is_enabled, created_at, updated_at
                FROM api_keys ORDER BY is_active DESC, created_at DESC"""
         ).fetchall()
         result = []
@@ -44,6 +44,7 @@ def list_api_keys() -> list[dict]:
             item = row_to_dict(row)
             item["key_masked"] = mask_api_key(item.pop("api_key"))
             item["is_active"] = bool(item["is_active"])
+            item["is_enabled"] = bool(item["is_enabled"])
             result.append(item)
         return result
 
@@ -60,17 +61,18 @@ def create_api_key(name: str, api_key: str, *, activate: bool = True) -> dict:
         if activate:
             conn.execute("UPDATE api_keys SET is_active = 0")
         cur = conn.execute(
-            """INSERT INTO api_keys (name, api_key, is_active)
-               VALUES (?, ?, ?)""",
+            """INSERT INTO api_keys (name, api_key, is_active, is_enabled)
+               VALUES (?, ?, ?, 1)""",
             (name, api_key, 1 if activate else 0),
         )
         row = conn.execute(
-            "SELECT id, name, api_key, is_active, created_at, updated_at FROM api_keys WHERE id = ?",
+            "SELECT id, name, api_key, is_active, is_enabled, created_at, updated_at FROM api_keys WHERE id = ?",
             (cur.lastrowid,),
         ).fetchone()
         item = row_to_dict(row)
         item["key_masked"] = mask_api_key(item.pop("api_key"))
         item["is_active"] = bool(item["is_active"])
+        item["is_enabled"] = bool(item["is_enabled"])
         return item
 
 
@@ -106,12 +108,38 @@ def update_api_key(key_id: int, *, name: Optional[str] = None, api_key: Optional
             params,
         )
         row = conn.execute(
-            "SELECT id, name, api_key, is_active, created_at, updated_at FROM api_keys WHERE id = ?",
+            "SELECT id, name, api_key, is_active, is_enabled, created_at, updated_at FROM api_keys WHERE id = ?",
             (key_id,),
         ).fetchone()
         item = row_to_dict(row)
         item["key_masked"] = mask_api_key(item.pop("api_key"))
         item["is_active"] = bool(item["is_active"])
+        item["is_enabled"] = bool(item["is_enabled"])
+        return item
+
+
+def set_enabled(key_id: int, enabled: bool) -> dict:
+    """开关某个 Key 是否参与视频 Token Pool（不影响 legacy is_active 语义）。"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, is_active FROM api_keys WHERE id = ?", (key_id,)
+        ).fetchone()
+        if not row:
+            raise ValueError("API Key 不存在")
+        conn.execute(
+            """UPDATE api_keys
+               SET is_enabled = ?, updated_at = datetime('now', 'localtime')
+               WHERE id = ?""",
+            (1 if enabled else 0, key_id),
+        )
+        row = conn.execute(
+            "SELECT id, name, api_key, is_active, is_enabled, created_at, updated_at FROM api_keys WHERE id = ?",
+            (key_id,),
+        ).fetchone()
+        item = row_to_dict(row)
+        item["key_masked"] = mask_api_key(item.pop("api_key"))
+        item["is_active"] = bool(item["is_active"])
+        item["is_enabled"] = bool(item["is_enabled"])
         return item
 
 
@@ -125,17 +153,18 @@ def activate_api_key(key_id: int) -> dict:
         conn.execute("UPDATE api_keys SET is_active = 0")
         conn.execute(
             """UPDATE api_keys
-               SET is_active = 1, updated_at = datetime('now', 'localtime')
+               SET is_active = 1, is_enabled = 1, updated_at = datetime('now', 'localtime')
                WHERE id = ?""",
             (key_id,),
         )
         row = conn.execute(
-            "SELECT id, name, api_key, is_active, created_at, updated_at FROM api_keys WHERE id = ?",
+            "SELECT id, name, api_key, is_active, is_enabled, created_at, updated_at FROM api_keys WHERE id = ?",
             (key_id,),
         ).fetchone()
         item = row_to_dict(row)
         item["key_masked"] = mask_api_key(item.pop("api_key"))
         item["is_active"] = bool(item["is_active"])
+        item["is_enabled"] = bool(item["is_enabled"])
         return item
 
 

@@ -4,11 +4,12 @@ import MarketingLayout from '../components/marketing/MarketingLayout'
 import { ModelGrid } from '../components/marketing/ModelCard'
 import { FAQ } from '../components/marketing/FAQ'
 import { buildMetadata, SITE_NAME, SITE_TAGLINE, absoluteUrl } from '../lib/seo'
+import { BRAND } from '../lib/brand'
 
 export const metadata: Metadata = buildMetadata({
   title: { absolute: `${SITE_NAME} – ${SITE_TAGLINE}` },
   description:
-    'Agnes AI Creator 是一个开源、可自托管的多模态 AI Web 客户端，支持 AI 对话、AI 图片生成与 AI 视频生成，基于 Agnes AI 免费模型。立即开始创作。',
+    '灵动创影（EnovaMotion）是一个 AI 智能创作平台，支持 AI 对话、AI 图片生成与 AI 视频生成。基于 Agnes AI 模型，立即开始创作。',
   path: '/',
 })
 
@@ -35,16 +36,12 @@ const features = [
 
 const faqs = [
   {
-    q: 'Agnes AI Creator 是什么？',
-    a: 'Agnes AI Creator 是一个开源、可自托管的多模态 AI Web 客户端，提供 AI 对话、AI 图片生成和 AI 视频生成三大能力，底层使用 Agnes AI 的免费模型。',
+    q: '灵动创影是什么？',
+    a: '灵动创影（EnovaMotion）是一个 AI 智能创作平台，提供 AI 对话、AI 图片生成和 AI 视频生成三大能力，底层使用 Agnes AI 模型。',
   },
   {
-    q: 'Agnes AI Creator 免费吗？',
-    a: '项目本身完全开源、免费，可自托管部署。模型侧使用 Agnes AI 的 API，相关用量与费用以 Agnes AI 平台为准。',
-  },
-  {
-    q: '可以自托管部署吗？',
-    a: '可以。项目由 Next.js 前端与 FastAPI 后端组成，后端使用 SQLite 存储，支持本地或服务器部署，无需依赖第三方付费服务。',
+    q: '支持自托管部署吗？',
+    a: '可以。平台由 Next.js 前端与 FastAPI 后端组成，后端使用 SQLite 存储，支持本地或服务器部署。',
   },
   {
     q: '支持哪些模型？',
@@ -60,11 +57,10 @@ export default function HomePage() {
     applicationCategory: 'CreativeWorkApplication',
     operatingSystem: 'Web',
     description:
-      'Agnes AI Creator 是一个开源、可自托管的多模态 AI Web 客户端，支持 AI 对话、AI 图片生成与 AI 视频生成。',
+      '灵动创影（EnovaMotion）是一个 AI 智能创作平台，支持 AI 对话、AI 图片生成与 AI 视频生成。',
     url: absoluteUrl('/'),
     inLanguage: 'zh-CN',
-    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-    featureList: ['AI 对话', 'AI 图片生成', 'AI 视频生成', '自托管部署'],
+    featureList: ['AI 对话', 'AI 图片生成', 'AI 视频生成'],
   }
 
   return (
@@ -76,11 +72,10 @@ export default function HomePage() {
       {/* Hero */}
       <section className="max-w-6xl mx-auto px-6 pt-20 pb-16 text-center">
         <h1 className="text-4xl md:text-6xl font-extrabold leading-tight bg-gradient-to-r from-fuchsia-400 via-violet-400 to-cyan-400 bg-clip-text text-transparent">
-          开源多模态 AI 创作平台
+          AI 智能创作平台
         </h1>
         <p className="mt-6 text-lg text-white/70 max-w-3xl mx-auto leading-relaxed">
-          Agnes AI Creator 将 AI 对话、AI 图片生成与 AI 视频生成整合到一个简洁、免费、可自托管的 Web
-          客户端中。基于 Agnes AI 模型，无需付费订阅，即可开始创作。
+          {BRAND.nameZh} 将 AI 对话、AI 图片生成与 AI 视频生成整合到一个简洁的 AI 创作平台中。基于 Agnes AI 模型，即刻开始创作。
         </p>
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
           <Link href="/app/chat" className="btn-primary text-base px-8 py-3">
@@ -126,24 +121,6 @@ export default function HomePage() {
           </Link>
         </div>
         <ModelGrid />
-      </section>
-
-      {/* Open source */}
-      <section className="max-w-6xl mx-auto px-6 py-12">
-        <div className="glass-card py-10 px-6 text-center">
-          <h2 className="text-2xl font-extrabold mb-3">开放与自托管</h2>
-          <p className="text-white/60 max-w-2xl mx-auto mb-6">
-            完全开源，可自由部署到自己的服务器，数据由你掌控。前后端分离架构，易于扩展与二次开发。
-          </p>
-          <a
-            href="https://github.com/jiyiren/agnes-ai-creator"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-secondary"
-          >
-            View on GitHub
-          </a>
-        </div>
       </section>
 
       {/* FAQ */}

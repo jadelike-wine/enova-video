@@ -174,7 +174,7 @@ class RequestContextMiddleware:
             reset_context()
 
 
-app = FastAPI(title="Agnes AI Creator", lifespan=lifespan)
+app = FastAPI(title="灵动创影 API", lifespan=lifespan)
 
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(

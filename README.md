@@ -1,9 +1,9 @@
 <h4 align="right"><a href="README_EN.md">English</a> | <strong>简体中文</strong></h4>
 <p align="center">
-  <img src="docs/images/logo.jpg" width="138" alt="Agnes AI Creator" style="border-radius: 28px;"/>
+  <img src="docs/images/logo.jpg" width="138" alt="灵动创影" style="border-radius: 28px;"/>
 </p>
-<h1 align="center">Agnes AI Creator</h1>
-<p align="center"><strong>基于 Agnes AI 免费大模型的自托管多模态 Web 客户端</strong></p>
+<h1 align="center">灵动创影 · EnovaMotion</h1>
+<p align="center"><strong>基于 Agnes AI 模型的多模态 AI 创作平台</strong></p>
 <p align="center">AI 对话 · 文生图 / 图生图 · 文生视频 / 图生视频 </p>
 <div align="center">
   <a href="https://platform.agnes-ai.com/" target="_blank">
@@ -19,7 +19,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/ai-img-gen.png" alt="Agnes AI Creator — AI 流式对话界面" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
+  <img src="docs/images/ai-img-gen.png" alt="灵动创影 — AI 流式对话界面" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
 </p>
 
 <p align="center">
@@ -93,8 +93,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/jiyiren/agnes-ai-creator.git
-cd agnes-ai-creator
+git clone https://github.com/jadelike-wine/enova-video.git
+cd enova-video
 ```
 
 ### 2. 配置后端环境变量（可选）
@@ -606,7 +606,7 @@ docker compose logs backend | grep "9fd8ab"
 
 ## AWS S3 存储
 
-Agnes AI Creator 支持使用 **AWS S3**（或任何 S3 兼容存储）作为对象存储，与七牛云/不转存三种模式通过 `STORAGE_PROVIDER` 统一切换。业务代码只依赖统一的 Storage 层，不感知底层是七牛还是 S3。
+灵动创影支持使用 **AWS S3**（或任何 S3 兼容存储）作为对象存储，与七牛云/不转存三种模式通过 `STORAGE_PROVIDER` 统一切换。业务代码只依赖统一的 Storage 层，不感知底层是七牛还是 S3。
 
 ### 使用 Access Key 的本地 Docker 部署
 
@@ -692,7 +692,7 @@ AWS_S3_PUBLIC_BASE_URL=https://cdn.example.com
 ## 项目结构
 
 ```
-agnes-ai-creator/
+enova-video/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # FastAPI 入口 & 定时任务

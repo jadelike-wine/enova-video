@@ -49,6 +49,14 @@ VIDEO_MODELS = ["agnes-video-v2.0"]
 
 IMAGE_SIZES = ["1024x768", "1024x1024", "768x1024", "768x768", "1280x720", "720x1280"]
 
+# ---- 视频生成并发与 Token Pool ----
+# 同一时刻真正打到 Agnes 的 create_video 并发上限（超过的请求排队）
+VIDEO_MAX_CONCURRENCY = max(1, int(os.getenv("VIDEO_MAX_CONCURRENCY", "3").strip() or 3))
+# 单个 Token 在同一时刻允许的 in-flight 视频创建请求数（用于把并发摊到多个 Token）
+VIDEO_MAX_IN_FLIGHT_PER_KEY = max(1, int(os.getenv("VIDEO_MAX_IN_FLIGHT_PER_KEY", "1").strip() or 1))
+# 单个视频任务的 create_video 最大尝试次数（含首次，429/5xx/超时才重试）
+VIDEO_CREATE_MAX_ATTEMPTS = max(1, int(os.getenv("VIDEO_CREATE_MAX_ATTEMPTS", "3").strip() or 3))
+
 
 def is_qiniu_configured() -> bool:
     return bool(

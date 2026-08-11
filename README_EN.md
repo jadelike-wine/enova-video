@@ -1,9 +1,9 @@
 <h4 align="right"><strong>English</strong> | <a href="README.md">简体中文</a></h4>
 <p align="center">
-  <img src="docs/images/logo.jpg" width="138" alt="Agnes AI Creator" style="border-radius: 28px;"/>
+  <img src="docs/images/logo.jpg" width="138" alt="EnovaMotion" style="border-radius: 28px;"/>
 </p>
-<h1 align="center">Agnes AI Creator</h1>
-<p align="center"><strong>A self-hosted multimodal web client powered by free Agnes AI models</strong></p>
+<h1 align="center">EnovaMotion</h1>
+<p align="center"><strong>An AI-powered multimodal creation platform built on Agnes AI models</strong></p>
 <p align="center">AI chat · Text-to-image / image edit · Text-to-video / image-to-video · Qiniu Cloud storage (optional)</p>
 <div align="center">
   <a href="https://platform.agnes-ai.com/" target="_blank">
@@ -24,17 +24,17 @@
   <img alt="haiqushe" src="https://img.shields.io/badge/海趣社-Site%20Nav-blueviolet?style=flat-square"></a>
 </div>
 
-> Free Agnes AI models — [sign up on the platform](https://platform.agnes-ai.com/), add your API key in Settings, and start creating.
+> Agnes AI models — [sign up on the platform](https://platform.agnes-ai.com/), add your API key in Settings, and start creating.
 
 > Recommended: an AI model gateway with 500+ global models — [AIGC1024.com](https://aigc1024.com/)
 
 <p align="center">
-  <img src="docs/images/ai-img-gen.png" alt="Agnes AI Creator — streaming AI chat" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
+  <img src="docs/images/ai-img-gen.png" alt="EnovaMotion — streaming AI chat" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
 </p>
 
 <p align="center">
   <strong>Chat · Images · Video — all in one beautiful UI</strong><br/>
-  Free Agnes AI models &nbsp;·&nbsp; Vue 3 + FastAPI &nbsp;·&nbsp; Glassmorphism design &nbsp;·&nbsp; Zero-code web settings
+  Agnes AI models &nbsp;·&nbsp; Vue 3 + FastAPI &nbsp;·&nbsp; Glassmorphism design &nbsp;·&nbsp; Zero-code web settings
 </p>
 
 ## Screenshots
@@ -104,8 +104,8 @@
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/jiyiren/agnes-ai-creator.git
-cd agnes-ai-creator
+git clone https://github.com/jadelike-wine/enova-video.git
+cd enova-video
 ```
 
 ### 2. Configure backend environment variables (optional)
@@ -224,7 +224,7 @@ Main tables:
 ## Project structure
 
 ```
-agnes-ai-creator/
+enova-video/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # FastAPI entry & scheduled tasks

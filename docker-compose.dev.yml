@@ -1,0 +1,41 @@
+# 新 Monorepo（apps/api + apps/worker）本地开发所需的基础设施：
+# PostgreSQL + Redis。仅用于本地 dev，不参与生产部署。
+# 启动：docker compose -f docker-compose.dev.yml up -d
+name: enova-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: enova-postgres
+    environment:
+      POSTGRES_USER: enova
+      POSTGRES_PASSWORD: enova
+      POSTGRES_DB: enova
+    ports:
+      - "5432:5432"
+    volumes:
+      - enova_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U enova -d enova"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: enova-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - enova_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  enova_pgdata:
+  enova_redisdata:

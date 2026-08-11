@@ -43,6 +43,7 @@ def _migrate_video_tasks_status():
                 duration_ms INTEGER DEFAULT 0,
                 error_message TEXT,
                 request_params TEXT,
+                api_key_id INTEGER,
                 created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
                 completed_at TEXT
             );
@@ -75,6 +76,39 @@ def _migrate_storage_columns():
     logger.info("Migration %s completed", "add_storage_columns")
 
 
+def _migrate_api_key_pool():
+    """为 api_keys 幂等新增 is_enabled 列（视频 Token Pool 参与开关）。
+
+    向后兼容：
+    - 已有记录默认 is_enabled = 1，因此升级后原来的 active key 仍会加入 Pool，
+      不会因为迁移导致原有效 key 突然不可用。
+    - 不重建表、不丢历史记录，可重复执行。
+    """
+    with sqlite3.connect(DATABASE_PATH) as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(api_keys)").fetchall()}
+        if "is_enabled" not in cols:
+            conn.execute(
+                "ALTER TABLE api_keys ADD COLUMN is_enabled INTEGER NOT NULL DEFAULT 1 "
+                "CHECK(is_enabled IN (0, 1))"
+            )
+        conn.commit()
+    logger.info("Migration %s completed", "add_api_keys_is_enabled")
+
+
+def _migrate_video_api_key_id():
+    """为 video_tasks 幂等新增 api_key_id 列，记录创建该视频时使用的 Token。
+
+    老记录（无 api_key_id）在轮询时兼容 fallback 到可用 Token，不影响历史数据。
+    可重复执行。
+    """
+    with sqlite3.connect(DATABASE_PATH) as conn:
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(video_tasks)").fetchall()}
+        if "api_key_id" not in cols:
+            conn.execute("ALTER TABLE video_tasks ADD COLUMN api_key_id INTEGER")
+        conn.commit()
+    logger.info("Migration %s completed", "add_video_tasks_api_key_id")
+
+
 def init_db():
     db_path = Path(DATABASE_PATH)
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,6 +126,8 @@ def init_db():
         raise
     _migrate_video_tasks_status()
     _migrate_storage_columns()
+    _migrate_api_key_pool()
+    _migrate_video_api_key_id()
     from app.services.api_key_service import import_env_api_key_if_empty
     from app.services.app_settings_service import ensure_default_settings
 

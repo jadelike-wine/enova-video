@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { BRAND } from '../../lib/brand'
 
 const groups = [
   {
@@ -38,12 +39,12 @@ export default function MarketingFooter() {
           <div>
             <div className="flex items-center gap-3 mb-3">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-cyan-400 flex items-center justify-center text-base font-extrabold shadow-glow">
-                A
+                {BRAND.logoMarkZh}
               </div>
-              <span className="font-bold">Agnes AI Creator</span>
+              <span className="font-bold">{BRAND.nameZh}</span>
             </div>
             <p className="text-sm text-white/50 leading-relaxed">
-              开源的 Agnes AI 多模态 Web 客户端，支持对话、图片与视频生成，可自托管部署。
+              {BRAND.nameZh}（{BRAND.name}）AI 智能创作平台，提供 AI 对话、AI 图片生成与 AI 视频生成的一体化创作体验。
             </p>
           </div>
 
@@ -67,15 +68,7 @@ export default function MarketingFooter() {
         </div>
 
         <div className="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-white/40">
-          <p>© {new Date().getFullYear()} Agnes AI Creator · Open Source</p>
-          <a
-            href="https://github.com/jiyiren/agnes-ai-creator"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-cyan-300 transition-colors"
-          >
-            GitHub
-          </a>
+          <p>© {new Date().getFullYear()} {BRAND.nameZh} · {BRAND.name}</p>
         </div>
       </div>
     </footer>

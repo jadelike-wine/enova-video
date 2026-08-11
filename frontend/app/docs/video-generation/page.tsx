@@ -4,7 +4,7 @@ import { buildMetadata } from '../../../lib/seo'
 
 export const metadata: Metadata = buildMetadata({
   title: '视频生成',
-  description: 'Agnes AI Creator 视频生成功能使用指南：文生视频、图生视频、多图视频与关键帧动画。',
+  description: '灵动创影视频生成功能使用指南：文生视频、图生视频、多图视频与关键帧动画。',
   path: '/docs/video-generation',
 })
 
@@ -14,7 +14,7 @@ export default function VideoGenerationPage() {
       <header>
         <h1 className="text-3xl font-extrabold">视频生成</h1>
         <p className="text-white/60 mt-2">
-          Agnes AI Creator 支持文生视频、图生视频、多图视频与关键帧动画四种视频生成模式。
+          灵动创影支持文生视频、图生视频、多图视频与关键帧动画四种视频生成模式。
         </p>
       </header>
 

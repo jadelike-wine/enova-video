@@ -5,7 +5,7 @@ import { buildMetadata } from '../../lib/seo'
 export const metadata: Metadata = buildMetadata({
   title: 'AI Video Generator',
   description:
-    'Agnes AI Creator 的 AI 视频生成功能：基于 Agnes Video V2.0 的文生视频、图生视频、多图视频与关键帧动画，后台异步轮询任务进度。免费、开源、可自托管。',
+    '灵动创影的 AI 视频生成功能：基于 Agnes Video V2.0 的文生视频、图生视频、多图视频与关键帧动画，后台异步轮询任务进度。',
   path: '/ai-video-generator',
 })
 
@@ -17,7 +17,7 @@ export default function AiVideoGeneratorPage() {
         subtitle:
           '基于 Agnes Video V2.0 的文生视频、图生视频、多图视频与关键帧动画，多种时长与分辨率可选。',
         intro: [
-          'Agnes AI Creator 的 AI 视频生成功能，让您通过文字或图片描述即可创建视频。支持文生视频、图生视频、多图视频与关键帧动画四种模式。',
+          '灵动创影的 AI 视频生成功能，让您通过文字或图片描述即可创建视频。支持文生视频、图生视频、多图视频与关键帧动画四种模式。',
           '提供横屏/竖屏多种分辨率与多种时长预设，后台以异步任务方式生成，可实时查看进度并在完成后播放、下载。',
         ],
         features: [

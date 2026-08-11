@@ -13,6 +13,7 @@ from app.services.app_settings_service import get_agnes_base_url
 from app.services.error_utils import (
     format_agnes_error,
     classify_agnes_error,
+    AgnesUpstreamError,
     ERROR_CODES,
 )
 from app.core.logging import get_logger, redact_url
@@ -45,13 +46,26 @@ def _payload_summary(payload: dict) -> dict:
     return summary
 
 
+def _parse_retry_after(resp) -> Optional[float]:
+    """从响应头解析 Retry-After（秒）。无法解析返回 None。"""
+    raw = resp.headers.get("Retry-After") or resp.headers.get("retry-after")
+    if not raw:
+        return None
+    raw = raw.strip()
+    if raw.isdigit():
+        return float(raw)
+    # HTTP-date 形式暂不支持；返回 None 走指数退避
+    return None
+
+
 class AgnesClient:
     @property
     def base_url(self) -> str:
         return get_agnes_base_url()
 
-    def _headers(self) -> dict:
-        api_key = get_active_api_key()
+    def _headers(self, api_key: Optional[str] = None) -> dict:
+        if not api_key:
+            api_key = get_active_api_key()
         if not api_key:
             raise RuntimeError(NO_API_KEY_MSG)
         return {
@@ -59,17 +73,17 @@ class AgnesClient:
             "Content-Type": "application/json",
         }
 
-    def _log_start(self, operation: str, model: str, payload: dict = None) -> dict:
+    def _log_start(self, operation: str, model: str, payload: dict = None, api_key_info: dict = None) -> dict:
         extra = {
             "operation": operation,
             "model": model,
             "upstream_host": _upstream_host(self.base_url),
             "method": "POST",
         }
-        info = get_active_api_key_info()
+        info = api_key_info or get_active_api_key_info()
         if info:
-            extra["api_key_id"] = info["api_key_id"]
-            extra["key_suffix"] = info["key_suffix"]
+            extra["api_key_id"] = info.get("api_key_id") or info.get("id")
+            extra["key_suffix"] = info.get("key_suffix")
         if payload:
             extra.update(_payload_summary(payload))
         logger.info("%s started", operation, extra=extra)
@@ -187,13 +201,21 @@ class AgnesClient:
             data["duration_ms"] = duration_ms
             return data
 
-    async def create_video(self, payload: dict) -> dict:
+    async def create_video(
+        self,
+        payload: dict,
+        *,
+        api_key: Optional[str] = None,
+        api_key_info: Optional[dict] = None,
+    ) -> dict:
         start = time.time()
-        extra = self._log_start("video_generation", payload.get("model"), payload)
+        extra = self._log_start(
+            "video_generation", payload.get("model"), payload, api_key_info
+        )
         async with httpx.AsyncClient(timeout=120, trust_env=False) as client:
             resp = await client.post(
                 f"{self.base_url}/v1/videos",
-                headers=self._headers(),
+                headers=self._headers(api_key),
                 json=payload,
             )
             if resp.status_code >= 400:
@@ -203,8 +225,10 @@ class AgnesClient:
                     detail = format_agnes_error(body.get("error") or body)
                 except Exception:
                     detail = resp.text.strip() or None
-                exc = RuntimeError(
-                    detail or f"Agnes API {resp.status_code}: {resp.text or '请求失败'}"
+                exc = AgnesUpstreamError(
+                    detail or f"Agnes API {resp.status_code}: {resp.text or '请求失败'}",
+                    status_code=resp.status_code,
+                    retry_after=_parse_retry_after(resp),
                 )
                 self._log_error("video_generation", extra, exc, resp.status_code)
                 raise exc
@@ -214,7 +238,14 @@ class AgnesClient:
             data["duration_ms"] = duration_ms
             return data
 
-    async def get_video_status(self, video_id: str, model_name: Optional[str] = None) -> dict:
+    async def get_video_status(
+        self,
+        video_id: str,
+        model_name: Optional[str] = None,
+        *,
+        api_key: Optional[str] = None,
+        api_key_info: Optional[dict] = None,
+    ) -> dict:
         params = {"video_id": video_id}
         if model_name:
             params["model_name"] = model_name
@@ -229,10 +260,10 @@ class AgnesClient:
             "upstream_host": _upstream_host(self.base_url),
             "method": "GET",
         }
-        info = get_active_api_key_info()
+        info = api_key_info or get_active_api_key_info()
         if info:
-            extra["api_key_id"] = info["api_key_id"]
-            extra["key_suffix"] = info["key_suffix"]
+            extra["api_key_id"] = info.get("api_key_id") or info.get("id")
+            extra["key_suffix"] = info.get("key_suffix")
 
         for attempt_index, delay in enumerate(delays):
             if delay:
@@ -242,7 +273,7 @@ class AgnesClient:
                 async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
                     resp = await client.get(
                         f"{self.base_url}/agnesapi",
-                        headers=self._headers(),
+                        headers=self._headers(api_key),
                         params=params,
                     )
                     resp.raise_for_status()
@@ -297,7 +328,13 @@ class AgnesClient:
             raise last_error
         raise RuntimeError("查询视频状态失败")
 
-    async def get_video_status_by_task(self, task_id: str) -> dict:
+    async def get_video_status_by_task(
+        self,
+        task_id: str,
+        *,
+        api_key: Optional[str] = None,
+        api_key_info: Optional[dict] = None,
+    ) -> dict:
         start = time.time()
         extra = {
             "operation": "video_status_by_task",
@@ -305,10 +342,14 @@ class AgnesClient:
             "upstream_host": _upstream_host(self.base_url),
             "method": "GET",
         }
+        info = api_key_info or get_active_api_key_info()
+        if info:
+            extra["api_key_id"] = info.get("api_key_id") or info.get("id")
+            extra["key_suffix"] = info.get("key_suffix")
         async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
             resp = await client.get(
                 f"{self.base_url}/v1/videos/{task_id}",
-                headers=self._headers(),
+                headers=self._headers(api_key),
             )
             resp.raise_for_status()
             duration_ms = int((time.time() - start) * 1000)

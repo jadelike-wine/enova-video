@@ -1,13 +1,23 @@
 import asyncio
 import json
+import random
 from fastapi import APIRouter, HTTPException, UploadFile, File, BackgroundTasks
 from app.database import get_db, row_to_dict
 from app.schemas import VideoGenerateRequest
 from app.services.agnes_client import agnes_client
+from app.services.api_key_pool import (
+    api_key_pool,
+    get_video_concurrency_semaphore,
+    NoAvailableApiKey,
+)
+from app.config import (
+    VIDEO_CREATE_MAX_ATTEMPTS,
+)
 from app.services.error_utils import (
     format_agnes_error,
     is_transient_http_error,
     classify_agnes_error,
+    AgnesUpstreamError,
     ApiError,
     ERROR_CODES,
 )
@@ -33,10 +43,116 @@ def _already_stored(row) -> bool:
     return bool(row["qiniu_url"] or row["storage_provider"] or row["storage_key"])
 
 
+def _retry_delay(attempt: int, retry_after: float = None) -> float:
+    """重试间隔：Retry-After 优先，否则指数退避 + jitter，上限 30s。"""
+    if retry_after and retry_after > 0:
+        return min(float(retry_after), 30.0)
+    base = min(2.0 * (2 ** attempt), 30.0)
+    return base + random.uniform(0, 0.5)
+
+
+def _mark_pool(exc: BaseException, key_id: int) -> None:
+    """根据上游错误更新 Token Pool 状态（429 冷却 / 401 403 不可用）。"""
+    if isinstance(exc, AgnesUpstreamError):
+        if exc.is_rate_limit:
+            api_key_pool.mark_rate_limited(key_id, exc.retry_after)
+        elif exc.is_auth:
+            api_key_pool.mark_failed(key_id, exc.status_code)
+
+
+async def _create_video_with_retry(task_id: int, payload: dict) -> tuple[dict, int]:
+    """带 Token Pool + 并发控制 + 有界重试的视频创建流程。
+
+    策略：
+    - 实际 create_video 并发受 VIDEO_MAX_CONCURRENCY（全局信号量）约束。
+    - 每次尝试从 Pool acquire 一个健康 Token（Round Robin，跳过冷却/不可用/超限）。
+    - 429：冷却该 Token，重试（最多 VIDEO_CREATE_MAX_ATTEMPTS-1 次重试）。
+    - 401/403：标记 Token 不可用，不重试，直接失败。
+    - 400/其它 4xx：不切换 Token 重试，直接失败。
+    - 5xx/超时/连接错误：指数退避重试（有上限）。
+    - 所有 Token 均冷却/不可用时，acquire 会等待最早恢复，不 busy loop。
+    """
+    max_attempts = max(1, VIDEO_CREATE_MAX_ATTEMPTS)
+    last_err: BaseException | None = None
+    for attempt in range(max_attempts):
+        try:
+            sem = get_video_concurrency_semaphore()
+            async with sem:
+                async with (await api_key_pool.acquire()) as key:
+                    with get_db() as conn:
+                        conn.execute(
+                            "UPDATE video_tasks SET api_key_id=? WHERE id=?",
+                            (key.id, task_id),
+                        )
+                    info = {
+                        "id": key.id,
+                        "name": key.name,
+                        "key_suffix": key.key_suffix,
+                    }
+                    try:
+                        data = await agnes_client.create_video(
+                            payload,
+                            api_key=key.api_key,
+                            api_key_info=info,
+                        )
+                        api_key_pool.mark_success(key.id)
+                        return data, key.id
+                    except BaseException as e:
+                        _mark_pool(e, key.id)
+                        raise
+        except NoAvailableApiKey:
+            raise
+        except AgnesUpstreamError as e:
+            last_err = e
+            if e.is_client_error and not e.is_rate_limit:
+                # 400/401/403 等：不切换 Token 重试（401/403 已标记不可用）
+                raise
+            if attempt >= max_attempts - 1:
+                raise
+            logger.warning(
+                "video generation retry task_id=%s attempt=%s status=%s",
+                task_id,
+                attempt + 1,
+                e.status_code,
+                extra={
+                    "task_id": task_id,
+                    "retry_count": attempt + 1,
+                    "max_attempts": max_attempts,
+                    "status": e.status_code,
+                    "error_code": e.error_code,
+                    "reason": "upstream",
+                },
+            )
+            await asyncio.sleep(_retry_delay(attempt, e.retry_after))
+        except (TimeoutError, ConnectionError) as e:
+            last_err = e
+            if attempt >= max_attempts - 1:
+                raise
+            logger.warning(
+                "video generation retry task_id=%s attempt=%s reason=transport",
+                task_id,
+                attempt + 1,
+                extra={
+                    "task_id": task_id,
+                    "retry_count": attempt + 1,
+                    "max_attempts": max_attempts,
+                    "reason": "transport",
+                },
+            )
+            await asyncio.sleep(_retry_delay(attempt))
+        except Exception as e:
+            last_err = e
+            raise
+
+    if last_err:
+        raise last_err
+    raise RuntimeError("视频生成提交失败")
+
+
 async def _submit_to_agnes(task_id: int, payload: dict) -> dict:
     set_task_id(task_id)
     try:
-        result = await agnes_client.create_video(payload)
+        result, api_key_id = await _create_video_with_retry(task_id, payload)
         status = result.get("status", "queued")
         error_msg = format_agnes_error(result.get("error"))
         agnes_task_id = result.get("task_id") or result.get("id")
@@ -54,20 +170,26 @@ async def _submit_to_agnes(task_id: int, payload: dict) -> dict:
             )
             row = conn.execute("SELECT * FROM video_tasks WHERE id = ?", (task_id,)).fetchone()
         logger.info(
-            "video generation submitted task_id=%s agnes_task_id=%s status=%s",
+            "video generation submitted task_id=%s agnes_task_id=%s status=%s api_key_id=%s",
             task_id,
             agnes_task_id,
             status,
+            api_key_id,
             extra={
                 "task_id": task_id,
                 "video_id": video_id,
                 "status": status,
                 "generation_id": task_id,
+                "api_key_id": api_key_id,
             },
         )
         return _serialize(row)
     except Exception as e:
-        err_text = str(e).strip() or "提交到 Agnes API 失败（无详细错误信息）"
+        err_text = (
+            "所有 API Key 均不可用，请稍后重试"
+            if isinstance(e, NoAvailableApiKey)
+            else str(e).strip() or "提交到 Agnes API 失败（无详细错误信息）"
+        )
         with get_db() as conn:
             conn.execute(
                 "UPDATE video_tasks SET status='failed', error_message=? WHERE id=?",

@@ -41,7 +41,16 @@ interface ApiKeyItem {
   api_key?: string
   key_masked?: string
   is_active: boolean
+  is_enabled?: boolean
+  pool_status?: 'available' | 'cooldown' | 'unavailable' | 'disabled'
   created_at?: string
+}
+
+const POOL_STATUS_LABEL: Record<string, { text: string; cls: string }> = {
+  available: { text: '可用', cls: 'border-emerald-400/40 text-emerald-200 bg-emerald-400/10' },
+  cooldown: { text: '冷却中', cls: 'border-amber-400/40 text-amber-200 bg-amber-400/10' },
+  unavailable: { text: '不可用', cls: 'border-rose-400/40 text-rose-200 bg-rose-400/10' },
+  disabled: { text: '未加入轮询', cls: 'border-white/15 text-white/40 bg-white/5' },
 }
 
 interface ApiKeyList {
@@ -199,6 +208,16 @@ export default function SettingsView() {
       await loadKeys()
     } catch (e) {
       await alert({ title: '启用失败', message: (e as Error).message })
+    }
+  }
+
+  const handleTogglePool = async (item: ApiKeyItem) => {
+    const next = !item.is_enabled
+    try {
+      await settingsApi.togglePool(item.id, next)
+      await loadKeys()
+    } catch (e) {
+      await alert({ title: '操作失败', message: (e as Error).message })
     }
   }
 
@@ -500,7 +519,7 @@ export default function SettingsView() {
                   rel="noopener noreferrer"
                   className="inline-block mt-2 text-xs text-cyan-300 hover:underline"
                 >
-                  查看 GitHub Release
+                  查看版本详情
                 </a>
               )}
             </div>
@@ -628,10 +647,35 @@ export default function SettingsView() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-white">{item.name}</span>
                           {item.is_active && <span className="badge-completed">使用中</span>}
+                          {item.is_enabled ? (
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full border ${
+                                POOL_STATUS_LABEL[item.pool_status ?? 'available']?.cls ??
+                                POOL_STATUS_LABEL.available.cls
+                              }`}
+                            >
+                              {POOL_STATUS_LABEL[item.pool_status ?? 'available']?.text ?? '可用'}
+                            </span>
+                          ) : (
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full border ${POOL_STATUS_LABEL.disabled.cls}`}
+                            >
+                              未加入轮询
+                            </span>
+                          )}
                         </div>
                         {item.key_masked && (
                           <p className="text-sm text-white/50 font-mono mt-1">{item.key_masked}</p>
                         )}
+                        <label className="flex items-center gap-2 text-xs text-white/50 mt-2 cursor-pointer">
+                          <input
+                            checked={!!item.is_enabled}
+                            onChange={() => handleTogglePool(item)}
+                            type="checkbox"
+                            className="rounded border-white/20 bg-white/10 text-fuchsia-500 focus:ring-fuchsia-400/50"
+                          />
+                          参与视频生成轮询
+                        </label>
                         {item.created_at && (
                           <p className="text-xs text-white/30 mt-2">创建于 {item.created_at}</p>
                         )}

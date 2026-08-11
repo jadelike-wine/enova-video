@@ -1,0 +1,111 @@
+/**
+ * 稳定错误码与统一错误响应格式。
+ * 前端通过 error.code 分支，禁止用字符串判断错误类型。
+ */
+
+export const ERROR_CODES = {
+  // 通用
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  NOT_FOUND: 'NOT_FOUND',
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  FORBIDDEN: 'FORBIDDEN',
+  RATE_LIMITED: 'RATE_LIMITED',
+  CONFLICT: 'CONFLICT',
+
+  // Auth
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  EMAIL_ALREADY_REGISTERED: 'EMAIL_ALREADY_REGISTERED',
+  USER_DISABLED: 'USER_DISABLED',
+  SESSION_EXPIRED: 'SESSION_EXPIRED',
+
+  // Workspace / 权限
+  IDOR_FORBIDDEN: 'IDOR_FORBIDDEN',
+  WORKSPACE_NOT_FOUND: 'WORKSPACE_NOT_FOUND',
+  NOT_WORKSPACE_MEMBER: 'NOT_WORKSPACE_MEMBER',
+
+  // Generation
+  GENERATION_NOT_FOUND: 'GENERATION_NOT_FOUND',
+  GENERATION_INVALID_STATUS_TRANSITION: 'GENERATION_INVALID_STATUS_TRANSITION',
+  GENERATION_ALREADY_SETTLED: 'GENERATION_ALREADY_SETTLED',
+
+  // Billing
+  INSUFFICIENT_CREDITS: 'INSUFFICIENT_CREDITS',
+  NEGATIVE_BALANCE: 'NEGATIVE_BALANCE',
+  LEDGER_IDEMPOTENCY_CONFLICT: 'LEDGER_IDEMPOTENCY_CONFLICT',
+  PRICING_NOT_FOUND: 'PRICING_NOT_FOUND',
+
+  // Provider / Credential
+  PROVIDER_NOT_FOUND: 'PROVIDER_NOT_FOUND',
+  CREDENTIAL_NOT_FOUND: 'CREDENTIAL_NOT_FOUND',
+  NO_AVAILABLE_CREDENTIAL: 'NO_AVAILABLE_CREDENTIAL',
+  PROVIDER_UPSTREAM_ERROR: 'PROVIDER_UPSTREAM_ERROR',
+  PROVIDER_RATE_LIMITED: 'PROVIDER_RATE_LIMITED',
+  PROVIDER_UNAUTHORIZED: 'PROVIDER_UNAUTHORIZED',
+  PROVIDER_TIMEOUT: 'PROVIDER_TIMEOUT',
+  CREDENTIAL_SECRET_INVALID: 'CREDENTIAL_SECRET_INVALID',
+
+  // Security
+  SSRF_BLOCKED: 'SSRF_BLOCKED',
+  UPLOAD_INVALID: 'UPLOAD_INVALID',
+
+  // Payment (Phase 7)
+  PAYMENT_NOT_FOUND: 'PAYMENT_NOT_FOUND',
+  PAYMENT_CHANNEL_NOT_CONFIGURED: 'PAYMENT_CHANNEL_NOT_CONFIGURED',
+  PAYMENT_CALLBACK_INVALID: 'PAYMENT_CALLBACK_INVALID',
+  PAYMENT_AMOUNT_MISMATCH: 'PAYMENT_AMOUNT_MISMATCH',
+  PAYMENT_ORDER_NOT_PENDING: 'PAYMENT_ORDER_NOT_PENDING',
+  PAYMENT_CREDITS_NOT_POSITIVE: 'PAYMENT_CREDITS_NOT_POSITIVE',
+} as const;
+export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
+
+/**
+ * 统一错误响应体：
+ * { "error": { "code": "INSUFFICIENT_CREDITS", "message": "...", "requestId": "..." } }
+ */
+export interface ApiErrorBody {
+  error: {
+    code: ErrorCode | string;
+    message: string;
+    requestId?: string;
+    details?: unknown;
+  };
+}
+
+/** 底层为给定 Message/StatusCode 提供 stable error code 的领域异常基类。 */
+export class DomainError extends Error {
+  readonly code: ErrorCode | string;
+  readonly statusCode: number;
+  readonly details?: unknown;
+  readonly requestId?: string;
+
+  constructor(params: {
+    code: ErrorCode | string;
+    message: string;
+    statusCode?: number;
+    details?: unknown;
+    requestId?: string;
+    cause?: unknown;
+  }) {
+    super(params.message, params.cause ? { cause: params.cause } : undefined);
+    this.name = 'DomainError';
+    this.code = params.code;
+    this.statusCode = params.statusCode ?? 500;
+    this.details = params.details;
+    this.requestId = params.requestId;
+  }
+
+  toBody(): ApiErrorBody {
+    return { error: { code: this.code, message: this.message, requestId: this.requestId, details: this.details } };
+  }
+}
+
+/** 便捷构造函数。 */
+export function domainError(
+  code: ErrorCode | string,
+  message: string,
+  statusCode = 500,
+  details?: unknown,
+): DomainError {
+  return new DomainError({ code, message, statusCode, details });
+}

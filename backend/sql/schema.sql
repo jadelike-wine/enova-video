@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS video_tasks (
     duration_ms INTEGER DEFAULT 0,
     error_message TEXT,
     request_params TEXT,
+    api_key_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     completed_at TEXT
 );
@@ -99,11 +100,13 @@ CREATE TABLE IF NOT EXISTS api_keys (
     name TEXT NOT NULL,
     api_key TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 0 CHECK(is_active IN (0, 1)),
+    is_enabled INTEGER NOT NULL DEFAULT 1 CHECK(is_enabled IN (0, 1)),
     created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(is_active);
+CREATE INDEX IF NOT EXISTS idx_api_keys_enabled ON api_keys(is_enabled);
 
 -- 上传文件记录表
 CREATE TABLE IF NOT EXISTS uploads (

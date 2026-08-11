@@ -1,11 +1,16 @@
 import type { Metadata } from 'next'
+import { BRAND } from './brand'
 
 /**
  * Site identity. Update NEXT_PUBLIC_SITE_URL in production.
  * Falls back to localhost in development.
+ *
+ * 站点当前为简体中文 UI，因此 SITE_NAME / SITE_TAGLINE 使用中文品牌「灵动创影」；
+ * 英文/国际品牌名见 SITE_EN_NAME。
  */
-export const SITE_NAME = 'Agnes AI Creator'
-export const SITE_TAGLINE = 'Open Source AI Chat, Image & Video Generator'
+export const SITE_NAME = BRAND.nameZh
+export const SITE_EN_NAME = BRAND.name
+export const SITE_TAGLINE = BRAND.taglineZh
 
 export function siteUrl(): string {
   const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim()
@@ -71,7 +76,7 @@ export function buildMetadata({
 export function appMetadata(title: string, path: string): Metadata {
   return buildMetadata({
     title,
-    description: 'Agnes AI Creator 应用页面',
+    description: '灵动创影 应用页面',
     path,
     robots: { index: false, follow: false },
   })

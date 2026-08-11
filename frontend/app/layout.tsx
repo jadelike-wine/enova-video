@@ -18,9 +18,9 @@ export const metadata: Metadata = {
     template: `%s – ${SITE_NAME}`,
   },
   description:
-    'Agnes AI Creator 是一个基于 Agnes AI 免费模型的自托管多模态 AI Web 客户端，支持 AI 对话、AI 图片生成与 AI 视频生成。开源、可自部署。',
+    '灵动创影（EnovaMotion）是一个 AI 智能创作平台，提供 AI 对话、AI 图片生成与 AI 视频生成能力，底层基于 Agnes AI 模型。',
   applicationName: SITE_NAME,
-  authors: [{ name: 'Agnes AI Creator' }],
+  authors: [{ name: SITE_NAME }],
   openGraph: {
     siteName: SITE_NAME,
     type: 'website',

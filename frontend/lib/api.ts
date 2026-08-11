@@ -243,6 +243,11 @@ export const settingsApi = {
     json(`/settings/api-keys/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   activateApiKey: (id: number) =>
     json(`/settings/api-keys/${id}/activate`, { method: 'POST' }),
+  togglePool: (id: number, enabled: boolean) =>
+    json(`/settings/api-keys/${id}/pool`, {
+      method: 'POST',
+      body: JSON.stringify({ enabled }),
+    }),
   deleteApiKey: (id: number) =>
     json(`/settings/api-keys/${id}`, { method: 'DELETE' }),
 }

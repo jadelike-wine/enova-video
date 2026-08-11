@@ -51,6 +51,49 @@ class ApiError(HTTPException):
         self.error_code = error_code
 
 
+class AgnesUpstreamError(RuntimeError):
+    """Agnes 上游的可分类错误，携带 HTTP status 与可选的 Retry-After（秒）。
+
+    用于 Token Pool：调用方据此区分 429 / 401 / 403 / 400 / 5xx / 超时，
+    决定是否冷却 Token、是否切换 Token、是否重试。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        status_code: Optional[int] = None,
+        retry_after: Optional[float] = None,
+    ):
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after = float(retry_after) if retry_after else None
+        self.error_code = classify_agnes_error(self, status_code)
+
+    @property
+    def is_rate_limit(self) -> bool:
+        return self.error_code == ERROR_CODES["AGNES_RATE_LIMITED"]
+
+    @property
+    def is_auth(self) -> bool:
+        return self.error_code in (
+            ERROR_CODES["AGNES_UNAUTHORIZED"],
+            ERROR_CODES["AGNES_FORBIDDEN"],
+        )
+
+    @property
+    def is_client_error(self) -> bool:
+        return self.status_code is not None and 400 <= self.status_code < 500
+
+    @property
+    def is_transient(self) -> bool:
+        return self.error_code in (
+            ERROR_CODES["AGNES_RATE_LIMITED"],
+            ERROR_CODES["AGNES_TIMEOUT"],
+            ERROR_CODES["AGNES_CONNECT"],
+            ERROR_CODES["AGNES_UPSTREAM"],
+        )
+
+
 def classify_agnes_error(exc: BaseException, status_code: Optional[int] = None) -> str:
     """把 Agnes 上游异常归类为稳定错误码。"""
     text = str(exc).lower()

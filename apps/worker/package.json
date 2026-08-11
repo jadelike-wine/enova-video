@@ -1,0 +1,31 @@
+{
+  "name": "@enova/worker",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "start": "node dist/main.js",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@enova/billing": "workspace:*",
+    "@enova/config": "workspace:*",
+    "@enova/contracts": "workspace:*",
+    "@enova/db": "workspace:*",
+    "@enova/provider": "workspace:*",
+    "drizzle-orm": "^0.36.4",
+    "bullmq": "^5.30.0",
+    "ioredis": "^5.4.1",
+    "pino": "^9.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "eslint": "^9.13.0",
+    "vitest": "^2.1.4",
+    "@types/node": "^20.16.0"
+  }
+}

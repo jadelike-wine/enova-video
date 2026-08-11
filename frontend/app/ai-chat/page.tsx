@@ -5,7 +5,7 @@ import { buildMetadata } from '../../lib/seo'
 export const metadata: Metadata = buildMetadata({
   title: 'AI Chat',
   description:
-    'Agnes AI Creator 的 AI 对话功能：基于 Agnes 2.0 Flash 的多轮文本对话，支持流式逐字输出、Markdown 渲染、Thinking 模式与 Token 统计。免费、开源、可自托管。',
+    '灵动创影的 AI 对话功能：基于 Agnes 2.0 Flash 的多轮文本对话，支持流式逐字输出、Markdown 渲染、Thinking 模式与 Token 统计。',
   path: '/ai-chat',
 })
 
@@ -17,7 +17,7 @@ export default function AiChatPage() {
         subtitle:
           '基于 Agnes 2.0 Flash 的高效多轮文本对话，逐字流式输出，支持 Markdown、Thinking 模式与 Token 统计。',
         intro: [
-          'Agnes AI Creator 内置的 AI 对话功能，让您可以与 Agnes 2.0 Flash 展开自然流畅的多轮对话。无论是问答、写作、翻译、代码还是总结，都能得到快速而稳定的响应。',
+          '灵动创影内置的 AI 对话功能，让您可以与 Agnes 2.0 Flash 展开自然流畅的多轮对话。无论是问答、写作、翻译、代码还是总结，都能得到快速而稳定的响应。',
           '对话以流式（SSE）方式逐字输出，无需等待整段生成结束即可阅读结果。消息支持完整的 Markdown 渲染，包括代码块、列表、表格与引用，非常适合技术交流与内容创作。',
         ],
         features: [
@@ -46,8 +46,8 @@ export default function AiChatPage() {
             a: '对话历史保存在后端 SQLite 数据库中，关闭浏览器后依然可以重新打开继续对话。',
           },
           {
-            q: '需要付费吗？',
-            a: 'Agnes AI Creator 本身免费开源。模型调用使用 Agnes AI 的 API，相关用量以 Agnes AI 平台计费为准。',
+            q: '模型调用如何计费？',
+            a: '模型调用使用 Agnes AI 的 API，相关用量以 Agnes AI 平台计费为准。',
           },
         ],
         appHref: '/app/chat',

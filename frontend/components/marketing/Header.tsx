@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { BRAND } from '../../lib/brand'
 
 const navLinks = [
   { href: '/', label: '首页' },
@@ -15,10 +16,10 @@ export default function MarketingHeader() {
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-cyan-400 flex items-center justify-center text-lg font-extrabold shadow-glow">
-            A
+            {BRAND.logoMarkZh}
           </div>
           <span className="font-bold text-lg bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent">
-            Agnes AI Creator
+            {BRAND.nameZh}
           </span>
         </Link>
 

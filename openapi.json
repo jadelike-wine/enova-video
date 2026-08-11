@@ -1,0 +1,51 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "operationId": "HealthController_liveness",
+        "summary": "存活探针（不依赖外部依赖）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "operationId": "HealthController_readiness",
+        "summary": "就绪探针（校验与 PostgreSQL 连通性）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Enova Creator API",
+    "description": "灵动创影 AI Creator SaaS 后端 API",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "health",
+      "description": ""
+    }
+  ],
+  "servers": [],
+  "components": {
+    "schemas": {}
+  }
+}

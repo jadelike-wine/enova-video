@@ -2,11 +2,25 @@ import asyncio
 import threading
 from app.database import get_db
 from app.services.agnes_client import agnes_client
+from app.services.api_key_pool import api_key_pool
 from app.services.error_utils import format_agnes_error, is_transient_http_error
 from app.services.storage import get_storage_service
 from app.core.logging import get_logger, set_task_id
 
 logger = get_logger(__name__)
+
+
+def _resolve_poll_key(api_key_id):
+    """解析任务轮询所用 Token：优先创建时绑定的 Key，否则回退可用 Token。"""
+    if api_key_id:
+        key = api_key_pool.get_api_key_by_id(api_key_id)
+        if key:
+            return key, api_key_id
+    # 老任务（无 api_key_id）或绑定 Key 已删除：轮询时回退到池内可用 Token
+    key = api_key_pool.get_any_api_key()
+    if key:
+        return key, key["id"]
+    return None, None
 
 
 def _upload_storage_background(task_id: int, video_url: str):
@@ -65,11 +79,30 @@ async def refresh_task_from_agnes(
     # 读取当前库内状态，用于判断是否发生状态变化（决定 INFO / DEBUG）
     with get_db() as conn:
         prev_row = conn.execute(
-            "SELECT status FROM video_tasks WHERE id = ?", (task_id,)
+            "SELECT status, api_key_id FROM video_tasks WHERE id = ?", (task_id,)
         ).fetchone()
     prev_status = prev_row["status"] if prev_row else None
+    api_key_id = prev_row["api_key_id"] if prev_row else None
 
-    result = await agnes_client.get_video_status(video_id, model)
+    key, _used_key_id = _resolve_poll_key(api_key_id)
+    if not key:
+        logger.warning(
+            "video.poller task_id=%s no_api_key_available skip_poll",
+            task_id,
+            extra={"task_id": task_id, "video_id": video_id},
+        )
+        return False
+
+    result = await agnes_client.get_video_status(
+        video_id,
+        model,
+        api_key=key["api_key"],
+        api_key_info={
+            "id": key["id"],
+            "name": key["name"],
+            "key_suffix": key["key_suffix"],
+        },
+    )
     status = result.get("status", "queued")
     progress = result.get("progress", 0)
 

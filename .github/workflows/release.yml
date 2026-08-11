@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.27.0
 
@@ -69,9 +69,6 @@ jobs:
           echo "git_sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -91,7 +88,9 @@ jobs:
           file: Dockerfile
           target: api
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+          cache-from: type=registry,ref=${{ env.IMAGE_BASE }}-api:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_BASE }}-api:buildcache,mode=max
           tags: |
             ${{ env.IMAGE_BASE }}-api:${{ steps.meta.outputs.version }}
             ${{ env.IMAGE_BASE }}-api:latest
@@ -110,7 +109,9 @@ jobs:
           file: Dockerfile
           target: worker
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+          cache-from: type=registry,ref=${{ env.IMAGE_BASE }}-worker:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_BASE }}-worker:buildcache,mode=max
           tags: |
             ${{ env.IMAGE_BASE }}-worker:${{ steps.meta.outputs.version }}
             ${{ env.IMAGE_BASE }}-worker:latest
@@ -129,7 +130,9 @@ jobs:
           file: Dockerfile
           target: web
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+          cache-from: type=registry,ref=${{ env.IMAGE_BASE }}-web:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_BASE }}-web:buildcache,mode=max
           tags: |
             ${{ env.IMAGE_BASE }}-web:${{ steps.meta.outputs.version }}
             ${{ env.IMAGE_BASE }}-web:latest

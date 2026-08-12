@@ -17,6 +17,7 @@ import type {
   UrlGuardOptions,
 } from '@enova/provider';
 import { WalletGateway } from '@enova/billing';
+import { CostRevenueLedger, generateCostEventKey } from '@enova/billing';
 import type { Database } from '@enova/db';
 import { downloadToTempFile, cleanupTempFile } from '@enova/provider';
 import { WorkerLogger } from '../logger.js';
@@ -157,7 +158,7 @@ export class GenerationPipeline {
       if (runningAttempt) {
         await this.deps.attempts.markSucceeded(runningAttempt.id, job.estimatedCostMicrousd);
       }
-      await this.ingestAndFinalize(job, 'video', status);
+      await this.ingestAndFinalize(job, 'video', status, runningAttempt?.id);
     } else {
       // 上游明确失败：永久失败，直接 release + FAILED。
       // P0-5: 标记当前 RUNNING attempt 为 FAILED（保留失败成本记录）。
@@ -229,7 +230,7 @@ export class GenerationPipeline {
         return provider.generateImage(this.buildImageInput(job), cred.secret);
       });
       await this.deps.attempts.markSucceeded(attempt.attemptId, job.estimatedCostMicrousd);
-      await this.ingestAndFinalize(job, 'image', result);
+      await this.ingestAndFinalize(job, 'image', result, attempt.attemptId);
     } catch (err) {
       // P0-5: 失败 attempt 也保留成本记录。
       const providerErr = err as ProviderError;
@@ -390,6 +391,7 @@ export class GenerationPipeline {
       height?: number | null;
       duration?: number | null;
     },
+    attemptId?: string,
   ): Promise<void> {
     const sourceUrl = providerResult.sourceUrl;
     if (!sourceUrl) {
@@ -457,7 +459,7 @@ export class GenerationPipeline {
       await cleanupTempFile(dl.filePath);
     }
 
-    await this.finalizeSuccess(job, mediaType, asset, displayUrl);
+    await this.finalizeSuccess(job, mediaType, asset, displayUrl, attemptId);
   }
 
   private async finalizeSuccess(
@@ -475,6 +477,7 @@ export class GenerationPipeline {
       metadata?: Record<string, unknown>;
     },
     displayUrl: string | null,
+    attemptId?: string,
   ): Promise<void> {
     // MVP pricing policy：Provider 未返回足够信息计算真实成本，按保留额度结算。
     // 这不是临时 TODO，而是第一版明确的定价策略；后续可接入真实 Pricing 计算 actualCredits。
@@ -541,6 +544,39 @@ export class GenerationPipeline {
         `settle:${job.id}`,
       );
     });
+
+    // P1-1: 成功任务写 append-only CostEvent（ESTIMATED，幂等）。Provider 未回报真实账单，
+    // 因此只记录 ESTIMATED，不伪造 REPORTED/RECONCILED。后续经 provider 账单/对账升级为 REPORTED。
+    // 采用 best-effort：成本入账是 append-only 分析/审计侧效应，绝不能因它失败而回滚/重试
+    // 已经（在事务内）settle 成功的生成结果。失败仅告警，交由对账/递补补录。
+    if (estimatedCostMicrousd > 0) {
+      try {
+        const eventKey = attemptId
+          ? generateCostEventKey({ generationJobId: job.id, attemptId, status: 'ESTIMATED' })
+          : `genjob:${job.id}:final:estimated`;
+        await new CostRevenueLedger(this.deps.db).insertCostEvent({
+          eventKey,
+          workspaceId: job.workspaceId,
+          userId: job.userId,
+          generationJobId: job.id,
+          generationAttemptId: attemptId ?? null,
+          costType: job.type === 'VIDEO' ? 'VIDEO_GENERATION' : 'IMAGE_GENERATION',
+          provider: job.provider ?? 'agnes',
+          model: job.model ?? '',
+          quantity: 1,
+          unit: mediaType === 'video' ? 'seconds' : 'image',
+          unitCostMicrousd: estimatedCostMicrousd,
+          totalCostMicrousd: estimatedCostMicrousd,
+          status: 'ESTIMATED',
+          metadata: { costStatus },
+        });
+      } catch (err) {
+        this.deps.logger.warn('failed to record cost event (best-effort)', {
+          generationJobId: job.id,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     this.deps.logger.info('generation job succeeded & settled', {
       generationJobId: job.id,

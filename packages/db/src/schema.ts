@@ -67,6 +67,19 @@ export const attemptStatus = pgEnum('attempt_status', ['RUNNING', 'SUCCEEDED', '
 export const orderType = pgEnum('order_type', ['RECHARGE', 'PLAN', 'CREDIT_PACK']);
 export const fulfillmentStatus = pgEnum('fulfillment_status', ['PENDING', 'SUCCEEDED', 'FAILED']);
 export const pricingVersionStatus = pgEnum('pricing_version_status', ['DRAFT', 'PUBLISHED', 'ARCHIVED']);
+export const costType = pgEnum('cost_type', [
+  'VIDEO_GENERATION',
+  'IMAGE_GENERATION',
+  'LLM',
+  'TTS',
+  'STORAGE',
+  'EGRESS',
+  'GPU',
+  'THIRD_PARTY',
+]);
+export const revenueType = pgEnum('revenue_type', ['RECHARGE', 'PLAN', 'CREDIT_PACK', 'GENERATION']);
+export const trialStatus = pgEnum('trial_status', ['NONE', 'ACTIVE', 'EXPIRED', 'CONVERTED']);
+export const stepUpMethod = pgEnum('step_up_method', ['PASSWORD', 'TOTP', 'MFA', 'NONE']);
 
 // ---------------------------------------------------------------------------
 // Identity
@@ -77,6 +90,13 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   status: userStatus('status').notNull().default('ACTIVE'),
   role: userRole('role').notNull().default('USER'),
+  /** 邮箱是否已验证（P1-6）。 */
+  emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
+  /** 试用信息（P1-8）。 */
+  trialStartedAt: timestamp('trial_started_at', { withTimezone: true }),
+  trialEndsAt: timestamp('trial_ends_at', { withTimezone: true }),
+  trialPlanId: uuid('trial_plan_id'),
+  trialStatus: trialStatus('trial_status').notNull().default('NONE'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('users_email_unique').on(t.email)]);
@@ -85,7 +105,13 @@ export const sessions = pgTable('sessions', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   tokenHash: text('token_hash').notNull(),
+  /** 登录设备/IP/UA（P1-6 运营与风控）。 */
+  ip: varchar('ip', { length: 64 }),
+  userAgent: varchar('user_agent', { length: 512 }),
+  deviceName: varchar('device_name', { length: 255 }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('sessions_user_id_idx').on(t.userId)]);
 
@@ -280,6 +306,15 @@ export const orders = pgTable('orders', {
   planId: uuid('plan_id').references(() => plans.id, { onDelete: 'set null' }),
   /** 订单快照：下单时的商品/价格/credits/plan entitlement 不可变副本。履约时读此字段，不重查当前价格。 */
   snapshotJson: jsonb('snapshot_json').$type<Record<string, unknown>>(),
+  /** 优惠码快照（P1-8）：下单时冻结优惠规则，防止后续改码影响历史订单。 */
+  couponCode: varchar('coupon_code', { length: 80 }),
+  couponSnapshotJson: jsonb('coupon_snapshot_json').$type<Record<string, unknown>>(),
+  /** 下单原价（分）。 */
+  originalAmountCents: integer('original_amount_cents'),
+  /** 折扣金额（分）。 */
+  discountAmountCents: integer('discount_amount_cents').notNull().default(0),
+  /** 最终应付金额（分）= original - discount。 */
+  finalAmountCents: integer('final_amount_cents'),
   status: paymentStatus('status').notNull().default('PENDING'),
   /** 履约状态：PENDING=待履约；SUCCEEDED=已履约；FAILED=履约失败。与 payment status 独立。 */
   fulfillmentStatus: fulfillmentStatus('fulfillment_status').notNull().default('PENDING'),
@@ -391,6 +426,20 @@ export const plans = pgTable('plans', {
   commercialUse: boolean('commercial_use').notNull().default(false),
   /** Entitlements：允许访问的模型列表（空 = 全部允许）。 */
   allowedModels: jsonb('allowed_models').$type<string[]>(),
+  /** Entitlements：允许的生成类型列表（空 = 全部允许）。 */
+  allowedGenerationTypes: jsonb('allowed_generation_types').$type<string[]>(),
+  /** Entitlements：允许的分辨率列表（如 ['720','1080']，空 = 全部允许）。 */
+  allowedResolutions: jsonb('allowed_resolutions').$type<string[]>(),
+  /** Entitlements：每日生成次数上限（null = 不限）。 */
+  dailyGenerationLimit: integer('daily_generation_limit'),
+  /** Entitlements：每月生成次数上限（null = 不限）。 */
+  monthlyGenerationLimit: integer('monthly_generation_limit'),
+  /** Entitlements：每日 credits 消耗上限（null = 不限）。 */
+  dailyCreditLimit: bigint('daily_credit_limit', { mode: 'number' }),
+  /** Entitlements：每月 credits 消耗上限（null = 不限）。 */
+  monthlyCreditLimit: bigint('monthly_credit_limit', { mode: 'number' }),
+  /** Entitlements：RPM（每分钟请求数，传统 API 维度；AI 视频以并发为主）。 */
+  rpm: integer('rpm'),
   /** 额外 entitlements（灵活扩展，但不作为核心字段）。 */
   entitlementsJson: jsonb('entitlements_json').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -624,8 +673,207 @@ export const settings = pgTable('settings', {
   group: varchar('group', { length: 80 }).notNull().default('general'),
   /** 是否敏感（如密钥）；返回后台时脱敏。 */
   isSecret: boolean('is_secret').notNull().default(false),
+  /** 乐观并发版本（P1-4 CAS：WHERE version = expectedVersion）。 */
+  version: integer('version').notNull().default(1),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('settings_group_idx').on(t.group)]);
+
+// ---------------------------------------------------------------------------
+// Settings History (P1-4: 配置变更审计 + 回滚)
+// ---------------------------------------------------------------------------
+export const settingsHistory = pgTable('settings_history', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  key: varchar('key', { length: 120 }).notNull().references(() => settings.key, { onDelete: 'cascade' }),
+  /** 变更后的版本号。 */
+  version: integer('version').notNull(),
+  /** 变更前值（加密态如需一致，存原始明文供审计；后台展示时脱敏敏感项）。 */
+  before: text('before'),
+  after: text('after'),
+  reason: text('reason'),
+  updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  requestId: varchar('request_id', { length: 120 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('settings_history_key_idx').on(t.key),
+  index('settings_history_created_at_idx').on(t.createdAt),
+]);
+
+// ---------------------------------------------------------------------------
+// RBAC (P1-5: roles / permissions / role_permissions / user_role_assignments)
+// ---------------------------------------------------------------------------
+export const roles = pgTable('roles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  code: varchar('code', { length: 50 }).notNull(),
+  name: varchar('name', { length: 120 }).notNull(),
+  description: text('description'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('roles_code_unique').on(t.code)]);
+
+export const permissions = pgTable('permissions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  code: varchar('code', { length: 120 }).notNull(),
+  name: varchar('name', { length: 120 }).notNull(),
+  description: text('description'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('permissions_code_unique').on(t.code)]);
+
+export const rolePermissions = pgTable('role_permissions', {
+  roleId: uuid('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  permissionId: uuid('permission_id').notNull().references(() => permissions.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('role_permissions_role_perm_unique').on(t.roleId, t.permissionId),
+  index('role_permissions_permission_id_idx').on(t.permissionId),
+]);
+
+export const userRoleAssignments = pgTable('user_role_assignments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  roleId: uuid('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  assignedBy: uuid('assigned_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('user_role_assignments_user_role_unique').on(t.userId, t.roleId),
+  index('user_role_assignments_user_id_idx').on(t.userId),
+]);
+
+// ---------------------------------------------------------------------------
+// High-risk operation step-up (P1-5)
+// ---------------------------------------------------------------------------
+export const sensitiveActionLogs = pgTable('sensitive_action_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  permission: varchar('permission', { length: 120 }).notNull(),
+  target: varchar('target', { length: 120 }),
+  reason: text('reason'),
+  before: jsonb('before').$type<Record<string, unknown>>(),
+  after: jsonb('after').$type<Record<string, unknown>>(),
+  requestId: varchar('request_id', { length: 120 }),
+  stepUpMethod: stepUpMethod('step_up_method').notNull().default('NONE'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('sensitive_action_logs_actor_user_id_idx').on(t.actorUserId),
+  index('sensitive_action_logs_created_at_idx').on(t.createdAt),
+]);
+
+// ---------------------------------------------------------------------------
+// Password Reset (P1-6)
+// ---------------------------------------------------------------------------
+export const passwordResetTokens = pgTable('password_reset_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('password_reset_tokens_user_id_idx').on(t.userId),
+  index('password_reset_tokens_token_hash_idx').on(t.tokenHash),
+]);
+
+export const emailVerificationTokens = pgTable('email_verification_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('email_verification_tokens_user_id_idx').on(t.userId),
+  index('email_verification_tokens_token_hash_idx').on(t.tokenHash),
+]);
+
+// ---------------------------------------------------------------------------
+// Coupons (P1-8)
+// ---------------------------------------------------------------------------
+export const coupons = pgTable('coupons', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  code: varchar('code', { length: 80 }).notNull(),
+  type: varchar('type', { length: 20 }).notNull(), // PERCENT / FLAT
+  value: integer('value').notNull(), // PERCENT: 百分比(1-100)；FLAT: 分
+  currency: varchar('currency', { length: 3 }),
+  maxRedemptions: integer('max_redemptions').notNull().default(0), // 0=不限
+  perUserLimit: integer('per_user_limit').notNull().default(1), // 每用户限用次数
+  startsAt: timestamp('starts_at', { withTimezone: true }),
+  endsAt: timestamp('ends_at', { withTimezone: true }),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex('coupons_code_unique').on(t.code)]);
+
+export const couponRedemptions = pgTable('coupon_redemptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  couponId: uuid('coupon_id').notNull().references(() => coupons.id, { onDelete: 'cascade' }),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  discountAmountCents: integer('discount_amount_cents').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('coupon_redemptions_order_id_unique').on(t.orderId),
+  index('coupon_redemptions_coupon_id_idx').on(t.couponId),
+  index('coupon_redemptions_user_id_idx').on(t.userId),
+]);
+
+// ---------------------------------------------------------------------------
+// Cost Events (P1-1: append-only COGS ledger)
+// ---------------------------------------------------------------------------
+export const costEvents = pgTable('cost_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 幂等键：同一成本事实只允许入账一次。 */
+  eventKey: varchar('event_key', { length: 255 }).notNull(),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  generationJobId: uuid('generation_job_id').references(() => generationJobs.id, { onDelete: 'set null' }),
+  generationAttemptId: uuid('generation_attempt_id').references(() => generationAttempts.id, { onDelete: 'set null' }),
+  assetId: uuid('asset_id').references(() => assets.id, { onDelete: 'set null' }),
+  costType: costType('cost_type').notNull(),
+  provider: varchar('provider', { length: 50 }).notNull(),
+  model: varchar('model', { length: 100 }).notNull(),
+  quantity: integer('quantity').notNull().default(1),
+  unit: varchar('unit', { length: 30 }), // seconds / frames / tokens / GB
+  unitCostMicrousd: integer('unit_cost_microusd').notNull().default(0),
+  totalCostMicrousd: integer('total_cost_microusd').notNull().default(0),
+  /** ESTIMATED / REPORTED / RECONCILED。 */
+  status: costStatus('status').notNull().default('ESTIMATED'),
+  externalBillingId: varchar('external_billing_id', { length: 255 }),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  metadataJson: jsonb('metadata_json').$type<Record<string, unknown>>(),
+}, (t) => [
+  uniqueIndex('cost_events_event_key_unique').on(t.eventKey),
+  index('cost_events_workspace_id_idx').on(t.workspaceId),
+  index('cost_events_generation_job_id_idx').on(t.generationJobId),
+  index('cost_events_occurred_at_idx').on(t.occurredAt),
+]);
+
+// ---------------------------------------------------------------------------
+// Revenue Events (P1-1: append-only revenue ledger)
+// ---------------------------------------------------------------------------
+export const revenueEvents = pgTable('revenue_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 幂等键：同一收入事实只确认一次。 */
+  eventKey: varchar('event_key', { length: 255 }).notNull(),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
+  generationJobId: uuid('generation_job_id').references(() => generationJobs.id, { onDelete: 'set null' }),
+  walletLedgerId: uuid('wallet_ledger_id').references(() => walletLedger.id, { onDelete: 'set null' }),
+  revenueType: revenueType('revenue_type').notNull(),
+  currency: varchar('currency', { length: 3 }).notNull().default('CNY'),
+  grossAmountCents: integer('gross_amount_cents').notNull().default(0),
+  refundAmountCents: integer('refund_amount_cents').notNull().default(0),
+  feeAmountCents: integer('fee_amount_cents').notNull().default(0),
+  recognizedAmountCents: integer('recognized_amount_cents').notNull().default(0),
+  recognizedAt: timestamp('recognized_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  metadataJson: jsonb('metadata_json').$type<Record<string, unknown>>(),
+}, (t) => [
+  uniqueIndex('revenue_events_event_key_unique').on(t.eventKey),
+  index('revenue_events_workspace_id_idx').on(t.workspaceId),
+  index('revenue_events_order_id_idx').on(t.orderId),
+  index('revenue_events_recognized_at_idx').on(t.recognizedAt),
+]);
 
 // ---------------------------------------------------------------------------
 // Legacy (单租户历史数据迁移归集)

@@ -17,6 +17,7 @@ import { DATABASE } from '../database/database.module.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { SubscriptionFulfillmentService } from '../billing/subscription-fulfillment.service.js';
 import { WalletService } from '../billing/wallet.service.js';
+import { CostRevenueLedger, CouponService, generateRevenueEventKey } from '@enova/billing';
 
 export interface RechargeResult {
   orderId: string;
@@ -26,6 +27,9 @@ export interface RechargeResult {
   tradeNo?: string;
   payUrl?: string;
   qrCode?: string;
+  /** P1-8: 实际折扣金额（分），无优惠码时为 0。 */
+  discountAmountCents: number;
+  couponCode: string | null;
 }
 
 /**
@@ -101,8 +105,8 @@ export class PaymentService {
     };
   }
 
-  /** 创建充值订单并调渠道下单。 */
-  async createRecharge(user: AuthUser, amountCents: number): Promise<RechargeResult> {
+  /** 创建充值订单并调渠道下单。couponCode 可选（P1-8 优惠码）。 */
+  async createRecharge(user: AuthUser, amountCents: number, couponCode?: string): Promise<RechargeResult> {
     const { registry, activeProvider, notifyUrl, returnBaseUrl } = await this.buildConfig();
     const minRechargeCents = (await this.settings.getNumber('payment.minRechargeCents')) ?? 0;
     const creditsPerCny = (await this.settings.getNumber('payment.creditsPerCny')) ?? 0;
@@ -111,41 +115,66 @@ export class PaymentService {
         min: minRechargeCents,
       });
     }
-    const credits = creditsFromCents(amountCents, creditsPerCny);
-    if (credits <= 0) {
-      throw domainError(ERROR_CODES.PAYMENT_CREDITS_NOT_POSITIVE, 'Recharge credits must be positive', 400);
-    }
 
     const provider: PaymentProvider = registry.get(activeProvider);
     const orderId = randomUUID();
-    const subject = `充值 ${credits} credits`;
-    // P0-6: 订单快照——下单时的商品/价格/credits 不可变副本。履约时读 snapshot，不重查当前价格。
-    const snapshot = {
-      orderType: 'RECHARGE' as const,
-      amountCents,
-      currency: 'CNY',
-      credits,
-      creditsPerCny,
-      subject,
-      createdAt: new Date().toISOString(),
-    };
+    const subject = `充值 credits`;
 
-    await this.db.insert(orders).values({
-      id: orderId,
-      workspaceId: user.workspaceId,
-      userId: user.userId,
-      orderType: 'RECHARGE',
-      amountCents,
-      currency: 'CNY',
-      credits,
-      snapshotJson: snapshot,
-      status: 'PENDING',
-      fulfillmentStatus: 'PENDING',
+    // P1-8: 事务内原子地"锁 coupon + 校验 + 写兑换 + 建订单"，并发安全。
+    // finalAmountCents = 实际应付（扣除优惠后的金额），以它作为渠道支付金额与 credits 换算基准。
+    let discountAmountCents = 0;
+    let finalAmountCents = amountCents;
+    let couponSnapshot: Record<string, unknown> | null = null;
+    let credits = 0;
+    await this.db.transaction(async (tx) => {
+      if (couponCode) {
+        const snap = await new CouponService(tx).apply(couponCode, {
+          amountCents,
+          currency: 'CNY',
+          userId: user.userId,
+          orderId,
+        });
+        couponSnapshot = snap as unknown as Record<string, unknown>;
+        discountAmountCents = snap.discountAmountCents;
+        finalAmountCents = snap.finalAmountCents;
+      }
+      credits = creditsFromCents(finalAmountCents, creditsPerCny);
+      if (credits <= 0) {
+        throw domainError(ERROR_CODES.PAYMENT_CREDITS_NOT_POSITIVE, 'Recharge credits must be positive', 400);
+      }
+      // P0-6: 订单快照——下单时的商品/价格/credits 不可变副本。
+      const snapshot = {
+        orderType: 'RECHARGE' as const,
+        amountCents: finalAmountCents,
+        originalAmountCents: amountCents,
+        currency: 'CNY',
+        credits,
+        creditsPerCny,
+        subject,
+        createdAt: new Date().toISOString(),
+      };
+      await tx.insert(orders).values({
+        id: orderId,
+        workspaceId: user.workspaceId,
+        userId: user.userId,
+        orderType: 'RECHARGE',
+        amountCents: finalAmountCents,
+        currency: 'CNY',
+        credits,
+        snapshotJson: snapshot,
+        couponCode: couponCode ?? null,
+        couponSnapshotJson: couponSnapshot,
+        originalAmountCents: amountCents,
+        discountAmountCents,
+        finalAmountCents,
+        status: 'PENDING',
+        fulfillmentStatus: 'PENDING',
+      });
     });
 
-    const created = await provider.createPayment({
+    const chargedByProvider = await provider.createPayment({
       orderId,
-      amountCents,
+      amountCents: finalAmountCents,
       subject,
       notifyUrl,
       returnUrl: `${returnBaseUrl}/payment/result?orderId=${orderId}`,
@@ -154,18 +183,20 @@ export class PaymentService {
     await this.db.insert(paymentTransactions).values({
       orderId,
       provider: activeProvider,
-      providerRef: created.tradeNo,
+      providerRef: chargedByProvider.tradeNo,
       status: 'PENDING',
     });
 
     return {
       orderId,
-      amountCents,
+      amountCents: finalAmountCents,
       credits,
       channel: activeProvider,
-      tradeNo: created.tradeNo,
-      payUrl: created.payUrl,
-      qrCode: created.qrCode,
+      tradeNo: chargedByProvider.tradeNo,
+      payUrl: chargedByProvider.payUrl,
+      qrCode: chargedByProvider.qrCode,
+      discountAmountCents,
+      couponCode: couponCode ?? null,
     };
   }
 
@@ -204,7 +235,7 @@ export class PaymentService {
    * 关键点：下单时把 plan 的商品/价格/credits/entitlements 冻结进订单快照 snapshotJson，
    * 后续即使管理员改价，履约也按快照（历史成交）执行，绝不能用当前 plan 配置覆盖历史成交。
    */
-  async createPlanOrder(user: AuthUser, planId: string): Promise<RechargeResult> {
+  async createPlanOrder(user: AuthUser, planId: string, couponCode?: string): Promise<RechargeResult> {
     const { registry, activeProvider, notifyUrl, returnBaseUrl } = await this.buildConfig();
     const planRows = await this.db.select().from(plans).where(eq(plans.id, planId)).limit(1);
     const plan = planRows[0];
@@ -214,50 +245,73 @@ export class PaymentService {
     const provider: PaymentProvider = registry.get(activeProvider);
     const orderId = randomUUID();
     const subject = `购买 ${plan.name}`;
-    // 冻结下单时的商品快照（历史成交解释依据）。
-    const snapshot = {
-      orderType: 'PLAN' as const,
-      planId: plan.id,
-      planCode: plan.code,
-      planName: plan.name,
-      monthlyCredits: plan.monthlyCredits,
-      periodDays: plan.periodDays,
-      priceCents: plan.priceCents,
-      currency: plan.currency,
-      oneTime: plan.oneTime,
-      entitlements: {
+
+    // P1-8: 事务内原子地"锁 coupon + 校验 + 写兑换 + 建订单"，并发安全。
+    let discountAmountCents = 0;
+    let finalAmountCents = plan.priceCents;
+    let couponSnapshot: Record<string, unknown> | null = null;
+    await this.db.transaction(async (tx) => {
+      if (couponCode) {
+        const snap = await new CouponService(tx).apply(couponCode, {
+          amountCents: plan.priceCents,
+          currency: plan.currency,
+          userId: user.userId,
+          orderId,
+        });
+        couponSnapshot = snap as unknown as Record<string, unknown>;
+        discountAmountCents = snap.discountAmountCents;
+        finalAmountCents = snap.finalAmountCents;
+      }
+      // 冻结下单时的商品快照（历史成交解释依据）。
+      const snapshot = {
+        orderType: 'PLAN' as const,
+        planId: plan.id,
+        planCode: plan.code,
+        planName: plan.name,
         monthlyCredits: plan.monthlyCredits,
         periodDays: plan.periodDays,
-        maxConcurrentGenerations: plan.maxConcurrentGenerations,
-        maxResolution: plan.maxResolution,
-        maxDurationSeconds: plan.maxDurationSeconds,
-        storageRetentionDays: plan.storageRetentionDays,
-        priority: plan.priority,
-        watermark: plan.watermark,
-        commercialUse: plan.commercialUse,
-        allowedModels: plan.allowedModels ?? null,
-      },
-      subject,
-      createdAt: new Date().toISOString(),
-    };
-
-    await this.db.insert(orders).values({
-      id: orderId,
-      workspaceId: user.workspaceId,
-      userId: user.userId,
-      orderType: 'PLAN',
-      planId: plan.id,
-      amountCents: plan.priceCents,
-      currency: plan.currency,
-      credits: plan.monthlyCredits,
-      snapshotJson: snapshot,
-      status: 'PENDING',
-      fulfillmentStatus: 'PENDING',
+        priceCents: plan.priceCents,
+        finalAmountCents,
+        currency: plan.currency,
+        oneTime: plan.oneTime,
+        entitlements: {
+          monthlyCredits: plan.monthlyCredits,
+          periodDays: plan.periodDays,
+          maxConcurrentGenerations: plan.maxConcurrentGenerations,
+          maxResolution: plan.maxResolution,
+          maxDurationSeconds: plan.maxDurationSeconds,
+          storageRetentionDays: plan.storageRetentionDays,
+          priority: plan.priority,
+          watermark: plan.watermark,
+          commercialUse: plan.commercialUse,
+          allowedModels: plan.allowedModels ?? null,
+        },
+        subject,
+        createdAt: new Date().toISOString(),
+      };
+      await tx.insert(orders).values({
+        id: orderId,
+        workspaceId: user.workspaceId,
+        userId: user.userId,
+        orderType: 'PLAN',
+        planId: plan.id,
+        amountCents: finalAmountCents,
+        currency: plan.currency,
+        credits: plan.monthlyCredits,
+        snapshotJson: snapshot,
+        couponCode: couponCode ?? null,
+        couponSnapshotJson: couponSnapshot,
+        originalAmountCents: plan.priceCents,
+        discountAmountCents,
+        finalAmountCents,
+        status: 'PENDING',
+        fulfillmentStatus: 'PENDING',
+      });
     });
 
-    const created = await provider.createPayment({
+    const chargedByProvider = await provider.createPayment({
       orderId,
-      amountCents: plan.priceCents,
+      amountCents: finalAmountCents,
       subject,
       notifyUrl,
       returnUrl: `${returnBaseUrl}/payment/result?orderId=${orderId}`,
@@ -266,18 +320,20 @@ export class PaymentService {
     await this.db.insert(paymentTransactions).values({
       orderId,
       provider: activeProvider,
-      providerRef: created.tradeNo,
+      providerRef: chargedByProvider.tradeNo,
       status: 'PENDING',
     });
 
     return {
       orderId,
-      amountCents: plan.priceCents,
+      amountCents: finalAmountCents,
       credits: plan.monthlyCredits,
       channel: activeProvider,
-      tradeNo: created.tradeNo,
-      payUrl: created.payUrl,
-      qrCode: created.qrCode,
+      tradeNo: chargedByProvider.tradeNo,
+      payUrl: chargedByProvider.payUrl,
+      qrCode: chargedByProvider.qrCode,
+      discountAmountCents,
+      couponCode: couponCode ?? null,
     };
   }
 
@@ -332,7 +388,7 @@ export class PaymentService {
               eq(paymentTransactions.status, 'PENDING'),
             ),
           );
-      } catch (err) {
+      } catch {
         // provider_ref 唯一约束冲突：同一交易号已被另一订单入账（跨订单 replayed webhook）。
         // 这是重复/篡改入账的强信号，绝不能静默吞掉后继续 recharge。
         throw domainError(
@@ -393,6 +449,22 @@ export class PaymentService {
       if (isRechargeLike) {
         await this.wallet.rechargeInTx(tx, workspaceId, credits, orderId, `payment:recharge:${orderId}`);
       }
+
+      // P1-1: 订单支付成功 → 写 append-only revenue event（eventKey=orderId 幂等）。
+      // 收入确认与支付原子，防止重复入账。PLAN 收入在支付时确认（履约由 fulfillment 负责）。
+      const ledger = new CostRevenueLedger(tx);
+      await ledger.insertRevenueEvent({
+        eventKey: generateRevenueEventKey(order.id),
+        workspaceId: order.workspaceId,
+        userId: order.userId,
+        orderId: order.id,
+        revenueType:
+          order.orderType === 'PLAN' ? 'PLAN' : order.orderType === 'CREDIT_PACK' ? 'CREDIT_PACK' : 'RECHARGE',
+        currency: order.currency,
+        grossAmountCents: order.amountCents,
+        recognizedAmountCents: order.finalAmountCents ?? order.amountCents,
+        metadata: { orderType: order.orderType },
+      });
     });
   }
 

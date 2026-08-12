@@ -23,14 +23,14 @@ export class PaymentController {
   @UseGuards(AuthGuard)
   @ApiOperation({ summary: '购买 Plan（创建 PLAN 订单并返回支付参数）' })
   createPlanOrder(@CurrentUser() user: AuthUser, @Body() dto: CreatePlanOrderDto): Promise<RechargeResult> {
-    return this.service.createPlanOrder(user, dto.planId);
+    return this.service.createPlanOrder(user, dto.planId, dto.couponCode);
   }
 
   @Post('recharge')
   @UseGuards(AuthGuard)
   @ApiOperation({ summary: '创建充值订单并返回支付参数（payUrl/qrCode）' })
   createRecharge(@CurrentUser() user: AuthUser, @Body() dto: CreateRechargeDto): Promise<RechargeResult> {
-    return this.service.createRecharge(user, dto.amountCents);
+    return this.service.createRecharge(user, dto.amountCents, dto.couponCode);
   }
 
   @Post('sandbox/:orderId/confirm')

@@ -106,6 +106,76 @@ export const SUBSCRIPTION_STATUSES = {
 export type SubscriptionStatus =
   (typeof SUBSCRIPTION_STATUSES)[keyof typeof SUBSCRIPTION_STATUSES];
 
+/** 内建后台角色（P1-5 RBAC）。注意：user_role enum 仍为 USER/ADMIN 用于登录身份；
+ * 此处 role 是授权角色，通过 user_role_assignments 绑定到用户。 */
+export const ADMIN_ROLES = {
+  SUPPORT: 'SUPPORT',
+  OPERATOR: 'OPERATOR',
+  FINANCE: 'FINANCE',
+  DEVELOPER: 'DEVELOPER',
+  ADMIN: 'ADMIN',
+  SUPER_ADMIN: 'SUPER_ADMIN',
+} as const;
+export type AdminRole = (typeof ADMIN_ROLES)[keyof typeof ADMIN_ROLES];
+
+/** 后台权限点（P1-5）。作为 role_permissions 中的权限标识。 */
+export const PERMISSIONS = {
+  USERS_READ: 'users.read',
+  USERS_DISABLE: 'users.disable',
+  WALLET_READ: 'wallet.read',
+  WALLET_ADJUST: 'wallet.adjust',
+  ORDERS_READ: 'orders.read',
+  ORDERS_FULFILL: 'orders.fulfill',
+  PAYMENTS_READ: 'payments.read',
+  GENERATION_READ: 'generation.read',
+  GENERATION_REPLAY: 'generation.replay',
+  GENERATION_FORCE_FAIL: 'generation.force_fail',
+  PRICING_READ: 'pricing.read',
+  PRICING_WRITE: 'pricing.write',
+  PRICING_PUBLISH: 'pricing.publish',
+  SETTINGS_READ: 'settings.read',
+  SETTINGS_WRITE: 'settings.write',
+  AUDIT_READ: 'audit.read',
+  PROVIDERS_READ: 'providers.read',
+  PROVIDERS_WRITE: 'providers.write',
+  CREDENTIALS_ROTATE: 'credentials.rotate',
+  ROLE_ASSIGN: 'role.assign',
+  ANALYTICS_READ: 'analytics.read',
+  COUPON_WRITE: 'coupon.write',
+} as const;
+export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+/** 成本事件类型（P1-1）。 */
+export const COST_TYPES = {
+  VIDEO_GENERATION: 'VIDEO_GENERATION',
+  IMAGE_GENERATION: 'IMAGE_GENERATION',
+  LLM: 'LLM',
+  TTS: 'TTS',
+  STORAGE: 'STORAGE',
+  EGRESS: 'EGRESS',
+  GPU: 'GPU',
+  THIRD_PARTY: 'THIRD_PARTY',
+} as const;
+export type CostType = (typeof COST_TYPES)[keyof typeof COST_TYPES];
+
+/** 收入事件类型（P1-1）。 */
+export const REVENUE_TYPES = {
+  RECHARGE: 'RECHARGE',
+  PLAN: 'PLAN',
+  CREDIT_PACK: 'CREDIT_PACK',
+  GENERATION: 'GENERATION',
+} as const;
+export type RevenueType = (typeof REVENUE_TYPES)[keyof typeof REVENUE_TYPES];
+
+/** 试用状态（P1-8）。 */
+export const TRIAL_STATUSES = {
+  NONE: 'NONE',
+  ACTIVE: 'ACTIVE',
+  EXPIRED: 'EXPIRED',
+  CONVERTED: 'CONVERTED',
+} as const;
+export type TrialStatus = (typeof TRIAL_STATUSES)[keyof typeof TRIAL_STATUSES];
+
 /** BullMQ 队列名（API 与 Worker 共享，避免字符串漂移）。 */
 export const QUEUES = {
   GENERATION: 'generation',

@@ -1,34 +1,64 @@
-import { Inject, Injectable, OnApplicationBootstrap } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { USER_ROLES } from '@enova/contracts';
+import { USER_ROLES, ADMIN_ROLES } from '@enova/contracts';
+import { RbacStore } from '@enova/billing';
 import { users, type Database } from '@enova/db';
 import { DATABASE } from '../database/database.module.js';
 import { SettingsService } from '../settings/settings.service.js';
 
 /**
- * Admin Bootstrap：应用启动时，若配置了 INITIAL_ADMIN_EMAIL（支持后台动态配置）
- * 且该用户已存在，将其提升为 ADMIN（幂等）。用于初始化首个管理员。
- * 用户尚未注册时跳过——注册流程（AuthService）会处理该邮箱直接授予 ADMIN 角色。
+ * Admin Bootstrap (P1.5):
+ * 1. 幂等预置内建 RBAC 角色、权限与角色-权限映射。
+ * 2. 将所有 legacy role='ADMIN' 用户自动迁移为 SUPER_ADMIN RBAC role。
+ * 3. 若配置了 auth.initialAdminEmail 且用户存在，确保其拥有 ADMIN role（DB 字段）
+ *    并分配 SUPER_ADMIN RBAC role。
  */
 @Injectable()
 export class AdminBootstrapService implements OnApplicationBootstrap {
+  private readonly logger = new Logger(AdminBootstrapService.name);
+
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(SettingsService) private readonly settings: SettingsService,
+    @Inject(RbacStore) private readonly rbacStore: RbacStore,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    // 1. Seed RBAC roles/permissions (idempotent)
+    await this.rbacStore.seed();
+
+    // 2. Migrate legacy ADMIN users → SUPER_ADMIN RBAC role
+    const adminUsers = await this.db
+      .select({ id: users.id, email: users.email })
+      .from(users)
+      .where(eq(users.role, USER_ROLES.ADMIN));
+
+    for (const admin of adminUsers) {
+      // assignedBy 是 UUID 外键（users.id），传非 UUID 会导致 PG 报错。
+      // 系统自动迁移不记录操作人，留 NULL 即可。
+      await this.rbacStore.assignRole(admin.id, ADMIN_ROLES.SUPER_ADMIN);
+    }
+
+    if (adminUsers.length > 0) {
+      this.logger.log(`Migrated ${adminUsers.length} legacy ADMIN user(s) to SUPER_ADMIN RBAC role`);
+    }
+
+    // 3. Handle initialAdminEmail setting
     const email = (await this.settings.getString('auth.initialAdminEmail'))?.trim().toLowerCase();
     if (!email) return;
 
     const rows = await this.db.select().from(users).where(eq(users.email, email)).limit(1);
     const user = rows[0];
-    if (!user) return; // 尚未注册，注册时由 AuthService 处理
-    if (user.role === USER_ROLES.ADMIN) return;
+    if (!user) return;
 
-    await this.db
-      .update(users)
-      .set({ role: USER_ROLES.ADMIN, updatedAt: new Date() })
-      .where(eq(users.id, user.id));
+    // Ensure both legacy DB field and RBAC role are set
+    if (user.role !== USER_ROLES.ADMIN) {
+      await this.db
+        .update(users)
+        .set({ role: USER_ROLES.ADMIN, updatedAt: new Date() })
+        .where(eq(users.id, user.id));
+    }
+    // Always ensure RBAC SUPER_ADMIN role (idempotent)
+    await this.rbacStore.assignRole(user.id, ADMIN_ROLES.SUPER_ADMIN);
   }
 }

@@ -13,6 +13,7 @@ import { DATABASE } from '../database/database.module.js';
 import { GENERATION_QUEUE } from '../queue/queue.module.js';
 import { PricingService } from '../billing/pricing.service.js';
 import { WalletService } from '../billing/wallet.service.js';
+import { EntitlementService } from '@enova/billing';
 import type { Queue } from 'bullmq';
 
 export interface GenerationView {
@@ -55,6 +56,7 @@ export class GenerationsService {
     @Inject(WalletService) private readonly wallet: WalletService,
     @Inject(PricingService) private readonly pricing: PricingService,
     @Inject(GENERATION_QUEUE) private readonly queue: Queue<GenerationJobPayload>,
+    @Inject(EntitlementService) private readonly entitlement: EntitlementService,
   ) {}
 
   async create(
@@ -69,6 +71,18 @@ export class GenerationsService {
     const quote = await this.pricing.quote({ type, provider, model, dimensions: input });
     const credits = quote.credits;
     const jobId = crypto.randomUUID();
+
+    // P1-2: 创建任务前做用户级限额检查（并发/日/月配额/模型/分辨率/时长/credits 配额）。
+    // optional=true：无有效订阅时不阻断（允许免费 credits 生成），有订阅则强制遵守 Plan Entitlement。
+    // 超限抛明确业务错误（CONCURRENCY_LIMIT_REACHED / DAILY_QUOTA_EXCEEDED / MODEL_NOT_ALLOWED 等）。
+    await this.entitlement.authorizeJob({
+      workspaceId,
+      type,
+      model,
+      input,
+      expectedCredits: credits,
+      optional: true,
+    });
 
     // P0-2: 单个事务内完成 reserve + 写 ledger + 插入 generation_job + 写 outbox。
     // 事务提交后由 OutboxDispatcher 异步投递 BullMQ，避免 orphan job。

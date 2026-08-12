@@ -2,11 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, type SQL } from 'drizzle-orm';
 import { domainError, ERROR_CODES, GENERATION_STATUSES, type GenerationStatus } from '@enova/contracts';
 import {
+  costEvents,
   creditReservations,
   generationAttempts,
   generationDispatchOutbox,
   generationJobs,
   priceQuotes,
+  pricingVersions,
   usageEvents,
   type Database,
 } from '@enova/db';
@@ -81,6 +83,31 @@ export interface AdminGenerationDetailView extends AdminGenerationView {
     costStatus: string;
     creditsCharged: number;
   } | null;
+  /** P1-7: 该任务的全部 Cost Events（append-only 成本链路）。 */
+  costEvents: Array<{
+    id: string;
+    eventKey: string;
+    costType: string;
+    provider: string;
+    model: string;
+    quantity: number;
+    unit: string | null;
+    unitCostMicrousd: number;
+    totalCostMicrousd: number;
+    status: string;
+    externalBillingId: string | null;
+    occurredAt: Date;
+  }>;
+  /** P1-7: 引用的 Pricing Version（追溯定价）。 */
+  pricingVersion: {
+    id: string;
+    version: number;
+    provider: string;
+    model: string;
+    credits: number;
+    status: string;
+    effectiveAt: Date | null;
+  } | null;
 }
 
 /**
@@ -135,6 +162,29 @@ export class GenerationsAdminService {
       .from(generationDispatchOutbox)
       .where(eq(generationDispatchOutbox.generationJobId, jobId))
       .orderBy(desc(generationDispatchOutbox.createdAt));
+    // P1-7: 成本事件 + 定价版本（成本/定价溯源）
+    const costEventRows = await this.db
+      .select()
+      .from(costEvents)
+      .where(eq(costEvents.generationJobId, jobId))
+      .orderBy(desc(costEvents.occurredAt));
+    let pricingVersion: AdminGenerationDetailView['pricingVersion'] = null;
+    const quotePricingVersionId = quoteRow[0]?.pricingVersionId ?? job.pricingVersionId;
+    if (quotePricingVersionId) {
+      const pvRows = await this.db.select().from(pricingVersions).where(eq(pricingVersions.id, quotePricingVersionId)).limit(1);
+      const pv = pvRows[0];
+      if (pv) {
+        pricingVersion = {
+          id: pv.id,
+          version: pv.version,
+          provider: pv.provider,
+          model: pv.model,
+          credits: pv.credits,
+          status: pv.status,
+          effectiveAt: pv.effectiveAt,
+        };
+      }
+    }
 
     return {
       ...this.toView(job),
@@ -191,6 +241,21 @@ export class GenerationsAdminService {
             creditsCharged: usageRow[0].creditsCharged,
           }
         : null,
+      costEvents: costEventRows.map((e) => ({
+        id: e.id,
+        eventKey: e.eventKey,
+        costType: e.costType,
+        provider: e.provider,
+        model: e.model,
+        quantity: e.quantity,
+        unit: e.unit,
+        unitCostMicrousd: e.unitCostMicrousd,
+        totalCostMicrousd: e.totalCostMicrousd,
+        status: e.status,
+        externalBillingId: e.externalBillingId,
+        occurredAt: e.occurredAt,
+      })),
+      pricingVersion,
     };
   }
 

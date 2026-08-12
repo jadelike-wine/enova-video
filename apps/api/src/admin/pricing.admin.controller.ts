@@ -13,12 +13,14 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
+import { PERMISSIONS, type GenerationType } from '@enova/contracts';
 import { AuthGuard } from '../common/guards/auth.guard.js';
-import { AdminGuard } from './admin.guard.js';
+import { PermissionGuard } from '../common/guards/permission.guard.js';
+import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
-import { type GenerationType } from '@enova/contracts';
 import { PricingAdminService } from './pricing.admin.service.js';
 import { AdminAuditService } from './admin.audit.service.js';
+import { SensitiveActionService } from '../common/services/sensitive-action.service.js';
 import {
   CreatePricingRuleDto,
   PreviewQuoteDto,
@@ -29,22 +31,25 @@ import {
 
 @ApiTags('admin/pricing')
 @Controller('api/v1/admin/pricing')
-@UseGuards(AuthGuard, AdminGuard)
+@UseGuards(AuthGuard, PermissionGuard)
 export class PricingAdminController {
   constructor(
     @Inject(PricingAdminService) private readonly service: PricingAdminService,
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
+    @Inject(SensitiveActionService) private readonly sensitiveAction: SensitiveActionService,
   ) {}
 
   // ---- Pricing Rules ----
 
   @Get('rules')
+  @RequirePermission(PERMISSIONS.PRICING_READ)
   @ApiOperation({ summary: '定价规则列表' })
   listRules(@Query() query: PricingVersionListQueryDto) {
     return this.service.listRules({ limit: query.limit, offset: query.offset });
   }
 
   @Post('rules')
+  @RequirePermission(PERMISSIONS.PRICING_WRITE)
   @ApiOperation({ summary: '创建定价规则' })
   async createRule(
     @CurrentUser() user: AuthUser,
@@ -65,6 +70,7 @@ export class PricingAdminController {
   }
 
   @Patch('rules/:id')
+  @RequirePermission(PERMISSIONS.PRICING_WRITE)
   @ApiOperation({ summary: '更新定价规则（不影响已发布 version 和历史 job）' })
   async updateRule(
     @CurrentUser() user: AuthUser,
@@ -90,6 +96,7 @@ export class PricingAdminController {
   // ---- Pricing Versions ----
 
   @Get('versions')
+  @RequirePermission(PERMISSIONS.PRICING_READ)
   @ApiOperation({ summary: '定价版本列表（含历史，不可变）' })
   listVersions(@Query() query: PricingVersionListQueryDto) {
     return this.service.listVersions({
@@ -103,12 +110,24 @@ export class PricingAdminController {
   }
 
   @Post('versions/publish')
+  @RequirePermission(PERMISSIONS.PRICING_PUBLISH)
   @ApiOperation({ summary: '发布新定价版本（不可变，发布后不可修改）' })
   async publishVersion(
     @CurrentUser() user: AuthUser,
     @Req() req: FastifyRequest,
     @Body() dto: PublishPricingVersionDto,
   ) {
+    // P1.5: Sensitive action gate (step-up + audit) before publishing an immutable pricing version.
+    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
+    await this.sensitiveAction.execute({
+      actorUserId: user.userId,
+      permission: PERMISSIONS.PRICING_PUBLISH,
+      target: `pricing_version:${dto.generationType}:${dto.provider}:${dto.model}`,
+      reason: `Publish pricing version: ${dto.credits} credits`,
+      before: { generationType: dto.generationType, provider: dto.provider, model: dto.model, credits: dto.credits },
+      requestId: req.id,
+      stepUpPassword,
+    });
     const result = await this.service.publishVersion({ ...dto, generationType: dto.generationType as GenerationType });
     await this.audit.record({
       actorUserId: user.userId,
@@ -129,6 +148,7 @@ export class PricingAdminController {
   }
 
   @Post('versions/:id/archive')
+  @RequirePermission(PERMISSIONS.PRICING_WRITE)
   @ApiOperation({ summary: '归档定价版本（禁止删除）' })
   async archiveVersion(
     @CurrentUser() user: AuthUser,
@@ -149,6 +169,7 @@ export class PricingAdminController {
   }
 
   @Post('quote/preview')
+  @RequirePermission(PERMISSIONS.PRICING_READ)
   @ApiOperation({ summary: '预览报价（不创建 PriceQuote 行）' })
   previewQuote(@Body() dto: PreviewQuoteDto) {
     return this.service.previewQuote({ ...dto, type: dto.type as GenerationType });

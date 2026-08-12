@@ -40,6 +40,13 @@ export class EnovaLogger implements LoggerService {
             '*Secret',
             'apiKey',
             '*.apiKey',
+            // P1.6: 高危操作 step-up password header 全链路脱敏
+            'x-step-up-password',
+            '*.x-step-up-password',
+            'headers.x-step-up-password',
+            'request.headers.x-step-up-password',
+            'stepUpPassword',
+            '*.stepUpPassword',
           ],
           censor: '[REDACTED]',
         },

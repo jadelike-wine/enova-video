@@ -14,8 +14,10 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
+import { PERMISSIONS } from '@enova/contracts';
 import { AuthGuard } from '../common/guards/auth.guard.js';
-import { AdminGuard } from './admin.guard.js';
+import { PermissionGuard } from '../common/guards/permission.guard.js';
+import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
 import {
   ProvidersAdminService,
@@ -26,7 +28,7 @@ import { CreateProviderDto, ListQueryDto, UpdateProviderDto } from './dto/admin.
 
 @ApiTags('admin/providers')
 @Controller('api/v1/admin/providers')
-@UseGuards(AuthGuard, AdminGuard)
+@UseGuards(AuthGuard, PermissionGuard)
 export class ProvidersAdminController {
   constructor(
     @Inject(ProvidersAdminService) private readonly service: ProvidersAdminService,
@@ -34,12 +36,14 @@ export class ProvidersAdminController {
   ) {}
 
   @Get()
+  @RequirePermission(PERMISSIONS.PROVIDERS_READ)
   @ApiOperation({ summary: '列出所有 Provider' })
   list(@Query() query: ListQueryDto): Promise<ProviderView[]> {
     return this.service.list(query.limit ?? 50, query.offset ?? 0);
   }
 
   @Post()
+  @RequirePermission(PERMISSIONS.PROVIDERS_WRITE)
   @ApiOperation({ summary: '创建 Provider（base_url 需通过 SSRF 校验）' })
   async create(
     @CurrentUser() user: AuthUser,
@@ -60,6 +64,7 @@ export class ProvidersAdminController {
   }
 
   @Patch(':id')
+  @RequirePermission(PERMISSIONS.PROVIDERS_WRITE)
   @ApiOperation({ summary: '更新 Provider' })
   async update(
     @CurrentUser() user: AuthUser,
@@ -83,6 +88,7 @@ export class ProvidersAdminController {
   }
 
   @Delete(':id')
+  @RequirePermission(PERMISSIONS.PROVIDERS_WRITE)
   @ApiOperation({ summary: '删除 Provider（级联删除其 Credential）' })
   async remove(
     @CurrentUser() user: AuthUser,

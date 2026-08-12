@@ -35,3 +35,44 @@ export class LoginDto {
   @IsString()
   turnstileToken?: string;
 }
+
+/** P1-6: 修改密码请求体。 */
+export class ChangePasswordDto {
+  @ApiProperty({ description: '当前密码' })
+  @IsString()
+  @MinLength(1)
+  currentPassword!: string;
+
+  @ApiProperty({ minLength: 8, maxLength: 128 })
+  @IsString()
+  @MinLength(8, { message: 'password must be at least 8 characters' })
+  @MaxLength(128)
+  newPassword!: string;
+}
+
+/** P1.5: 忘记密码请求体。 */
+export class ForgotPasswordDto {
+  @ApiProperty({ description: '注册邮箱' })
+  @IsString()
+  @IsEmail()
+  email!: string;
+}
+
+/** P1.5: 重置密码请求体。 */
+export class ResetPasswordDto {
+  @ApiProperty({ description: '重置 token（从邮件获取）' })
+  @IsString()
+  token!: string;
+
+  @ApiProperty({ description: '新密码' })
+  @IsString()
+  @MinLength(8)
+  newPassword!: string;
+}
+
+/** P1.5: 邮箱验证请求体。 */
+export class VerifyEmailDto {
+  @ApiProperty({ description: '邮箱验证 token' })
+  @IsString()
+  token!: string;
+}

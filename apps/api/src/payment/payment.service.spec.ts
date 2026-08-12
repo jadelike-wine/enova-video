@@ -30,11 +30,15 @@ function createDb(handlers: Record<string, () => any>) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       _t: tableKey(t),
     }),
-    insert: (t: unknown) => ({
-      values: () => Promise.resolve([]),
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      _t: tableKey(t),
-    }),
+    insert: (t: unknown) => {
+      const insertChain: any = {
+        values: () => insertChain,
+        onConflictDoNothing: () => insertChain,
+        returning: () => Promise.resolve([]),
+      };
+      insertChain._t = tableKey(t);
+      return insertChain;
+    },
   };
   return {
     select: () => ({
@@ -48,11 +52,15 @@ function createDb(handlers: Record<string, () => any>) {
         return chain;
       },
     }),
-    insert: (t: unknown) => ({
-      values: () => Promise.resolve([]),
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      _t: tableKey(t),
-    }),
+    insert: (t: unknown) => {
+      const insertChain: any = {
+        values: () => insertChain,
+        onConflictDoNothing: () => insertChain,
+        returning: () => Promise.resolve([]),
+      };
+      insertChain._t = tableKey(t);
+      return insertChain;
+    },
     update: (t: unknown) => ({
       set: () => ({ where: () => Promise.resolve([]) }),
       // eslint-disable-next-line @typescript-eslint/no-unused-vars

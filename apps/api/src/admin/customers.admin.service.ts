@@ -3,11 +3,14 @@ import { count, desc, eq, sql } from 'drizzle-orm';
 import { domainError, ERROR_CODES } from '@enova/contracts';
 import {
   adminAuditLogs,
+  costEvents,
   creditReservations,
   generationJobs,
   orders,
   paymentTransactions,
   plans,
+  revenueEvents,
+  sessions,
   subscriptions,
   usageEvents,
   users,
@@ -110,6 +113,43 @@ export interface Customer360View {
     resourceId: string | null;
     createdAt: Date;
   }>;
+  /** P1-7: 会话（运营/风控：数量、最近登录、IP、UA）。不含 token 明文。 */
+  sessions: Array<{
+    id: string;
+    ip: string | null;
+    userAgent: string | null;
+    deviceName: string | null;
+    lastSeenAt: Date | null;
+    createdAt: Date;
+    expiresAt: Date;
+    revoked: boolean;
+  }>;
+  /** P1-7: 当前 Plan Entitlement（限额 source of truth）。 */
+  limits: {
+    planId: string;
+    planName: string | null;
+    maxConcurrentGenerations: number;
+    maxDurationSeconds: number;
+    maxResolution: number;
+    allowedResolutions: string[] | null;
+    allowedModels: string[] | null;
+    allowedGenerationTypes: string[] | null;
+    dailyGenerationLimit: number | null;
+    monthlyGenerationLimit: number | null;
+    dailyCreditLimit: number | null;
+    monthlyCreditLimit: number | null;
+    rpm: number | null;
+  } | null;
+  /** P1-7: 成本事件汇总（按状态分布 + best available）。 */
+  costs: {
+    totalEstimatedCostMicrousd: number;
+    totalReportedCostMicrousd: number;
+    totalReconciledCostMicrousd: number;
+    bestAvailableCostMicrousd: number;
+    eventCount: number;
+  };
+  /** P1-7: 已确认收入（recognized revenue）。 */
+  revenueRecognizedCents: number;
 }
 
 /**
@@ -353,6 +393,91 @@ export class CustomersAdminService {
       .orderBy(desc(adminAuditLogs.createdAt))
       .limit(10);
 
+    // P1-7: 会话（user 维度，数量/最近登录/IP/UA，不含 token）
+    const sessionRows = await this.db
+      .select({
+        id: sessions.id,
+        ip: sessions.ip,
+        userAgent: sessions.userAgent,
+        deviceName: sessions.deviceName,
+        lastSeenAt: sessions.lastSeenAt,
+        createdAt: sessions.createdAt,
+        expiresAt: sessions.expiresAt,
+        revokedAt: sessions.revokedAt,
+      })
+      .from(sessions)
+      .where(eq(sessions.userId, userId))
+      .orderBy(desc(sessions.lastSeenAt))
+      .limit(20);
+    const now = Date.now();
+    const sessionsView = sessionRows.map((s) => ({
+      id: s.id,
+      ip: s.ip,
+      userAgent: s.userAgent,
+      deviceName: s.deviceName,
+      lastSeenAt: s.lastSeenAt,
+      createdAt: s.createdAt,
+      expiresAt: s.expiresAt,
+      revoked: !!s.revokedAt || s.expiresAt.getTime() < now,
+    }));
+
+    // P1-7: 当前 Plan Entitlement（限额 source of truth）
+    let limits: Customer360View['limits'] = null;
+    if (subscription) {
+      const planRows = await this.db.select().from(plans).where(eq(plans.id, subscription.planId)).limit(1);
+      const p = planRows[0];
+      if (p) {
+        limits = {
+          planId: p.id,
+          planName: p.name,
+          maxConcurrentGenerations: p.maxConcurrentGenerations,
+          maxDurationSeconds: p.maxDurationSeconds,
+          maxResolution: p.maxResolution,
+          allowedResolutions: p.allowedResolutions ?? null,
+          allowedModels: p.allowedModels ?? null,
+          allowedGenerationTypes: p.allowedGenerationTypes ?? null,
+          dailyGenerationLimit: p.dailyGenerationLimit,
+          monthlyGenerationLimit: p.monthlyGenerationLimit,
+          dailyCreditLimit: p.dailyCreditLimit,
+          monthlyCreditLimit: p.monthlyCreditLimit,
+          rpm: p.rpm,
+        };
+      }
+    }
+
+    // P1-7: 成本事件汇总（workspace 维度）
+    const costRows = membership
+      ? await this.db
+          .select({
+            status: costEvents.status,
+            total: sql<number>`coalesce(sum(${costEvents.totalCostMicrousd}), 0)`,
+            n: count(),
+          })
+          .from(costEvents)
+          .where(eq(costEvents.workspaceId, membership.workspaceId))
+          .groupBy(costEvents.status)
+      : [];
+    const costByStatus = new Map(costRows.map((r) => [r.status, r]));
+    const costs = {
+      totalEstimatedCostMicrousd: Number(costByStatus.get('ESTIMATED')?.total ?? 0),
+      totalReportedCostMicrousd: Number(costByStatus.get('REPORTED')?.total ?? 0),
+      totalReconciledCostMicrousd: Number(costByStatus.get('RECONCILED')?.total ?? 0),
+      bestAvailableCostMicrousd:
+        Number(costByStatus.get('RECONCILED')?.total ?? 0) ||
+        Number(costByStatus.get('REPORTED')?.total ?? 0) ||
+        Number(costByStatus.get('ESTIMATED')?.total ?? 0),
+      eventCount: costRows.reduce((s, r) => s + r.n, 0),
+    };
+
+    // P1-7: 已确认收入（workspace 维度）
+    const [revAgg] = membership
+      ? await this.db
+          .select({ n: sql<number>`coalesce(sum(${revenueEvents.recognizedAmountCents}), 0)` })
+          .from(revenueEvents)
+          .where(eq(revenueEvents.workspaceId, membership.workspaceId))
+      : [{ n: 0 }];
+    const revenueRecognizedCents = Number(revAgg?.n ?? 0);
+
     return {
       user: {
         id: user.id,
@@ -371,6 +496,10 @@ export class CustomersAdminService {
       recentGenerations,
       recentUsage,
       audit: auditRows,
+      sessions: sessionsView,
+      limits,
+      costs,
+      revenueRecognizedCents,
     };
   }
 }

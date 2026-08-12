@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, isNull, ne } from 'drizzle-orm';
 import {
   domainError,
   ERROR_CODES,
@@ -10,6 +10,8 @@ import {
   type ErrorCode,
 } from '@enova/contracts';
 import {
+  emailVerificationTokens,
+  passwordResetTokens,
   sessions,
   users,
   wallets,
@@ -37,6 +39,18 @@ export interface AuthResult {
   user: AuthUser;
   balance: number;
   reservedBalance: number;
+}
+
+/** 会话视图（不含 token hash 明文，只暴露安全所需字段）。P1-6。 */
+export interface SessionView {
+  id: string;
+  ip: string | null;
+  userAgent: string | null;
+  deviceName: string | null;
+  lastSeenAt: Date | null;
+  createdAt: Date;
+  expiresAt: Date;
+  revoked: boolean;
 }
 
 function fail(code: ErrorCode, message: string, statusCode = 400): never {
@@ -84,7 +98,6 @@ export class AuthService {
         .values({
           email: normalized,
           passwordHash,
-          // 配置的首个管理员邮箱注册即授予 ADMIN（配置驱动，避免额外提权流程）。
           role: isAdmin ? USER_ROLES.ADMIN : USER_ROLES.USER,
           status: USER_STATUSES.ACTIVE,
         })
@@ -130,6 +143,14 @@ export class AuthService {
       return { userId: user.id, email: user.email, role: user.role, status: user.status, workspaceId: workspace.id, balance: wallet.balance, reservedBalance: wallet.reservedBalance };
     });
 
+    // After the transaction, create email verification token
+    // (not blocking registration, best-effort)
+    try {
+      await this.createEmailVerificationToken(result.userId);
+    } catch {
+      // Best-effort: don't fail registration if token creation fails
+    }
+
     return {
       user: {
         userId: result.userId,
@@ -166,7 +187,13 @@ export class AuthService {
     const token = this.session.issueToken();
     const tokenHash = this.session.hashToken(token);
     const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
-    await this.db.insert(sessions).values({ userId: user.id, tokenHash, expiresAt });
+    await this.db.insert(sessions).values({
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+      ip: remoteIP || null,
+      userAgent: null,
+    });
 
     const context = await this.loadAuthContext(user.id);
     return { ...context, token };
@@ -179,7 +206,154 @@ export class AuthService {
       .where(and(eq(sessions.tokenHash, tokenHash), eq(sessions.userId, userId)));
   }
 
-  /** 根据 Session token 的哈希解析当前身份。非法/过期返回 null。 */
+  // ---- P1-6: Session 管理（列出 / 撤销单条 / 撤销其它 / 改密）----
+
+  /** 列出用户全部 session（含已撤销/过期，revoked 字段标记其状态）。 */
+  async listSessions(userId: string): Promise<SessionView[]> {
+    const rows = await this.db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.userId, userId))
+      .orderBy(sessions.createdAt);
+    const now = Date.now();
+    return rows.map((s) => ({
+      id: s.id,
+      ip: s.ip,
+      userAgent: s.userAgent,
+      deviceName: s.deviceName,
+      lastSeenAt: s.lastSeenAt,
+      createdAt: s.createdAt,
+      expiresAt: s.expiresAt,
+      revoked: !!s.revokedAt || s.expiresAt.getTime() < now,
+    }));
+  }
+
+  /** 撤销指定 session（管理员可跨用户，用户自身只能撤销自己的）。 */
+  async revokeSession(userId: string, sessionId: string, opts: { allowOtherUser?: boolean } = {}): Promise<void> {
+    const rows = await this.db.select().from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+    const session = rows[0];
+    if (!session) fail(ERROR_CODES.NOT_FOUND, 'Session not found', 404);
+    if (session.userId !== userId && !opts.allowOtherUser) {
+      fail(ERROR_CODES.FORBIDDEN, 'Not allowed to revoke this session', 403);
+    }
+    await this.db
+      .update(sessions)
+      .set({ revokedAt: new Date() })
+      .where(eq(sessions.id, sessionId));
+  }
+
+  /** 撤销当前用户除指定 tokenHash 外的所有 session（用于"退出其它设备"）。 */
+  async revokeAllOtherSessions(userId: string, keepTokenHash: string): Promise<number> {
+    const res = await this.db
+      .update(sessions)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(sessions.userId, userId), ne(sessions.tokenHash, keepTokenHash), isNull(sessions.revokedAt)));
+    return res.rowCount ?? 0;
+  }
+
+  /** 修改密码：校验当前密码 → 更新 hash → 撤销其它 session（保留当前）。 */
+  async changePassword(userId: string, currentPassword: string, newPassword: string, keepTokenHash?: string): Promise<void> {
+    const rows = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const user = rows[0];
+    if (!user) fail(ERROR_CODES.NOT_FOUND, 'User not found', 404);
+    if (user.passwordHash && !(await this.password.verify(currentPassword, user.passwordHash))) {
+      fail(ERROR_CODES.INVALID_CREDENTIALS, 'Current password is incorrect', 401);
+    }
+    const newHash = await this.password.hash(newPassword);
+    await this.db.update(users).set({ passwordHash: newHash, updatedAt: new Date() }).where(eq(users.id, userId));
+    // P1.5: Revoke all other sessions after password change
+    if (keepTokenHash) {
+      await this.revokeAllOtherSessions(userId, keepTokenHash);
+    } else {
+      // If no token hash provided, revoke ALL sessions
+      await this.db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.userId, userId));
+    }
+  }
+
+  /** 撤销用户所有 session。 */
+  async revokeAllSessions(userId: string): Promise<void> {
+    await this.db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.userId, userId));
+  }
+
+  // ---- P1.5: Password Reset ----
+
+  /** 发起密码重置：创建短有效期、单次使用的 reset token（只存 hash）。 */
+  async requestPasswordReset(email: string): Promise<string | null> {
+    const normalized = email.trim().toLowerCase();
+    const rows = await this.db.select().from(users).where(eq(users.email, normalized)).limit(1);
+    const user = rows[0];
+    if (!user) return null; // 静默不泄露邮箱是否存在
+
+    const rawToken = this.session.issueToken();
+    const tokenHash = this.session.hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 分钟
+
+    await this.db.insert(passwordResetTokens).values({
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+    });
+
+    return rawToken;
+  }
+
+  /** 重置密码：校验 token → 更新密码 → 标记 token 已用 → 撤销所有 session。 */
+  async resetPassword(rawToken: string, newPassword: string): Promise<void> {
+    const tokenHash = this.session.hashToken(rawToken);
+    const rows = await this.db.select().from(passwordResetTokens).where(eq(passwordResetTokens.tokenHash, tokenHash)).limit(1);
+    const token = rows[0];
+    if (!token) fail(ERROR_CODES.INVALID_CREDENTIALS, 'Invalid or expired reset token', 400);
+    if (token.usedAt) fail(ERROR_CODES.INVALID_CREDENTIALS, 'Reset token already used', 400);
+    if (token.expiresAt.getTime() < Date.now()) fail(ERROR_CODES.INVALID_CREDENTIALS, 'Reset token expired', 400);
+
+    const newHash = await this.password.hash(newPassword);
+    await this.db.transaction(async (tx) => {
+      await tx.update(users).set({ passwordHash: newHash, updatedAt: new Date() }).where(eq(users.id, token.userId));
+      await tx.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, token.id));
+      // Revoke ALL sessions for this user
+      await tx.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.userId, token.userId));
+    });
+  }
+
+  // ---- P1.5: Email Verification ----
+
+  /** 生成邮箱验证 token（只存 hash）。 */
+  async createEmailVerificationToken(userId: string): Promise<string> {
+    const rawToken = this.session.issueToken();
+    const tokenHash = this.session.hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 小时
+
+    await this.db.insert(emailVerificationTokens).values({
+      userId,
+      tokenHash,
+      expiresAt,
+    });
+
+    return rawToken;
+  }
+
+  /** 验证邮箱：校验 token → 设置 emailVerifiedAt → 标记 token 已用。 */
+  async verifyEmail(rawToken: string): Promise<void> {
+    const tokenHash = this.session.hashToken(rawToken);
+    const rows = await this.db.select().from(emailVerificationTokens).where(eq(emailVerificationTokens.tokenHash, tokenHash)).limit(1);
+    const token = rows[0];
+    if (!token) fail(ERROR_CODES.INVALID_CREDENTIALS, 'Invalid verification token', 400);
+    if (token.usedAt) fail(ERROR_CODES.INVALID_CREDENTIALS, 'Verification token already used', 400);
+    if (token.expiresAt.getTime() < Date.now()) fail(ERROR_CODES.INVALID_CREDENTIALS, 'Verification token expired', 400);
+
+    await this.db.transaction(async (tx) => {
+      await tx.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, token.userId));
+      await tx.update(emailVerificationTokens).set({ usedAt: new Date() }).where(eq(emailVerificationTokens.id, token.id));
+    });
+  }
+
+  /** 获取用户邮箱验证状态。 */
+  async getEmailVerification(userId: string): Promise<boolean> {
+    const rows = await this.db.select({ emailVerifiedAt: users.emailVerifiedAt }).from(users).where(eq(users.id, userId)).limit(1);
+    return rows[0]?.emailVerifiedAt != null;
+  }
+
+  /** 根据 Session token 的哈希解析当前身份。非法/过期/已撤销返回 null。 */
   async resolveSession(tokenHash: string): Promise<AuthUser | null> {
     const rows = await this.db
       .select()
@@ -189,6 +363,10 @@ export class AuthService {
     const session = rows[0];
     if (!session) return null;
     if (session.expiresAt.getTime() < Date.now()) return null;
+    if (session.revokedAt) return null; // P1-6: 已撤销 session 立即失效
+
+    // 更新 last_seen（best-effort，不影响鉴权结果）。
+    await this.db.update(sessions).set({ lastSeenAt: new Date() }).where(eq(sessions.id, session.id));
 
     const userRows = await this.db.select().from(users).where(eq(users.id, session.userId)).limit(1);
     const user = userRows[0];

@@ -237,7 +237,6 @@ Production environment variables are injected via `.env` (see `.env.example`). K
 | `SESSION_SECRET` | **yes** | Session signing secret (`openssl rand -hex 32`) |
 | `STORAGE_PROVIDER` | no | `none` / `s3` / `qiniu`, default `none` |
 | `WELCOME_CREDITS` | no | Welcome credits on signup, default `100` |
-| `INITIAL_ADMIN_EMAIL/PASSWORD` | no | Seed admin account (admin console) |
 | `PAYMENT_MODE` | no | `sandbox` / `alipay` / `wechat`, default `sandbox` |
 
 > **Security**: never use the dev placeholder keys from `.env.example` in production; `CREDENTIAL_MASTER_KEY`, `SESSION_SECRET`, and database / Redis / object-storage credentials must only be injected via server-side env or IAM / Role.

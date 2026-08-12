@@ -1,6 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, count, eq, isNull, ne } from 'drizzle-orm';
 import {
+  ADMIN_ROLES,
   domainError,
   ERROR_CODES,
   USER_ROLES,
@@ -9,6 +10,7 @@ import {
   WORKSPACE_TYPES,
   type ErrorCode,
 } from '@enova/contracts';
+import { RbacStore } from '@enova/billing';
 import {
   emailVerificationTokens,
   passwordResetTokens,
@@ -59,12 +61,15 @@ function fail(code: ErrorCode, message: string, statusCode = 400): never {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(SettingsService) private readonly settings: SettingsService,
     private readonly password: PasswordService,
     private readonly session: SessionService,
     private readonly turnstile: TurnstileService,
+    @Inject(RbacStore) private readonly rbacStore: RbacStore,
   ) {}
 
   /** 注册：事务内创建 User + Personal Workspace + Member + Wallet + Welcome Credits + Session。 */
@@ -73,8 +78,12 @@ export class AuthService {
     plainPassword: string,
     turnstileToken?: string,
     remoteIP?: string,
+    opts: { admin?: boolean } = {},
   ): Promise<AuthResult & { token: string }> {
-    await this.turnstile.verify(turnstileToken, remoteIP ?? '');
+    // 首启创建管理员走 setup.init，不经过人机验证；普通注册始终校验。
+    if (!opts.admin) {
+      await this.turnstile.verify(turnstileToken, remoteIP ?? '');
+    }
     const normalized = email.trim().toLowerCase();
 
     const existing = await this.db
@@ -90,7 +99,6 @@ export class AuthService {
     const token = this.session.issueToken();
     const tokenHash = this.session.hashToken(token);
     const welcome = (await this.settings.getNumber('billing.welcomeCredits')) ?? 0;
-    const isAdmin = await this.isInitialAdmin(normalized);
 
     const result = await this.db.transaction(async (tx) => {
       const [user] = await tx
@@ -98,7 +106,7 @@ export class AuthService {
         .values({
           email: normalized,
           passwordHash,
-          role: isAdmin ? USER_ROLES.ADMIN : USER_ROLES.USER,
+          role: opts.admin ? USER_ROLES.ADMIN : USER_ROLES.USER,
           status: USER_STATUSES.ACTIVE,
         })
         .returning();
@@ -149,6 +157,12 @@ export class AuthService {
       await this.createEmailVerificationToken(result.userId);
     } catch {
       // Best-effort: don't fail registration if token creation fails
+    }
+
+    // 首启创建管理员：注册成功后授予 SUPER_ADMIN RBAC 角色。
+    if (opts.admin) {
+      await this.rbacStore.assignRole(result.userId, ADMIN_ROLES.SUPER_ADMIN);
+      this.logger.log(`[setup] Created initial admin user ${result.email}`);
     }
 
     return {
@@ -385,14 +399,21 @@ export class AuthService {
     return this.session.hashToken(rawToken);
   }
 
-  /** 是否为配置的首个管理员邮箱（支持后台动态配置 INITIAL_ADMIN_EMAIL）。 */
-  private async isInitialAdmin(email: string): Promise<boolean> {
-    const configured = (await this.settings.getString('auth.initialAdminEmail'))?.trim().toLowerCase();
-    // 显式配置：仅该邮箱注册时被授予管理员（配置驱动，避免额外提权流程）。
-    if (configured) return configured === email;
-    // 未显式配置时，采用 sub2api 式引导：空库时首个注册用户成为管理员。
-    const [row] = await this.db.select({ n: count() }).from(users);
-    return (row?.n ?? 0) === 0;
+  /** 是否存在管理员账号（决定首启 setup 是否展示）。 */
+  async hasAdminUser(): Promise<boolean> {
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(users)
+      .where(eq(users.role, USER_ROLES.ADMIN));
+    return (row?.n ?? 0) > 0;
+  }
+
+  /** 首启创建管理员：仅当系统尚无管理员时可用，成功后授予 SUPER_ADMIN 并返回已登录会话。 */
+  async createAdmin(email: string, plainPassword: string, remoteIP?: string): Promise<AuthResult & { token: string }> {
+    if (await this.hasAdminUser()) {
+      fail(ERROR_CODES.CONFLICT, 'Admin already initialized', 409);
+    }
+    return this.register(email, plainPassword, undefined, remoteIP, { admin: true });
   }
 
   /** 解析用户身份 + 其 Personal Workspace + Wallet 余额。 */

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { authApi, turnstileApi, type TurnstileConfig } from '../../../lib/api'
+import { authApi, setupApi, turnstileApi, type TurnstileConfig } from '../../../lib/api'
 import { BRAND } from '../../../lib/brand'
 import { formatErrorMessage } from '../../../lib/errorMessage'
 import TurnstileWidget, { type TurnstileHandle } from '../../../components/auth/TurnstileWidget'
@@ -32,6 +32,22 @@ export default function LoginPage() {
       active = false
     }
   }, [])
+
+  // 首启：系统尚无管理员时跳转到初始化向导
+  useEffect(() => {
+    let active = true
+    setupApi
+      .status()
+      .then((s) => {
+        if (active && s.needsSetup) router.replace('/setup')
+      })
+      .catch(() => {
+        /* 容错：探测失败不阻塞提交 */
+      })
+    return () => {
+      active = false
+    }
+  }, [router])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()

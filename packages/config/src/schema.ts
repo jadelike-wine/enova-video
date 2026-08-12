@@ -97,8 +97,6 @@ export const envSchema = z.object({
 
   // 计费
   WELCOME_CREDITS: z.coerce.number().int().nonnegative().default(100),
-  INITIAL_ADMIN_EMAIL: z.string().email().optional().describe('seed admin email'),
-  INITIAL_ADMIN_PASSWORD: z.string().optional().describe('seed admin password'),
   TURNSTILE_ENABLED: envBool(false),
   TURNSTILE_SITE_KEY: z.string().optional().default(''),
   TURNSTILE_SECRET_KEY: z.string().optional().default(''),

@@ -48,23 +48,6 @@ export const SETTINGS: SettingDef[] = [
   },
   // ---- 认证 ----
   {
-    key: 'auth.initialAdminEmail',
-    valueType: 'string',
-    group: 'auth',
-    label: '初始管理员邮箱',
-    description: '首次注册即被授予管理员角色的邮箱。',
-    envKey: 'INITIAL_ADMIN_EMAIL',
-  },
-  {
-    key: 'auth.initialAdminPassword',
-    valueType: 'string',
-    group: 'auth',
-    label: '初始管理员密码',
-    description: '初始管理员密码（仅用于 seed，注册后无效）。',
-    isSecret: true,
-    envKey: 'INITIAL_ADMIN_PASSWORD',
-  },
-  {
     key: 'auth.turnstileEnabled',
     valueType: 'boolean',
     group: 'auth',

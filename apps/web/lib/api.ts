@@ -182,6 +182,20 @@ export const turnstileApi = {
 }
 
 // ---------------------------------------------------------------------------
+// 首启 Setup（管理员初始化）
+// ---------------------------------------------------------------------------
+
+export interface SetupStatus {
+  needsSetup: boolean
+}
+
+export const setupApi = {
+  status: () => json<SetupStatus>('/setup/status'),
+  init: (email: string, password: string) =>
+    json<AuthResult>('/setup/init', { method: 'POST', body: JSON.stringify({ email, password }) }),
+}
+
+// ---------------------------------------------------------------------------
 // 会话
 // ---------------------------------------------------------------------------
 

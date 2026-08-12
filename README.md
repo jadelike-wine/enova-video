@@ -235,7 +235,6 @@ git tag v1.2.0 && git push origin v1.2.0   # 触发 release.yml 构建并推送 
 | `SESSION_SECRET` | **是** | Session 签名密钥（`openssl rand -hex 32`） |
 | `STORAGE_PROVIDER` | 否 | `none` / `s3` / `qiniu`，默认 `none` |
 | `WELCOME_CREDITS` | 否 | 注册发放的 Welcome Credits，默认 `100` |
-| `INITIAL_ADMIN_EMAIL/PASSWORD` | 否 | 种子管理员账号（Admin 后台使用） |
 | `PAYMENT_MODE` | 否 | `sandbox` / `alipay` / `wechat`，默认 `sandbox` |
 
 > **安全**：生产禁止使用 `.env.example` 中的 dev 占位密钥；`CREDENTIAL_MASTER_KEY`、`SESSION_SECRET`、数据库 / Redis / 对象存储凭证只能通过服务端环境或 IAM / Role 注入。

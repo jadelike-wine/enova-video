@@ -8,7 +8,6 @@ import { createDbFromPool, users, type Database } from '@enova/db';
 import { RbacStore } from '@enova/billing';
 import { USER_ROLES, PERMISSIONS, ADMIN_ROLES } from '@enova/contracts';
 import { PasswordService } from '../auth/password.service.js';
-import { SettingsService } from '../settings/settings.service.js';
 import { AdminBootstrapService } from './admin-bootstrap.service.js';
 
 const connectionString = process.env.DATABASE_URL;
@@ -49,14 +48,6 @@ async function applyMigrations(): Promise<{ db: Database; pool: Pool }> {
   return { db: createDbFromPool(pool), pool };
 }
 
-function makeSettings() {
-  return {
-    getString: async () => null,
-    getNumber: async () => null,
-    getBoolean: async () => false,
-  };
-}
-
 describe('AdminBootstrapService (real PostgreSQL)', () => {
   let db: Database;
   let pool: Pool;
@@ -84,8 +75,7 @@ describe('AdminBootstrapService (real PostgreSQL)', () => {
 
     // Run bootstrap
     const rbacStore = new RbacStore(db);
-    const settingsService = makeSettings() as unknown as SettingsService;
-    const bootstrap = new AdminBootstrapService(db, settingsService, rbacStore);
+    const bootstrap = new AdminBootstrapService(db, rbacStore);
     await bootstrap.onApplicationBootstrap();
 
     // Verify: the legacy admin should now have SUPER_ADMIN RBAC role
@@ -100,8 +90,7 @@ describe('AdminBootstrapService (real PostgreSQL)', () => {
 
   it.skipIf(!hasDb)('bootstrap is idempotent (running twice does not crash or duplicate)', async () => {
     const rbacStore = new RbacStore(db);
-    const settingsService = makeSettings() as unknown as SettingsService;
-    const bootstrap = new AdminBootstrapService(db, settingsService, rbacStore);
+    const bootstrap = new AdminBootstrapService(db, rbacStore);
 
     // Run twice
     await bootstrap.onApplicationBootstrap();

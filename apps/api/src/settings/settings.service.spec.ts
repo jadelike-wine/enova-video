@@ -45,7 +45,6 @@ function tinyKey(t: any): string {
 
 const env: Record<string, unknown> = {
   WELCOME_CREDITS: 200,
-  INITIAL_ADMIN_EMAIL: 'admin@example.com',
   PAYMENT_CREDITS_PER_CNY: 100,
   PAYMENT_MIN_RECHARGE_CENTS: 50,
 };
@@ -80,7 +79,5 @@ describe('SettingsService', () => {
     const welcome = list.find((s) => s.key === 'billing.welcomeCredits')!;
     expect(welcome.value).toBe('200');
     expect(welcome.persisted).toBe(false);
-    const adminEmail = list.find((s) => s.key === 'auth.initialAdminEmail')!;
-    expect(adminEmail.value).toBe('admin@example.com');
   });
 });

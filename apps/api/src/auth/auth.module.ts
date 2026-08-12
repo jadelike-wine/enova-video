@@ -6,6 +6,7 @@ import { SessionService } from './session.service.js';
 import { TurnstileService } from './turnstile.service.js';
 import { ConsoleEmailSender } from '../common/services/console-email.sender.js';
 import { DisabledEmailSender } from '../common/services/disabled-email.sender.js';
+import { BillingModule } from '../billing/billing.module.js';
 
 /**
  * 全局认证模块：AuthService 被 AuthGuard 在各业务模块中广泛依赖，
@@ -21,7 +22,7 @@ const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV ===
 
 @Global()
 @Module({
-  imports: [],
+  imports: [BillingModule],
   controllers: [AuthController],
   providers: [
     AuthService,

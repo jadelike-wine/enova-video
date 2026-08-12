@@ -49,7 +49,6 @@ const fakeCrypto: SettingsCrypto = {
 
 const env: Record<string, unknown> = {
   WELCOME_CREDITS: 200,
-  INITIAL_ADMIN_EMAIL: 'admin@example.com',
   PAYMENT_CREDITS_PER_CNY: 100,
   PAYMENT_MIN_RECHARGE_CENTS: 50,
 };
@@ -59,7 +58,6 @@ describe('SettingsStore', () => {
     const { db } = createDb();
     const store = new SettingsStore(db, env);
     expect(await store.getNumber('billing.welcomeCredits')).toBe(200); // env
-    expect(await store.getString('auth.initialAdminEmail')).toBe('admin@example.com');
     expect(await store.getBoolean('billing.someMissing')).toBeNull();
     // 未在 env 也未设置的走注册表默认值
     expect(await store.getNumber('payment.creditsPerCny')).toBe(100);
@@ -102,7 +100,5 @@ describe('SettingsStore', () => {
     const welcome = list.find((s) => s.key === 'billing.welcomeCredits')!;
     expect(welcome.value).toBe('200');
     expect(welcome.persisted).toBe(false);
-    const adminEmail = list.find((s) => s.key === 'auth.initialAdminEmail')!;
-    expect(adminEmail.value).toBe('admin@example.com');
   });
 });

@@ -12,6 +12,11 @@ const navItems = [
   { path: '/app/videos', label: '视频生成', icon: '🎬', gradient: 'from-cyan-400 to-blue-500', adminOnly: false },
   { path: '/app/wallet', label: '钱包', icon: '💰', gradient: 'from-emerald-400 to-cyan-500', adminOnly: false },
   { path: '/app/settings', label: '设置', icon: '⚙️', gradient: 'from-slate-400 to-zinc-500', adminOnly: false },
+  { path: '/app/admin/dashboard', label: '运营概览', icon: '📊', gradient: 'from-emerald-400 to-cyan-500', adminOnly: true },
+  { path: '/app/admin/users', label: '用户管理', icon: '👥', gradient: 'from-violet-500 to-fuchsia-500', adminOnly: true },
+  { path: '/app/admin/orders', label: '订单 / 支付', icon: '💳', gradient: 'from-amber-400 to-orange-500', adminOnly: true },
+  { path: '/app/admin/generations', label: '生成任务', icon: '🎬', gradient: 'from-cyan-400 to-blue-500', adminOnly: true },
+  { path: '/app/admin/audit', label: '审计日志', icon: '🧾', gradient: 'from-slate-400 to-zinc-500', adminOnly: true },
   { path: '/app/admin/settings', label: '系统配置', icon: '🛠️', gradient: 'from-amber-400 to-rose-500', adminOnly: true },
   { path: '/app/admin/system-update', label: '系统更新', icon: '🔄', gradient: 'from-cyan-400 to-blue-500', adminOnly: true },
 ]

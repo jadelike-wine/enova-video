@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { domainError, ERROR_CODES } from '@enova/contracts';
-import { orders, paymentTransactions, wallets, type Database } from '@enova/db';
+import { orders, paymentTransactions, plans, wallets, type Database } from '@enova/db';
 import {
   buildPaymentRegistry,
   creditsFromCents,
@@ -162,6 +162,118 @@ export class PaymentService {
       orderId,
       amountCents,
       credits,
+      channel: activeProvider,
+      tradeNo: created.tradeNo,
+      payUrl: created.payUrl,
+      qrCode: created.qrCode,
+    };
+  }
+
+  /** P0-3: 列出可售卖的 Plan（enabled=true）。 */
+  async listPurchasablePlans(): Promise<Array<Record<string, unknown>>> {
+    const rows = await this.db
+      .select()
+      .from(plans)
+      .where(eq(plans.enabled, true))
+      .orderBy(plans.priceCents);
+    return rows.map((p) => ({
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      monthlyCredits: p.monthlyCredits,
+      priceCents: p.priceCents,
+      currency: p.currency,
+      periodDays: p.periodDays,
+      oneTime: p.oneTime,
+      entitlements: {
+        maxConcurrentGenerations: p.maxConcurrentGenerations,
+        maxResolution: p.maxResolution,
+        maxDurationSeconds: p.maxDurationSeconds,
+        storageRetentionDays: p.storageRetentionDays,
+        priority: p.priority,
+        watermark: p.watermark,
+        commercialUse: p.commercialUse,
+        allowedModels: p.allowedModels ?? null,
+      },
+    }));
+  }
+
+  /**
+   * P0-3: 创建打包/订阅订单（PLAN）。
+   *
+   * 关键点：下单时把 plan 的商品/价格/credits/entitlements 冻结进订单快照 snapshotJson，
+   * 后续即使管理员改价，履约也按快照（历史成交）执行，绝不能用当前 plan 配置覆盖历史成交。
+   */
+  async createPlanOrder(user: AuthUser, planId: string): Promise<RechargeResult> {
+    const { registry, activeProvider, notifyUrl, returnBaseUrl } = await this.buildConfig();
+    const planRows = await this.db.select().from(plans).where(eq(plans.id, planId)).limit(1);
+    const plan = planRows[0];
+    if (!plan) throw domainError(ERROR_CODES.NOT_FOUND, 'Plan not found', 404);
+    if (!plan.enabled) throw domainError(ERROR_CODES.VALIDATION_ERROR, 'Plan is not for sale', 403);
+
+    const provider: PaymentProvider = registry.get(activeProvider);
+    const orderId = randomUUID();
+    const subject = `购买 ${plan.name}`;
+    // 冻结下单时的商品快照（历史成交解释依据）。
+    const snapshot = {
+      orderType: 'PLAN' as const,
+      planId: plan.id,
+      planCode: plan.code,
+      planName: plan.name,
+      monthlyCredits: plan.monthlyCredits,
+      periodDays: plan.periodDays,
+      priceCents: plan.priceCents,
+      currency: plan.currency,
+      oneTime: plan.oneTime,
+      entitlements: {
+        monthlyCredits: plan.monthlyCredits,
+        periodDays: plan.periodDays,
+        maxConcurrentGenerations: plan.maxConcurrentGenerations,
+        maxResolution: plan.maxResolution,
+        maxDurationSeconds: plan.maxDurationSeconds,
+        storageRetentionDays: plan.storageRetentionDays,
+        priority: plan.priority,
+        watermark: plan.watermark,
+        commercialUse: plan.commercialUse,
+        allowedModels: plan.allowedModels ?? null,
+      },
+      subject,
+      createdAt: new Date().toISOString(),
+    };
+
+    await this.db.insert(orders).values({
+      id: orderId,
+      workspaceId: user.workspaceId,
+      userId: user.userId,
+      orderType: 'PLAN',
+      planId: plan.id,
+      amountCents: plan.priceCents,
+      currency: plan.currency,
+      credits: plan.monthlyCredits,
+      snapshotJson: snapshot,
+      status: 'PENDING',
+      fulfillmentStatus: 'PENDING',
+    });
+
+    const created = await provider.createPayment({
+      orderId,
+      amountCents: plan.priceCents,
+      subject,
+      notifyUrl,
+      returnUrl: `${returnBaseUrl}/payment/result?orderId=${orderId}`,
+    });
+
+    await this.db.insert(paymentTransactions).values({
+      orderId,
+      provider: activeProvider,
+      providerRef: created.tradeNo,
+      status: 'PENDING',
+    });
+
+    return {
+      orderId,
+      amountCents: plan.priceCents,
+      credits: plan.monthlyCredits,
       channel: activeProvider,
       tradeNo: created.tradeNo,
       payUrl: created.payUrl,

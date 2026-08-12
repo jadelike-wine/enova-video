@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { count, eq, sql } from 'drizzle-orm';
+import { count, sql } from 'drizzle-orm';
 import {
+  creditReservations,
   generationJobs,
   users,
-  walletLedger,
   wallets,
   workspaces,
   type Database,
@@ -51,9 +51,8 @@ export class StatsAdminService {
       .from(wallets);
 
     const [spentAgg] = await this.db
-      .select({ n: sql<number>`coalesce(sum(${walletLedger.amount}), 0)` })
-      .from(walletLedger)
-      .where(eq(walletLedger.type, 'GENERATION_SETTLE'));
+      .select({ n: sql<number>`coalesce(sum(${creditReservations.capturedCredits}), 0)` })
+      .from(creditReservations);
 
     return {
       users: userCount.n,

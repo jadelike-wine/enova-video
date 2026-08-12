@@ -97,9 +97,11 @@ export class SubscriptionFulfillmentService {
       if (!plan) throw domainError(ERROR_CODES.NOT_FOUND, 'Plan not found', 404);
 
       const now = new Date();
-      const periodDays = plan.periodDays || snapshot.periodDays || 30;
+      // P0-3: 履约以订单快照为准（用户当时买到的配置），当前 plan 仅作快照缺失时的兜底。
+      // 管理员成交后改价/改 credits，历史订单仍按快照发放，绝不用当前 plan 覆盖历史成交。
+      const periodDays = snapshot.periodDays || plan.periodDays || 30;
       const periodEnd = new Date(now.getTime() + periodDays * 24 * 60 * 60 * 1000);
-      const creditsToGrant = plan.monthlyCredits || 0;
+      const creditsToGrant = (snapshot.monthlyCredits ?? plan.monthlyCredits) || 0;
 
       // 创建/续订 Subscription。
       // 简化模型：每个 plan 订单创建一条新 subscription 记录（固定期限）。

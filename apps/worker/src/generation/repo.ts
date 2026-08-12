@@ -22,6 +22,8 @@ export interface GenerationJobRow {
   providerStartedAt: Date | null;
   pollCount: number;
   reservedCredits: number;
+  /** P0-4: 估算成本（微美元），来自 PriceQuote 快照。 */
+  estimatedCostMicrousd: number;
   createdAt: Date;
 }
 
@@ -50,12 +52,19 @@ export interface FinalizeSuccessArgs {
     outputTokens?: number;
     duration?: number | null;
     resolution?: string | null;
+    /** @deprecated 保留兼容；新逻辑使用 estimatedCostMicrousd。 */
     providerCostUsd?: number;
     creditsCharged: number;
     metadata?: Record<string, unknown>;
   };
   actualCredits: number;
+  /** @deprecated 保留兼容；新逻辑使用 finalCostMicrousd。 */
   actualCostUsd?: number;
+  /** P0-4: 成本语义（微美元）。 */
+  estimatedCostMicrousd?: number;
+  reportedCostMicrousd?: number;
+  finalCostMicrousd?: number;
+  costStatus?: 'ESTIMATED' | 'REPORTED' | 'RECONCILED';
   /** 供前端展示的最终产物信息（持久化到 generation_jobs.output_json）。 */
   output?: {
     url?: string | null;
@@ -85,6 +94,7 @@ export class GenerationRepo {
         providerStartedAt: generationJobs.providerStartedAt,
         pollCount: generationJobs.pollCount,
         reservedCredits: generationJobs.reservedCredits,
+        estimatedCostMicrousd: generationJobs.estimatedCostMicrousd,
         createdAt: generationJobs.createdAt,
       })
       .from(generationJobs)
@@ -206,10 +216,15 @@ export class GenerationRepo {
         providerCostUsd: args.usage.providerCostUsd ?? 0,
         creditsCharged: args.usage.creditsCharged,
         metadata: args.usage.metadata,
+        // P0-4: 写入明确的成本语义（微美元）。
+        estimatedCostMicrousd: args.estimatedCostMicrousd ?? 0,
+        reportedCostMicrousd: args.reportedCostMicrousd ?? 0,
+        finalCostMicrousd: args.finalCostMicrousd ?? 0,
+        costStatus: args.costStatus ?? 'ESTIMATED',
       });
     }
 
-    await tx
+    const updated = await tx
       .update(generationJobs)
       .set({
         status: GENERATION_STATUSES.SUCCEEDED,
@@ -217,6 +232,11 @@ export class GenerationRepo {
         actualCostUsd: args.actualCostUsd ?? 0,
         outputJson: args.output ?? null,
         completedAt: new Date(),
+        // P0-4: 同步 job 上的成本字段，保证 Job 与 UsageEvent 成本一致。
+        // P0 红队修复：final_cost 只在成本最终化时写入；ESTIMATED 阶段用 0，禁止把估算值塞进 final。
+        reportedCostMicrousd: args.reportedCostMicrousd ?? 0,
+        finalCostMicrousd: args.finalCostMicrousd ?? 0,
+        costStatus: args.costStatus ?? 'ESTIMATED',
       })
       .where(
         and(
@@ -227,7 +247,17 @@ export class GenerationRepo {
             GENERATION_STATUSES.SUCCEEDED,
           ]),
         ),
+      )
+      .returning({ id: generationJobs.id });
+
+    // P0 红队修复：cancel/dispatch 竞态下，若 job 已被置为 CANCELED/FAILED（本次 UPDATE 未命中任何行），
+    // 必须抛错让整个事务（含 WalletGateway.settleInTx）回滚，禁止"状态已取消/失败却仍扣费"。
+    // 幂等重试（job 已 SUCCEEDED）会命中 SUCCEEDED 分支返回一行，仍正常放行。
+    if (updated.length === 0) {
+      throw new Error(
+        `finalizeSuccess aborted: generation job ${args.generationJobId} is no longer runnable (canceled/failed concurrently)`,
       );
+    }
   }
 
   /** 终态标记 FAILED（供事务内 finalizeFailure 使用）。 */

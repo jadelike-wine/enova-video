@@ -54,7 +54,14 @@ export class UsersAdminService {
     return u.status;
   }
 
-  /** 调整用户主要 Workspace 余额（正负均可，负数不能使余额为负）。 */
+  /**
+   * 调整用户主要 Workspace 余额（正负均可，负数不能使余额为负）。
+   *
+   * 产品策略：系统不支持任何自动退款。极端情况下如公司决定线下人工退款，运营人员
+   * 在支付宝/微信商户平台人工退现金后，必须同步通过本接口（adjustCredits，负 delta）
+   * 扣回对应 Credits，并填写 reason + operator + requestId，交由 admin_audit_logs 审计。
+   * 不建立自动退款流程，也不恢复 refund state machine。
+   */
   async adjustCredits(
     userId: string,
     delta: number,

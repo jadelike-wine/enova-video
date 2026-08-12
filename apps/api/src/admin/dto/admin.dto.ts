@@ -173,3 +173,153 @@ export class UpdateSettingDto {
   @MaxLength(4000)
   value!: string;
 }
+
+// ---- P0-8: 商业控制台 DTO ----
+
+export class OrderListQueryDto extends ListQueryDto {
+  @ApiPropertyOptional({ enum: ['PENDING', 'SUCCEEDED', 'FAILED', 'REFUNDED'] })
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional({ enum: ['RECHARGE', 'PLAN', 'CREDIT_PACK'] })
+  @IsOptional()
+  @IsString()
+  orderType?: string;
+}
+
+export class GenerationListQueryDto extends ListQueryDto {
+  @ApiPropertyOptional({ enum: ['PENDING', 'QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED'] })
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional({ description: '按 workspace 过滤' })
+  @IsOptional()
+  @IsString()
+  workspaceId?: string;
+}
+
+export class ForceFailJobDto {
+  @ApiProperty({ example: 'worker 挂死，手动救援' })
+  @IsString()
+  @MaxLength(500)
+  reason!: string;
+}
+
+export class CreatePricingRuleDto {
+  @ApiProperty({ enum: ['IMAGE', 'VIDEO', 'AUDIO', 'UPSCALE', 'LIPSYNC', 'IMAGE_TO_VIDEO', 'VIDEO_TO_VIDEO'] })
+  @IsString()
+  generationType!: string;
+
+  @ApiProperty({ example: 'agnes' })
+  @IsString()
+  @MaxLength(50)
+  provider!: string;
+
+  @ApiProperty({ example: 'kling-v2' })
+  @IsString()
+  @MaxLength(100)
+  model!: string;
+
+  @ApiProperty({ example: 100 })
+  @IsInt()
+  @Min(0)
+  credits!: number;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  pricingJson?: Record<string, unknown>;
+}
+
+export class UpdatePricingRuleDto {
+  @ApiPropertyOptional({ example: 100 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  credits?: number;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  pricingJson?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ example: true })
+  @IsOptional()
+  enabled?: boolean;
+}
+
+export class PublishPricingVersionDto {
+  @ApiProperty({ enum: ['IMAGE', 'VIDEO', 'AUDIO', 'UPSCALE', 'LIPSYNC', 'IMAGE_TO_VIDEO', 'VIDEO_TO_VIDEO'] })
+  @IsString()
+  generationType!: string;
+
+  @ApiProperty({ example: 'agnes' })
+  @IsString()
+  @MaxLength(50)
+  provider!: string;
+
+  @ApiProperty({ example: 'kling-v2' })
+  @IsString()
+  @MaxLength(100)
+  model!: string;
+
+  @ApiProperty({ example: 120 })
+  @IsInt()
+  @Min(0)
+  credits!: number;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  pricingJson?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  dimensionsJson?: Record<string, unknown>;
+}
+
+export class PricingVersionListQueryDto extends ListQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  generationType?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  provider?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  model?: string;
+
+  @ApiPropertyOptional({ enum: ['DRAFT', 'PUBLISHED', 'ARCHIVED'] })
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
+export class PreviewQuoteDto {
+  @ApiProperty({ enum: ['IMAGE', 'VIDEO', 'AUDIO', 'UPSCALE', 'LIPSYNC', 'IMAGE_TO_VIDEO', 'VIDEO_TO_VIDEO'] })
+  @IsString()
+  type!: string;
+
+  @ApiProperty({ example: 'agnes' })
+  @IsString()
+  @MaxLength(50)
+  provider!: string;
+
+  @ApiProperty({ example: 'kling-v2' })
+  @IsString()
+  @MaxLength(100)
+  model!: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  dimensions?: Record<string, unknown>;
+}

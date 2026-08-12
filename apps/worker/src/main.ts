@@ -13,6 +13,7 @@ import {
   type UrlGuardOptions,
 } from '@enova/provider';
 import { WorkerLogger } from './logger.js';
+import { GenerationAttemptsRepo } from './generation/attempts.repo.js';
 import { GenerationRepo } from './generation/repo.js';
 import { GenerationPipeline } from './generation/pipeline.js';
 import { processGenerationPayload } from './processors/generation.processor.js';
@@ -90,12 +91,14 @@ async function main(): Promise<void> {
   );
 
   const repo = new GenerationRepo(db);
+  const attempts = new GenerationAttemptsRepo(db);
   const wallet = new WalletGateway(db);
   // Worker 侧生产者：用于视频延迟轮询（pipeline.enqueuePoll）。
   const queue = new Queue(QUEUES.GENERATION, { connection, prefix: env.BULLMQ_PREFIX });
   const pipeline = new GenerationPipeline({
     db,
     repo,
+    attempts,
     registry,
     credentials,
     storage,
@@ -150,17 +153,19 @@ async function main(): Promise<void> {
     logger.error('generation job final failed', fields, err);
 
     if (!payload) return;
-    // 最终失败（重试耗尽）：释放该 Job 预留的 credits 并标记 FAILED。
-    // WalletGateway.release 幂等（idempotencyKey），重试/重复事件不会重复退款。
+    // 最终失败（重试耗尽）：在同一个事务内释放该 Job 预留的 credits 并标记 FAILED。
+    // 原实现分两步（先 release 再 finalizeFailure）在两步之间崩溃会把 credits 释放掉但
+    // job 仍停留在 RUNNING/QUEUED，造成 reserved_balance 漂移的孤儿状态。
+    // WalletGateway.releaseInTx 幂等（idempotencyKey），重复事件不会重复退款。
     try {
-      await wallet.release(payload.workspaceId, payload.generationJobId, `release:fail:${payload.generationJobId}`);
-      await db.transaction((tx) =>
-        repo.finalizeFailureInTx(tx, {
+      await db.transaction(async (tx) => {
+        await wallet.releaseInTx(tx, payload.workspaceId, payload.generationJobId, `release:fail:${payload.generationJobId}`);
+        await repo.finalizeFailureInTx(tx, {
           id: payload.generationJobId,
           errorCode: (err as Error & { code?: string }).code ?? 'PROVIDER_UPSTREAM_ERROR',
           errorMessage: err instanceof Error ? err.message : String(err),
-        }),
-      );
+        });
+      });
       logger.info('released reserved credits on final failure', fields);
     } catch (releaseErr) {
       // 释放失败不能静默：记录并保留 job 状态，便于人工介入。

@@ -61,9 +61,21 @@ export interface PaymentNotification {
   raw: Record<string, unknown>;
 }
 
+/** 渠道订单查询结果。status 归一到 pending/success/failed/closed。 */
+export interface PaymentQueryResult {
+  status: 'pending' | 'success' | 'failed' | 'closed';
+  amountCents: number;
+  tradeNo: string;
+  /** 原始响应体（用于审计）。 */
+  raw?: Record<string, unknown>;
+}
+
 /**
  * 支付渠道适配器接口。
  * 各渠道实现自己的下单与回调验签；未配置商户密钥时应在 createPayment 抛出清晰错误。
+ *
+ * 产品策略：Enova Video 当前不支持任何自动退款，因此契约不包含 refund/queryRefund。
+ * 退款仅允许运营人员线下通过支付宝/微信商户平台人工处理，不进入本自动账务系统。
  */
 export interface PaymentProvider {
   key: PaymentProviderKey;
@@ -77,6 +89,10 @@ export interface PaymentProvider {
     rawBody: string,
     headers: Record<string, string>,
   ): Promise<PaymentNotification | null>;
+  /** 查询渠道订单状态。tradeNo 可选，至少传 orderId。 */
+  queryPayment(tradeNo: string, orderId: string): Promise<PaymentQueryResult>;
+  /** 关闭/取消未支付订单。 */
+  closePayment(orderId: string): Promise<void>;
 }
 
 /** 支付渠道适配器配置（各渠道从 config env 注入）。 */
@@ -99,8 +115,16 @@ export interface WechatConfig {
   appId: string;
   mchId: string;
   apiV3Key: string;
+  /** 商户证书序列号（用于 Authorization header 的 serial_no）。 */
   serialNo: string;
+  /** 商户私钥（PEM，PKCS#8 或 PKCS#1）。 */
   privateKey: string;
+  /**
+   * 微信支付平台证书（PEM），用于 webhook 签名验签。
+   * 生产环境必须配置：可通过 GET /v3/certificates 拉取并定期轮换。
+   * 未配置时 verifyNotification 直接抛 PAYMENT_CALLBACK_INVALID。
+   */
+  platformCert?: string;
 }
 
 /** 由共享 env 映射出的支付模块配置（API 组装注入）。 */

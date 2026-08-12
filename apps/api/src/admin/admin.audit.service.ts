@@ -35,23 +35,23 @@ export interface RecordAuditParams {
 export class AdminAuditService {
   constructor(@Inject(DATABASE) private readonly db: Database) {}
 
-  /** 记录一条审计日志（不抛错，审计失败不影响主流程）。 */
+  /**
+   * 记录一条审计日志。
+   * 高危操作审计必须 fail-closed：审计写入失败时抛错，绝不允许静默吞掉导致审计丢失。
+   * 调用方业务操作普遍幂等（forceFail/adjustCredits 等），失败后重试可安全补记，
+   * 不会造成重复业务副作用。
+   */
   async record(params: RecordAuditParams): Promise<void> {
-    try {
-      await this.db.insert(adminAuditLogs).values({
-        actorUserId: params.actorUserId,
-        action: params.action,
-        resourceType: params.resourceType,
-        resourceId: params.resourceId,
-        before: params.before,
-        after: params.after,
-        ip: params.ip,
-        userAgent: params.userAgent,
-      });
-    } catch (err) {
-      // 审计失败静默：不因审计问题阻断 Admin 操作。
-      console.error('admin audit record failed', err);
-    }
+    await this.db.insert(adminAuditLogs).values({
+      actorUserId: params.actorUserId,
+      action: params.action,
+      resourceType: params.resourceType,
+      resourceId: params.resourceId,
+      before: params.before,
+      after: params.after,
+      ip: params.ip,
+      userAgent: params.userAgent,
+    });
   }
 
   async list(limit: number, offset: number, actorUserId?: string): Promise<AdminAuditView[]> {

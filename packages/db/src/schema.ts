@@ -52,14 +52,21 @@ export const walletLedgerType = pgEnum('wallet_ledger_type', [
   'GENERATION_RESERVE',
   'GENERATION_SETTLE',
   'GENERATION_RELEASE',
-  'REFUND',
+  'REFUND', // LEGACY ONLY. 产品策略不支持自动退款，禁止新增 REFUND ledger 写入。
   'SUBSCRIPTION_GRANT',
   'ADMIN_ADJUSTMENT',
 ]);
 export const providerStatus = pgEnum('provider_status', ['ACTIVE', 'DISABLED']);
 export const credentialStatus = pgEnum('credential_status', ['ACTIVE', 'COOLDOWN', 'ERROR', 'DISABLED']);
-export const paymentStatus = pgEnum('payment_status', ['PENDING', 'SUCCEEDED', 'FAILED', 'REFUNDED']);
+export const paymentStatus = pgEnum('payment_status', ['PENDING', 'SUCCEEDED', 'FAILED', 'REFUNDED']); // REFUNDED: LEGACY ONLY. 产品策略不支持自动退款，禁止新写入。
 export const subscriptionStatus = pgEnum('subscription_status', ['ACTIVE', 'CANCELED', 'PAST_DUE', 'EXPIRED']);
+export const reservationStatus = pgEnum('reservation_status', ['RESERVED', 'PARTIALLY_CAPTURED', 'CAPTURED', 'RELEASED']);
+export const costStatus = pgEnum('cost_status', ['ESTIMATED', 'REPORTED', 'RECONCILED']);
+export const outboxStatus = pgEnum('outbox_status', ['PENDING', 'DISPATCHED', 'SUPERSEDED']);
+export const attemptStatus = pgEnum('attempt_status', ['RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED']);
+export const orderType = pgEnum('order_type', ['RECHARGE', 'PLAN', 'CREDIT_PACK']);
+export const fulfillmentStatus = pgEnum('fulfillment_status', ['PENDING', 'SUCCEEDED', 'FAILED']);
+export const pricingVersionStatus = pgEnum('pricing_version_status', ['DRAFT', 'PUBLISHED', 'ARCHIVED']);
 
 // ---------------------------------------------------------------------------
 // Identity
@@ -155,8 +162,24 @@ export const generationJobs = pgTable('generation_jobs', {
   estimatedCredits: bigint('estimated_credits', { mode: 'number' }).notNull().default(0),
   reservedCredits: bigint('reserved_credits', { mode: 'number' }).notNull().default(0),
   actualCredits: bigint('actual_credits', { mode: 'number' }).notNull().default(0),
+  /** @deprecated 保留兼容；新逻辑使用 estimatedCostMicrousd。 */
   estimatedCostUsd: integer('estimated_cost_usd').notNull().default(0),
+  /** @deprecated 保留兼容；新逻辑使用 finalCostMicrousd。 */
   actualCostUsd: integer('actual_cost_usd').notNull().default(0),
+  /** 估算供应商成本（微美元，1 USD = 1_000_000）。来自 PriceQuote 快照。 */
+  estimatedCostMicrousd: integer('estimated_cost_microusd').notNull().default(0),
+  /** Provider 回报的实际成本（微美元）。未回报时为 0。 */
+  reportedCostMicrousd: integer('reported_cost_microusd').notNull().default(0),
+  /** 最终确认成本（微美元）。reconciliation 后写入。 */
+  finalCostMicrousd: integer('final_cost_microusd').notNull().default(0),
+  /** 成本状态：ESTIMATED=仅估算；REPORTED=Provider 已回报；RECONCILED=账单核对完成。 */
+  costStatus: costStatus('cost_status').notNull().default('ESTIMATED'),
+  /** 关联的不可变价格版本（追溯定价历史）。 */
+  pricingVersionId: uuid('pricing_version_id').references(() => pricingVersions.id, { onDelete: 'set null' }),
+  /** 关联的价格快照 Quote（追溯下单时报价）。FK 由 price_quotes.generation_job_id 反向保证，此处仅存 ID 避免循环引用。 */
+  priceQuoteId: uuid('price_quote_id'),
+  /** 总 attempt 次数（含失败/fallback），便于快速查询。 */
+  attemptCount: integer('attempt_count').notNull().default(0),
   errorCode: varchar('error_code', { length: 100 }),
   errorMessage: text('error_message'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -168,6 +191,7 @@ export const generationJobs = pgTable('generation_jobs', {
   index('generation_jobs_workspace_id_idx').on(t.workspaceId),
   index('generation_jobs_status_idx').on(t.status),
   index('generation_jobs_provider_job_id_idx').on(t.providerJobId),
+  index('generation_jobs_pricing_version_id_idx').on(t.pricingVersionId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -245,13 +269,26 @@ export const orders = pgTable('orders', {
   id: uuid('id').primaryKey().defaultRandom(),
   workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  /** 订单类型：RECHARGE=充值 credits；PLAN=购买套餐；CREDIT_PACK=购买额外 credit 包。 */
+  orderType: orderType('order_type').notNull().default('RECHARGE'),
   amountCents: integer('amount_cents').notNull().default(0),
   amountUsd: integer('amount_usd').notNull().default(0),
+  /** ISO 4217 货币代码（CNY/USD），下单时快照。 */
+  currency: varchar('currency', { length: 3 }).notNull().default('CNY'),
   credits: bigint('credits', { mode: 'number' }).notNull().default(0),
+  /** 关联的 Plan（仅 PLAN 类型订单）。 */
+  planId: uuid('plan_id').references(() => plans.id, { onDelete: 'set null' }),
+  /** 订单快照：下单时的商品/价格/credits/plan entitlement 不可变副本。履约时读此字段，不重查当前价格。 */
+  snapshotJson: jsonb('snapshot_json').$type<Record<string, unknown>>(),
   status: paymentStatus('status').notNull().default('PENDING'),
+  /** 履约状态：PENDING=待履约；SUCCEEDED=已履约；FAILED=履约失败。与 payment status 独立。 */
+  fulfillmentStatus: fulfillmentStatus('fulfillment_status').notNull().default('PENDING'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index('orders_workspace_id_idx').on(t.workspaceId)]);
+}, (t) => [
+  index('orders_workspace_id_idx').on(t.workspaceId),
+  index('orders_status_idx').on(t.status),
+]);
 
 export const walletLedger = pgTable('wallet_ledger', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -298,14 +335,24 @@ export const usageEvents = pgTable('usage_events', {
   outputTokens: integer('output_tokens').notNull().default(0),
   duration: bigint('duration', { mode: 'number' }),
   resolution: varchar('resolution', { length: 50 }),
-  /** 供应商实际成本（微美元）。与 credits_charged 分开记录。 */
+  /** @deprecated 保留兼容；新逻辑使用 estimatedCostMicrousd。 */
   providerCostUsd: integer('provider_cost_usd').notNull().default(0),
+  /** 估算供应商成本（微美元）。来自 PriceQuote 快照。 */
+  estimatedCostMicrousd: integer('estimated_cost_microusd').notNull().default(0),
+  /** Provider 回报的实际成本（微美元）。 */
+  reportedCostMicrousd: integer('reported_cost_microusd').notNull().default(0),
+  /** 最终确认成本（微美元）。 */
+  finalCostMicrousd: integer('final_cost_microusd').notNull().default(0),
+  /** 成本状态。 */
+  costStatus: costStatus('cost_status').notNull().default('ESTIMATED'),
   creditsCharged: bigint('credits_charged', { mode: 'number' }).notNull().default(0),
   metadata: jsonb('metadata').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('usage_events_workspace_id_idx').on(t.workspaceId),
   index('usage_events_generation_job_id_idx').on(t.generationJobId),
+  // 幂等去重：同一 generation_job 只产生一条 usage event。
+  uniqueIndex('usage_events_generation_job_id_unique').on(t.generationJobId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -315,9 +362,37 @@ export const plans = pgTable('plans', {
   id: uuid('id').primaryKey().defaultRandom(),
   code: varchar('code', { length: 50 }).notNull(),
   name: varchar('name', { length: 120 }).notNull(),
+  /** 每月/每周期发放的 credits（整数）。0 = 不含 credits。 */
   monthlyCredits: bigint('monthly_credits', { mode: 'number' }).notNull().default(0),
+  /** 价格（分，人民币）。 */
+  priceCents: integer('price_cents').notNull().default(0),
+  /** 货币代码。 */
+  currency: varchar('currency', { length: 3 }).notNull().default('CNY'),
+  /** @deprecated 保留兼容。 */
   priceUsd: integer('price_usd').notNull().default(0),
+  /** 周期天数（30=月套餐；365=年套餐；0=一次性买断/credit pack）。 */
+  periodDays: integer('period_days').notNull().default(30),
+  /** 是否为一次性购买（非自动续费）。credit pack / 买断 plan 为 true。 */
+  oneTime: boolean('one_time').notNull().default(false),
   enabled: boolean('enabled').notNull().default(true),
+  /** Entitlements：最大并发生成数。 */
+  maxConcurrentGenerations: integer('max_concurrent_generations').notNull().default(1),
+  /** Entitlements：最大分辨率（如 1080）。 */
+  maxResolution: integer('max_resolution').notNull().default(720),
+  /** Entitlements：最大视频时长（秒）。 */
+  maxDurationSeconds: integer('max_duration_seconds').notNull().default(10),
+  /** Entitlements：存储保留天数。 */
+  storageRetentionDays: integer('storage_retention_days').notNull().default(30),
+  /** Entitlements：队列优先级（0=最低，10=最高）。 */
+  priority: integer('priority').notNull().default(0),
+  /** Entitlements：是否带水印。 */
+  watermark: boolean('watermark').notNull().default(true),
+  /** Entitlements：是否允许商用。 */
+  commercialUse: boolean('commercial_use').notNull().default(false),
+  /** Entitlements：允许访问的模型列表（空 = 全部允许）。 */
+  allowedModels: jsonb('allowed_models').$type<string[]>(),
+  /** 额外 entitlements（灵活扩展，但不作为核心字段）。 */
+  entitlementsJson: jsonb('entitlements_json').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex('plans_code_unique').on(t.code)]);
@@ -337,14 +412,179 @@ export const paymentTransactions = pgTable('payment_transactions', {
   id: uuid('id').primaryKey().defaultRandom(),
   orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
   provider: varchar('provider', { length: 50 }).notNull(),
+  /** 第三方交易号（支付宝 trade_no / 微信 transaction_id）。非空时全局唯一，防止同一渠道交易重复入账。 */
   providerRef: varchar('provider_ref', { length: 255 }),
   status: paymentStatus('status').notNull().default('PENDING'),
+  /** 回调原始报文（审计用）。 */
   raw: jsonb('raw').$type<Record<string, unknown>>(),
+  /**
+   * LEGACY ONLY. Automated refunds are intentionally unsupported by product policy.
+   * Do not add new writes to these fields without an explicit product decision.
+   *
+   * 产品策略：Enova Video 暂不支持任何自动退款（Credit Recharge / Credit Pack / Plan 均不可退款）。
+   * 这些字段仅保留用于 migration safety 与历史数据展示，业务代码禁止写入 refund_status/refund_ref/refunded_at，
+   * 也禁止新增 REFUND ledger 或 REFUNDED 状态。极端线下人工退款见 Admin Credit Adjustment 流程。
+   */
+  refundAmountCents: integer('refund_amount_cents').notNull().default(0),
+  refundStatus: paymentStatus('refund_status'),
+  refundRef: varchar('refund_ref', { length: 255 }),
+  refundedAt: timestamp('refunded_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index('payment_transactions_order_id_idx').on(t.orderId),
-  index('payment_transactions_provider_ref_idx').on(t.providerRef),
+  // provider_ref 非空时唯一（同一渠道交易号不能对应多条记录），防止重复回调重复入账。
+  uniqueIndex('payment_transactions_provider_ref_unique').on(t.providerRef),
+]);
+
+// ---------------------------------------------------------------------------
+// Credit Reservations (P0-1: per-job reservation)
+// ---------------------------------------------------------------------------
+export const creditReservations = pgTable('credit_reservations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  walletId: uuid('wallet_id').notNull().references(() => wallets.id, { onDelete: 'cascade' }),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  /** 一个 generation job 最多一个 reservation（唯一约束）。 */
+  generationJobId: uuid('generation_job_id').notNull().references(() => generationJobs.id, { onDelete: 'cascade' }),
+  reservedCredits: bigint('reserved_credits', { mode: 'number' }).notNull(),
+  capturedCredits: bigint('captured_credits', { mode: 'number' }).notNull().default(0),
+  releasedCredits: bigint('released_credits', { mode: 'number' }).notNull().default(0),
+  status: reservationStatus('status').notNull().default('RESERVED'),
+  idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  settledAt: timestamp('settled_at', { withTimezone: true }),
+}, (t) => [
+  uniqueIndex('credit_reservations_generation_job_id_unique').on(t.generationJobId),
+  uniqueIndex('credit_reservations_idempotency_key_unique').on(t.idempotencyKey),
+  index('credit_reservations_wallet_id_idx').on(t.walletId),
+  index('credit_reservations_status_idx').on(t.status),
+]);
+
+// ---------------------------------------------------------------------------
+// Generation Dispatch Outbox (P0-2: transactional outbox)
+// ---------------------------------------------------------------------------
+export const generationDispatchOutbox = pgTable('generation_dispatch_outbox', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  generationJobId: uuid('generation_job_id').notNull().references(() => generationJobs.id, { onDelete: 'cascade' }),
+  /** 事件类型：PROCESS=首次执行；CANCEL=取消。 */
+  eventType: varchar('event_type', { length: 50 }).notNull(),
+  /** payload 快照（BullMQ job data 的 JSON 副本）。 */
+  payloadJson: jsonb('payload_json').$type<Record<string, unknown>>(),
+  status: outboxStatus('status').notNull().default('PENDING'),
+  attempts: integer('attempts').notNull().default(0),
+  lastError: text('last_error'),
+  /** 下次可投递时间（用于退避重试）。 */
+  availableAt: timestamp('available_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+}, (t) => [
+  index('generation_dispatch_outbox_status_available_at_idx').on(t.status, t.availableAt),
+  index('generation_dispatch_outbox_generation_job_id_idx').on(t.generationJobId),
+  // P0 红队：同一 job 的同一事件类型至多一条 outbox 行。
+  // 防止两个 dispatcher 实例并发 reconcile 时对同一孤儿 job 各插入一条 PENDING 行，
+  // 导致重复投递 → 重复执行/重复调 Provider（重复成本）。
+  uniqueIndex('generation_dispatch_outbox_job_event_unique').on(t.generationJobId, t.eventType),
+]);
+
+// ---------------------------------------------------------------------------
+// Pricing Versions (P0-3: immutable pricing version)
+// ---------------------------------------------------------------------------
+export const pricingVersions = pgTable('pricing_versions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 关联的 pricing rule（可为 null 表示全局默认版本）。 */
+  pricingRuleId: uuid('pricing_rule_id').references(() => pricingRules.id, { onDelete: 'set null' }),
+  /** 版本号（同一 rule 内递增）。 */
+  version: integer('version').notNull().default(1),
+  generationType: generationType('generation_type').notNull(),
+  provider: varchar('provider', { length: 50 }).notNull(),
+  model: varchar('model', { length: 100 }).notNull(),
+  /** 定价维度快照（duration/resolution/quality 等）。 */
+  dimensionsJson: jsonb('dimensions_json').$type<Record<string, unknown>>(),
+  /** Credits 定价公式/固定值。 */
+  credits: bigint('credits', { mode: 'number' }).notNull(),
+  /** 完整定价配置（含 providerCostMicrousd 等）。发布后不可变。 */
+  pricingJson: jsonb('pricing_json').$type<Record<string, unknown>>(),
+  status: pricingVersionStatus('status').notNull().default('DRAFT'),
+  effectiveAt: timestamp('effective_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+}, (t) => [
+  index('pricing_versions_rule_version_idx').on(t.pricingRuleId, t.version),
+  index('pricing_versions_type_provider_model_idx').on(t.generationType, t.provider, t.model),
+  uniqueIndex('pricing_versions_rule_version_unique').on(t.pricingRuleId, t.version),
+]);
+
+// ---------------------------------------------------------------------------
+// Price Quotes (P0-3: immutable quote at job creation)
+// ---------------------------------------------------------------------------
+export const priceQuotes = pgTable('price_quotes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  generationJobId: uuid('generation_job_id').references(() => generationJobs.id, { onDelete: 'set null' }),
+  pricingVersionId: uuid('pricing_version_id').notNull().references(() => pricingVersions.id, { onDelete: 'restrict' }),
+  /** 下单时的输入参数快照（用于追溯定价依据）。 */
+  inputSnapshot: jsonb('input_snapshot').$type<Record<string, unknown>>(),
+  estimatedCredits: bigint('estimated_credits', { mode: 'number' }).notNull(),
+  /** 估算收入（分，人民币）。 */
+  estimatedRevenueCents: integer('estimated_revenue_cents').notNull().default(0),
+  /** 估算供应商成本（微美元）。 */
+  estimatedCostMicrousd: integer('estimated_cost_microusd').notNull().default(0),
+  /** Quote 过期时间（超过则需重新报价）。 */
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('price_quotes_generation_job_id_idx').on(t.generationJobId),
+  index('price_quotes_pricing_version_id_idx').on(t.pricingVersionId),
+]);
+
+// ---------------------------------------------------------------------------
+// Generation Attempts (P0-5: per-provider-call records)
+// ---------------------------------------------------------------------------
+export const generationAttempts = pgTable('generation_attempts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  generationJobId: uuid('generation_job_id').notNull().references(() => generationJobs.id, { onDelete: 'cascade' }),
+  /** 尝试序号（同一 job 内递增）。 */
+  attemptNo: integer('attempt_no').notNull(),
+  provider: varchar('provider', { length: 50 }).notNull(),
+  model: varchar('model', { length: 100 }).notNull(),
+  credentialId: uuid('credential_id'),
+  /** 上游 Provider Job Id（视频提交后得到）。 */
+  providerJobId: varchar('provider_job_id', { length: 255 }),
+  status: attemptStatus('status').notNull().default('RUNNING'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  endedAt: timestamp('ended_at', { withTimezone: true }),
+  errorCode: varchar('error_code', { length: 100 }),
+  errorMessage: text('error_message'),
+  /** 本次尝试的估算成本（微美元）。 */
+  estimatedCostMicrousd: integer('estimated_cost_microusd').notNull().default(0),
+  /** Provider 回报的实际成本（微美元）。失败 attempt 也记录成本。 */
+  reportedCostMicrousd: integer('reported_cost_microusd').notNull().default(0),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+}, (t) => [
+  uniqueIndex('generation_attempts_job_attempt_unique').on(t.generationJobId, t.attemptNo),
+  index('generation_attempts_generation_job_id_idx').on(t.generationJobId),
+  index('generation_attempts_status_idx').on(t.status),
+]);
+
+// ---------------------------------------------------------------------------
+// Subscription Fulfillments (P0-7: idempotent fulfillment)
+// ---------------------------------------------------------------------------
+export const subscriptionFulfillments = pgTable('subscription_fulfillments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  subscriptionId: uuid('subscription_id').references(() => subscriptions.id, { onDelete: 'set null' }),
+  status: fulfillmentStatus('status').notNull().default('PENDING'),
+  /** 发放的 credits 数（PLAN 类型订单的套餐 credits）。 */
+  creditsGranted: bigint('credits_granted', { mode: 'number' }).notNull().default(0),
+  /** 幂等键（= orderId），保证同一订单只履约一次。 */
+  idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (t) => [
+  uniqueIndex('subscription_fulfillments_idempotency_key_unique').on(t.idempotencyKey),
+  index('subscription_fulfillments_order_id_idx').on(t.orderId),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -358,10 +598,18 @@ export const adminAuditLogs = pgTable('admin_audit_logs', {
   resourceId: varchar('resource_id', { length: 120 }),
   before: jsonb('before').$type<Record<string, unknown>>(),
   after: jsonb('after').$type<Record<string, unknown>>(),
+  /** 操作原因（高危操作必填）。 */
+  reason: text('reason'),
+  /** 请求 ID（关联 API request-id）。 */
+  requestId: varchar('request_id', { length: 120 }),
   ip: varchar('ip', { length: 64 }),
   userAgent: varchar('user_agent', { length: 512 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index('admin_audit_logs_actor_user_id_idx').on(t.actorUserId)]);
+}, (t) => [
+  index('admin_audit_logs_actor_user_id_idx').on(t.actorUserId),
+  index('admin_audit_logs_resource_type_idx').on(t.resourceType),
+  index('admin_audit_logs_created_at_idx').on(t.createdAt),
+]);
 
 // ---------------------------------------------------------------------------
 // Settings (动态配置，管理员后台可改)

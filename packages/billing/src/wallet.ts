@@ -1,10 +1,20 @@
 import { and, eq } from 'drizzle-orm';
 import { domainError, ERROR_CODES } from '@enova/contracts';
-import { wallets, walletLedger, type Database } from '@enova/db';
+import {
+  creditReservations,
+  wallets,
+  walletLedger,
+  type Database,
+} from '@enova/db';
 
 /**
  * 纯余额运算（无副作用，便于单测）。
  * 所有金额为整数 Credits，禁止浮点。
+ */
+
+/**
+ * Reserve 计算：从可用余额扣除 credits，加入预留池。
+ * 与旧版一致——wallet 级别的聚合计算不变。
  */
 export function computeReserve(balance: number, reserved: number, credits: number): {
   ok: boolean;
@@ -15,48 +25,84 @@ export function computeReserve(balance: number, reserved: number, credits: numbe
   return { ok: true, balanceAfter: balance - credits, reservedAfter: reserved + credits };
 }
 
-/** 结算：actual 从 reserved 消耗，剩余退回 balance。actual 永远不超过 reserved。 */
-export function computeSettle(
-  _balance: number,
+/**
+ * Capture 计算（per-job）：在单个 reservation 上结算 actual credits。
+ * - remaining = reserved - captured - released（该 job 尚未结算的额度）
+ * - captureAmount = min(actual, remaining)（不能超结）
+ * - releaseAmount = remaining - captureAmount（未用部分退回 balance）
+ *
+ * 关键不变量：capture 只影响 THIS job 的 reservation，不会触碰其他 job。
+ */
+export function computeCapture(
   reserved: number,
-  actual: number,
-): { reservedAfter: number; released: number } {
-  const actualSafe = Math.min(Math.max(0, actual), reserved);
-  const released = reserved - actualSafe;
-  return { reservedAfter: 0, released };
+  captured: number,
+  released: number,
+  actualCredits: number,
+): {
+  remaining: number;
+  captureAmount: number;
+  releaseAmount: number;
+  newCaptured: number;
+  newReleased: number;
+} {
+  const remaining = Math.max(0, reserved - captured - released);
+  const captureAmount = Math.min(Math.max(0, actualCredits), remaining);
+  const releaseAmount = remaining - captureAmount;
+  return {
+    remaining,
+    captureAmount,
+    releaseAmount,
+    newCaptured: captured + captureAmount,
+    newReleased: released + releaseAmount,
+  };
 }
 
-/** 失败回滚：全部 reserved 退回 balance。 */
-export function computeRelease(balance: number, reserved: number): {
-  balanceAfter: number;
-  reservedAfter: number;
-  released: number;
-} {
-  return { balanceAfter: balance + reserved, reservedAfter: 0, released: reserved };
+/**
+ * Release 计算（per-job）：释放该 job reservation 的全部剩余额度。
+ * 只释放 remaining = reserved - captured - released，不影响其他 job。
+ */
+export function computeReleaseForJob(
+  reserved: number,
+  captured: number,
+  released: number,
+): { remaining: number; releaseAmount: number; newReleased: number } {
+  const remaining = Math.max(0, reserved - captured - released);
+  return {
+    remaining,
+    releaseAmount: remaining,
+    newReleased: released + remaining,
+  };
 }
 
 /** 事务句柄（Drizzle 的事务回调第一参数）。 */
 export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 /**
- * Wallet 操作：Reserve / Settle / Release。
+ * Wallet 操作：Reserve / Capture / Release。
  *
- * 供 API 与 Worker 共享，保证计费逻辑唯一一致。
+ * P0-1 修复：每个 GenerationJob 拥有独立的 CreditReservation 行，
+ * settle/release 只操作该 job 的 reservation，不再触碰聚合 reserved_balance。
+ *
+ * 保障：
  * - 全部在事务内 + 行锁（SELECT ... FOR UPDATE）防止并发超卖。
- * - 每笔变化写 WalletLedger，用 idempotency_key 保证 Worker 重试不重复扣费。
- * - 同一 GenerationJob 只能 settle/release 一次。
+ * - credit_reservations.generation_job_id UNIQUE → 一个 job 最多一个 reservation。
+ * - credit_reservations.idempotency_key UNIQUE → 重复 reserve 幂等。
+ * - wallet_ledger.idempotency_key UNIQUE → 重复 settle/release 幂等。
+ * - captured + released <= reserved（DB CHECK 约束）。
  *
  * 本类不依赖 NestJS，可直接实例化（传入 Database）。
  */
 export class WalletGateway {
   constructor(private readonly db: Database) {}
 
-  /** 创建任务时预留 credits：balance 减少、reserved 增加。 */
+  // ---- RESERVE ----
+
+  /** 创建任务时预留 credits：balance 减少、reserved 增加、创建 reservation 行。 */
   reserve(workspaceId: string, generationJobId: string, credits: number, idempotencyKey: string): Promise<{ balance: number; reserved: number }> {
     return this.db.transaction((tx) => this.reserveInTx(tx, workspaceId, generationJobId, credits, idempotencyKey));
   }
 
-  /** 供组合事务复用：在同一事务内 reserve + 写 ledger。 */
+  /** 供组合事务复用：在同一事务内 reserve + 写 ledger + 创建 reservation。 */
   async reserveInTx(
     tx: Tx,
     workspaceId: string,
@@ -64,15 +110,29 @@ export class WalletGateway {
     credits: number,
     idempotencyKey: string,
   ): Promise<{ balance: number; reserved: number }> {
-    if (credits <= 0) throw domainError(ERROR_CODES.VALIDATION_ERROR, 'credits must be positive', 400);
+    if (!Number.isInteger(credits) || credits <= 0) {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, 'credits must be a positive integer', 400);
+    }
 
-    const rows = await tx
-      .select()
-      .from(wallets)
-      .where(eq(wallets.workspaceId, workspaceId))
-      .for('update');
+    // Lock wallet row FIRST（对同一 wallet 的并发 reserve 在此串行化）。
+    const rows = await tx.select().from(wallets).where(eq(wallets.workspaceId, workspaceId)).for('update');
     const wallet = rows[0];
     if (!wallet) throw domainError(ERROR_CODES.NOT_FOUND, 'Wallet not found', 404);
+
+    // 幂等：该 job 已有 reservation 则直接返回（不重复扣费）。
+    // P0 红队修复：幂等检查必须在拿到 FOR UPDATE 锁之后再执行。
+    // 原来在锁之前查询，两个并发 reserve(同一 job) 会同时看到"无 reservation"→ 各自插入 →
+    // 触发 generation_job_id 唯一约束冲突（原始 unique violation）。上锁后重查才是真正的幂等：
+    // 第二个事务会阻塞在行锁上，待第一个提交后再执行本处检查，命中已有 reservation 直接返回。
+    const existingRes = await tx
+      .select()
+      .from(creditReservations)
+      .where(eq(creditReservations.generationJobId, generationJobId))
+      .limit(1);
+    if (existingRes.length > 0) {
+      // 已有 reservation：返回锁内读取的 wallet 状态。
+      return { balance: wallet.balance, reserved: wallet.reservedBalance };
+    }
 
     const calc = computeReserve(wallet.balance, wallet.reservedBalance, credits);
     if (!calc.ok) {
@@ -88,6 +148,18 @@ export class WalletGateway {
       .update(wallets)
       .set({ balance: calc.balanceAfter, reservedBalance: calc.reservedAfter, updatedAt: new Date() })
       .where(eq(wallets.workspaceId, workspaceId));
+
+    // 创建 per-job reservation 行。
+    await tx.insert(creditReservations).values({
+      walletId: wallet.id,
+      workspaceId,
+      generationJobId,
+      reservedCredits: credits,
+      capturedCredits: 0,
+      releasedCredits: 0,
+      status: 'RESERVED',
+      idempotencyKey,
+    });
 
     await tx.insert(walletLedger).values({
       workspaceId,
@@ -105,105 +177,220 @@ export class WalletGateway {
     return { balance: calc.balanceAfter, reserved: calc.reservedAfter };
   }
 
-  /** 结算：把 actual 从 reserved 消耗，剩余 reserved 退回 balance。仅能执行一次。 */
-  settle(workspaceId: string, generationJobId: string, actualCredits: number, idempotencyKey: string): Promise<void> {
-    return this.db.transaction((tx) => this.settleInTx(tx, workspaceId, generationJobId, actualCredits, idempotencyKey));
-  }
+  // ---- CAPTURE (settle) ----
 
   /**
-   * 结算（供组合事务复用）：与 Worker 的 Asset/Usage/Job 状态更新在同一事务内提交，
-   * 保证「资源已落库 + 已结算 + 已标记完成」原子一致；幂等由 idempotency_key 保证。
+   * 结算：把 actualCredits 从该 job 的 reservation 中消耗，剩余退回 balance。
+   * 只操作该 job 的 reservation，不影响其他 job 的预留额度。
+   * 幂等：已 CAPTURED 或 ledger 已存在则跳过。
    */
-  async settleInTx(
+  capture(workspaceId: string, generationJobId: string, actualCredits: number, idempotencyKey: string): Promise<void> {
+    return this.db.transaction((tx) => this.captureInTx(tx, workspaceId, generationJobId, actualCredits, idempotencyKey));
+  }
+
+  /** 旧接口别名（向后兼容 worker 现有调用）。 */
+  settle(workspaceId: string, generationJobId: string, actualCredits: number, idempotencyKey: string): Promise<void> {
+    return this.capture(workspaceId, generationJobId, actualCredits, idempotencyKey);
+  }
+
+  /** 旧接口别名（向后兼容 worker 现有调用）。 */
+  settleInTx(tx: Tx, workspaceId: string, generationJobId: string, actualCredits: number, idempotencyKey: string): Promise<void> {
+    return this.captureInTx(tx, workspaceId, generationJobId, actualCredits, idempotencyKey);
+  }
+
+  async captureInTx(
     tx: Tx,
     workspaceId: string,
     generationJobId: string,
     actualCredits: number,
     idempotencyKey: string,
   ): Promise<void> {
-    if (await this.hasLedger(tx, idempotencyKey, generationJobId)) return; // 幂等：已结算
+    if (!Number.isInteger(actualCredits) || actualCredits < 0) {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, 'actualCredits must be a non-negative integer', 400);
+    }
 
-    const rows = await tx.select().from(wallets).where(eq(wallets.workspaceId, workspaceId)).for('update');
-    const wallet = rows[0];
+    // Lock THIS job's reservation.
+    const resRows = await tx
+      .select()
+      .from(creditReservations)
+      .where(eq(creditReservations.generationJobId, generationJobId))
+      .for('update');
+    const reservation = resRows[0];
+    if (!reservation) {
+      // 无 reservation：可能是已 settle/release 的旧 job，检查 ledger 幂等。
+      if (await this.hasLedger(tx, idempotencyKey, generationJobId)) return;
+      throw domainError(ERROR_CODES.NOT_FOUND, 'Credit reservation not found for job', 404);
+    }
+
+    // 幂等：已 CAPTURED。
+    if (reservation.status === 'CAPTURED') return;
+    // 已 RELEASED 的 reservation 不能再 capture。
+    if (reservation.status === 'RELEASED') {
+      throw domainError(
+        ERROR_CODES.GENERATION_ALREADY_SETTLED,
+        'Cannot capture a released reservation',
+        409,
+      );
+    }
+
+    // Ledger 幂等。
+    if (await this.hasLedger(tx, idempotencyKey, generationJobId)) return;
+
+    // Lock wallet.
+    const wRows = await tx.select().from(wallets).where(eq(wallets.workspaceId, workspaceId)).for('update');
+    const wallet = wRows[0];
     if (!wallet) throw domainError(ERROR_CODES.NOT_FOUND, 'Wallet not found', 404);
 
-    const calc = computeSettle(wallet.balance, wallet.reservedBalance, actualCredits);
+    const calc = computeCapture(
+      reservation.reservedCredits,
+      reservation.capturedCredits,
+      reservation.releasedCredits,
+      actualCredits,
+    );
+
+    // wallet: reservedBalance 减少 remaining（该 reservation 完全脱离预留池），
+    //         balance 增加 releaseAmount（未用部分退回）。
+    const newReserved = wallet.reservedBalance - calc.remaining;
+    const newBalance = wallet.balance + calc.releaseAmount;
 
     await tx
       .update(wallets)
-      .set({ balance: wallet.balance + calc.released, reservedBalance: calc.reservedAfter, updatedAt: new Date() })
+      .set({ balance: newBalance, reservedBalance: newReserved, updatedAt: new Date() })
       .where(eq(wallets.workspaceId, workspaceId));
 
+    // 更新 reservation。
+    await tx
+      .update(creditReservations)
+      .set({
+        capturedCredits: calc.newCaptured,
+        releasedCredits: calc.newReleased,
+        status: 'CAPTURED',
+        settledAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(creditReservations.id, reservation.id));
+
+    // SETTLE ledger：记录结算（capture 本身不改变 balance——credits 在 reserve 时已扣）。
     await tx.insert(walletLedger).values({
       workspaceId,
       type: 'GENERATION_SETTLE',
       amount: 0,
       balanceBefore: wallet.balance,
-      balanceAfter: wallet.balance,
+      balanceAfter: newBalance,
       reservedBefore: wallet.reservedBalance,
-      reservedAfter: calc.reservedAfter,
+      reservedAfter: newReserved,
       generationJobId,
       idempotencyKey,
-      description: `Settle ${actualCredits} credits for generation`,
+      description: `Capture ${calc.captureAmount} credits (released ${calc.releaseAmount} unused)`,
     });
 
-    if (calc.released > 0) {
+    if (calc.releaseAmount > 0) {
       await tx.insert(walletLedger).values({
         workspaceId,
         type: 'GENERATION_RELEASE',
-        amount: calc.released,
+        amount: calc.releaseAmount,
         balanceBefore: wallet.balance,
-        balanceAfter: wallet.balance + calc.released,
-        reservedBefore: calc.reservedAfter,
-        reservedAfter: 0,
+        balanceAfter: newBalance,
+        reservedBefore: wallet.reservedBalance,
+        reservedAfter: newReserved,
         generationJobId,
         idempotencyKey: `${idempotencyKey}:release`,
-        description: `Release ${calc.released} unused credits`,
+        description: `Release ${calc.releaseAmount} unused credits`,
       });
     }
   }
 
-  /** 失败回滚：释放全部 reserved 回 balance。仅能执行一次。 */
+  // ---- RELEASE ----
+
+  /**
+   * 释放该 job 的全部剩余预留 credits。
+   * P0-1 关键修复：只释放 THIS job 的 reservation.remaining，不再清空整个 reserved_balance。
+   * 幂等：已 RELEASED 则跳过。
+   */
   release(workspaceId: string, generationJobId: string, idempotencyKey: string): Promise<void> {
     return this.db.transaction((tx) => this.releaseInTx(tx, workspaceId, generationJobId, idempotencyKey));
   }
 
-  /**
-   * 失败回滚（供组合事务复用）：与 Worker 的 Job 状态更新在同一事务内提交，
-   * 保证「标记 FAILED + 释放全部 reserved」原子一致；幂等由 idempotency_key 保证。
-   */
   async releaseInTx(
     tx: Tx,
     workspaceId: string,
     generationJobId: string,
     idempotencyKey: string,
   ): Promise<void> {
-    if (await this.hasLedger(tx, idempotencyKey, generationJobId)) return; // 幂等
+    // Lock THIS job's reservation.
+    const resRows = await tx
+      .select()
+      .from(creditReservations)
+      .where(eq(creditReservations.generationJobId, generationJobId))
+      .for('update');
+    const reservation = resRows[0];
+    if (!reservation) {
+      // 无 reservation：检查 ledger 幂等（可能是旧流程）。
+      if (await this.hasLedger(tx, idempotencyKey, generationJobId)) return;
+      // 无 reservation 也无 ledger：静默返回（job 可能从未 reserve 过，如 cancel 未运行 job）。
+      return;
+    }
 
-    const rows = await tx.select().from(wallets).where(eq(wallets.workspaceId, workspaceId)).for('update');
-    const wallet = rows[0];
+    // 幂等：已 RELEASED。
+    if (reservation.status === 'RELEASED') return;
+
+    // Ledger 幂等。
+    if (await this.hasLedger(tx, idempotencyKey, generationJobId)) return;
+
+    // Lock wallet.
+    const wRows = await tx.select().from(wallets).where(eq(wallets.workspaceId, workspaceId)).for('update');
+    const wallet = wRows[0];
     if (!wallet) throw domainError(ERROR_CODES.NOT_FOUND, 'Wallet not found', 404);
 
-    const calc = computeRelease(wallet.balance, wallet.reservedBalance);
+    const calc = computeReleaseForJob(
+      reservation.reservedCredits,
+      reservation.capturedCredits,
+      reservation.releasedCredits,
+    );
+
+    if (calc.releaseAmount === 0) {
+      // 已无剩余可释放（全部 captured）：标记 RELEASED 即可。
+      await tx
+        .update(creditReservations)
+        .set({ status: 'RELEASED', updatedAt: new Date() })
+        .where(eq(creditReservations.id, reservation.id));
+      return;
+    }
+
+    // wallet: reservedBalance 减少 releaseAmount，balance 增加 releaseAmount。
+    const newReserved = wallet.reservedBalance - calc.releaseAmount;
+    const newBalance = wallet.balance + calc.releaseAmount;
 
     await tx
       .update(wallets)
-      .set({ balance: calc.balanceAfter, reservedBalance: 0, updatedAt: new Date() })
+      .set({ balance: newBalance, reservedBalance: newReserved, updatedAt: new Date() })
       .where(eq(wallets.workspaceId, workspaceId));
+
+    // 更新 reservation。
+    await tx
+      .update(creditReservations)
+      .set({
+        releasedCredits: calc.newReleased,
+        status: 'RELEASED',
+        updatedAt: new Date(),
+      })
+      .where(eq(creditReservations.id, reservation.id));
 
     await tx.insert(walletLedger).values({
       workspaceId,
       type: 'GENERATION_RELEASE',
-      amount: calc.released,
+      amount: calc.releaseAmount,
       balanceBefore: wallet.balance,
-      balanceAfter: calc.balanceAfter,
+      balanceAfter: newBalance,
       reservedBefore: wallet.reservedBalance,
-      reservedAfter: 0,
+      reservedAfter: newReserved,
       generationJobId,
       idempotencyKey,
-      description: `Release ${calc.released} reserved credits on failure`,
+      description: `Release ${calc.releaseAmount} reserved credits`,
     });
   }
+
+  // ---- ADMIN ADJUST ----
 
   /**
    * 管理员调整余额（正负均可，仅作用于 balance，不涉及 reserved）。
@@ -214,7 +401,6 @@ export class WalletGateway {
     return this.db.transaction((tx) => this.adjustBalanceInTx(tx, workspaceId, delta, idempotencyKey, description));
   }
 
-  /** 管理员调整余额（供组合事务复用）。 */
   async adjustBalanceInTx(
     tx: Tx,
     workspaceId: string,
@@ -253,27 +439,10 @@ export class WalletGateway {
     return { balance: balanceAfter };
   }
 
-  /** 幂等检查：该 key 或该 job 是否已有对应 ledger 记录。 */
-  private async hasLedger(
-    tx: Tx,
-    idempotencyKey: string,
-    generationJobId: string,
-  ): Promise<boolean> {
-    const rows = await tx
-      .select({ id: walletLedger.id })
-      .from(walletLedger)
-      .where(
-        and(
-          eq(walletLedger.idempotencyKey, idempotencyKey),
-          eq(walletLedger.generationJobId, generationJobId),
-        ),
-      )
-      .limit(1);
-    return rows.length > 0;
-  }
+  // ---- RECHARGE ----
 
   /**
-   * 充值入账（Phase 7）：按订单向已存在的 Wallet 增加可用余额。
+   * 充值入账：按订单向已存在的 Wallet 增加可用余额。
    * - 写入 RECHARGE ledger，携带 orderId。
    * - 幂等由 idempotencyKey 唯一约束保证：同一订单回调重复到达不会重复入账。
    * - 仅作用于 balance（可用余额），不涉及 reserved。
@@ -288,7 +457,6 @@ export class WalletGateway {
     return this.db.transaction((tx) => this.rechargeInTx(tx, workspaceId, credits, orderId, idempotencyKey, description));
   }
 
-  /** 充值入账（供组合事务复用）。 */
   async rechargeInTx(
     tx: Tx,
     workspaceId: string,
@@ -337,5 +505,116 @@ export class WalletGateway {
     });
 
     return { balance: balanceAfter };
+  }
+
+  // ---- HELPERS ----
+
+  /** 幂等检查：该 key + job 是否已有对应 ledger 记录。 */
+  private async hasLedger(
+    tx: Tx,
+    idempotencyKey: string,
+    generationJobId: string,
+  ): Promise<boolean> {
+    const rows = await tx
+      .select({ id: walletLedger.id })
+      .from(walletLedger)
+      .where(
+        and(
+          eq(walletLedger.idempotencyKey, idempotencyKey),
+          eq(walletLedger.generationJobId, generationJobId),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  // ---- RESERVATION INVARIANT (Wallet.reserved_balance == SUM residual) ----
+
+  /**
+   * 核对不变量：wallet.reserved_balance == SUM(active reservation remaining)
+   * 其中 remaining = reserved - captured - released（该 reservation 尚未脱离预留池的额度）。
+   *
+   * 只读检测，不自动修账。返回所有发生 drift 的 wallet（含 expected 值）。
+   * 由 reconciliation 定时任务调用，产出 structured 结果供 log/metric/告警。
+   */
+  async checkReservationInvariant(): Promise<
+    Array<{ workspaceId: string; reservedBalance: number; expectedReserved: number }>
+  > {
+    const walletRows = await this.db.select().from(wallets);
+    const mismatches: Array<{ workspaceId: string; reservedBalance: number; expectedReserved: number }> = [];
+
+    for (const w of walletRows) {
+      const resRows = await this.db
+        .select({
+          reserved: creditReservations.reservedCredits,
+          captured: creditReservations.capturedCredits,
+          released: creditReservations.releasedCredits,
+        })
+        .from(creditReservations)
+        .where(eq(creditReservations.walletId, w.id));
+
+      const expected = resRows.reduce(
+        (sum, r) => sum + Math.max(0, r.reserved - r.captured - r.released),
+        0,
+      );
+      if (w.reservedBalance !== expected) {
+        mismatches.push({ workspaceId: w.workspaceId, reservedBalance: w.reservedBalance, expectedReserved: expected });
+      }
+    }
+    return mismatches;
+  }
+
+  /**
+   * 显式修复某 wallet 的 reserved_balance 漂移（不自动触发，需显式调用）。
+   * - 在事务内将 reserved_balance 校正为 SUM(residual)。
+   * - 写入 wallet_ledger（ADMIN_ADJUSTMENT，amount=0，描述携带 reason/requestId/before/after）作为审计。
+   * - 幂等：若已一致则直接返回，不写 ledger。
+   */
+  async repairReservationInvariant(
+    workspaceId: string,
+    reason: string,
+    requestId: string,
+  ): Promise<{ before: number; after: number }> {
+    return this.db.transaction(async (tx) => {
+      const wRows = await tx.select().from(wallets).where(eq(wallets.workspaceId, workspaceId)).for('update');
+      const w = wRows[0];
+      if (!w) throw domainError(ERROR_CODES.NOT_FOUND, 'Wallet not found', 404);
+
+      const resRows = await tx
+        .select({
+          reserved: creditReservations.reservedCredits,
+          captured: creditReservations.capturedCredits,
+          released: creditReservations.releasedCredits,
+        })
+        .from(creditReservations)
+        .where(eq(creditReservations.walletId, w.id));
+
+      const expected = resRows.reduce(
+        (sum, r) => sum + Math.max(0, r.reserved - r.captured - r.released),
+        0,
+      );
+      const before = w.reservedBalance;
+      if (before === expected) return { before, after: expected };
+
+      await tx
+        .update(wallets)
+        .set({ reservedBalance: expected, updatedAt: new Date() })
+        .where(eq(wallets.workspaceId, workspaceId));
+
+      // 审计：记录校正前后 reserved 值（amount=0 表示本操作不改变可用余额）。
+      await tx.insert(walletLedger).values({
+        workspaceId,
+        type: 'ADMIN_ADJUSTMENT',
+        amount: 0,
+        balanceBefore: w.balance,
+        balanceAfter: w.balance,
+        reservedBefore: before,
+        reservedAfter: expected,
+        idempotencyKey: `reconcile:${workspaceId}:${requestId}`,
+        description: `Reservation invariant repair (reason=${reason})`,
+      });
+
+      return { before, after: expected };
+    });
   }
 }

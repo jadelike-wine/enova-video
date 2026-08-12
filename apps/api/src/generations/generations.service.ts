@@ -1,20 +1,19 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Queue } from 'bullmq';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import {
   domainError,
   ERROR_CODES,
-  GENERATION_JOB_NAMES,
   GENERATION_STATUSES,
   type GenerationJobPayload,
   type GenerationStatus,
   type GenerationType,
 } from '@enova/contracts';
-import { generationJobs, type Database } from '@enova/db';
+import { generationDispatchOutbox, generationJobs, type Database } from '@enova/db';
 import { DATABASE } from '../database/database.module.js';
 import { GENERATION_QUEUE } from '../queue/queue.module.js';
 import { PricingService } from '../billing/pricing.service.js';
 import { WalletService } from '../billing/wallet.service.js';
+import type { Queue } from 'bullmq';
 
 export interface GenerationView {
   id: string;
@@ -29,14 +28,25 @@ export interface GenerationView {
   estimatedCredits: number;
   reservedCredits: number;
   actualCredits: number;
+  estimatedCostMicrousd: number;
+  reportedCostMicrousd: number;
+  finalCostMicrousd: number;
+  costStatus: string;
+  attemptCount: number;
   createdAt: Date;
   completedAt?: Date | null;
 }
 
 /**
- * Generation 统一任务系统。
- * 流程：validate → quote pricing → reserve credits → insert GenerationJob → enqueue BullMQ → 返回 jobId。
- * HTTP 请求不等待 Provider 完成，一律异步。
+ * Generation 统一任务系统（P0-2: Transactional Outbox + P0-3: Pricing Quote）。
+ *
+ * 流程：validate → quote pricing（创建不可变 PriceQuote）→ reserve credits →
+ *       insert GenerationJob + 写 outbox（同一事务）→ OutboxDispatcher 异步投递 BullMQ。
+ *
+ * 保证：
+ * - DB commit 与 queue.add 原子一致（outbox 模式），不会产生孤儿任务。
+ * - BullMQ jobId = generationJobId，重复 dispatch 不产生多个实际任务。
+ * - 历史价格可追溯（PriceQuote + PricingVersion 不可变）。
  */
 @Injectable()
 export class GenerationsService {
@@ -55,13 +65,16 @@ export class GenerationsService {
     model: string,
     input: Record<string, unknown>,
   ): Promise<GenerationView> {
-    const quote = await this.pricing.quote(type, provider, model);
+    // P0-3: 创建不可变 PriceQuote（含 pricing version + estimated cost）。
+    const quote = await this.pricing.quote({ type, provider, model, dimensions: input });
     const credits = quote.credits;
     const jobId = crypto.randomUUID();
 
-    // 单个事务内完成：reserve credits（行锁防超卖）+ 写 ledger + 插入 generation_job。
+    // P0-2: 单个事务内完成 reserve + 写 ledger + 插入 generation_job + 写 outbox。
+    // 事务提交后由 OutboxDispatcher 异步投递 BullMQ，避免 orphan job。
     const { job } = await this.db.transaction(async (tx) => {
       await this.wallet.reserveInTx(tx, workspaceId, jobId, credits, `reserve:${jobId}`);
+
       const [generationJob] = await tx
         .insert(generationJobs)
         .values({
@@ -75,25 +88,36 @@ export class GenerationsService {
           inputJson: input,
           estimatedCredits: credits,
           reservedCredits: credits,
+          estimatedCostMicrousd: quote.estimatedCostMicrousd,
+          costStatus: 'ESTIMATED',
+          pricingVersionId: quote.pricingVersionId,
+          priceQuoteId: quote.quoteId,
           queuedAt: new Date(),
         })
         .returning();
+
+      // 写 outbox：OutboxDispatcher 会读取并投递到 BullMQ。
+      const payload: GenerationJobPayload = {
+        generationJobId: jobId,
+        workspaceId,
+        userId,
+        type,
+        provider,
+        model,
+        input,
+        reservedCredits: credits,
+        idempotencyKey: `settle:${jobId}`,
+      };
+      await tx.insert(generationDispatchOutbox).values({
+        generationJobId: jobId,
+        eventType: 'PROCESS',
+        payloadJson: payload as unknown as Record<string, unknown>,
+        status: 'PENDING',
+        availableAt: new Date(),
+      });
+
       return { job: generationJob };
     });
-
-    // 事务提交后再入队，避免预留成功但入队失败导致悬空任务。
-    const payload: GenerationJobPayload = {
-      generationJobId: jobId,
-      workspaceId,
-      userId,
-      type,
-      provider,
-      model,
-      input,
-      reservedCredits: credits,
-      idempotencyKey: `settle:${jobId}`,
-    };
-    await this.queue.add(GENERATION_JOB_NAMES.PROCESS, payload);
 
     return this.toView(job);
   }
@@ -135,7 +159,7 @@ export class GenerationsService {
         generationJobId: row.id,
         workspaceId: row.workspaceId,
         userId: row.userId,
-        type: row.type,
+        type: row.type as GenerationType,
         provider: row.provider ?? 'agnes',
         model: row.model ?? '',
         input: (row.inputJson ?? {}) as Record<string, unknown>,
@@ -143,22 +167,68 @@ export class GenerationsService {
         idempotencyKey: `settle:${row.id}`,
         stage: 'cancel',
       };
-      await this.queue.add(GENERATION_JOB_NAMES.CANCEL, payload);
+      // CANCEL 事件直接入队（不经过 outbox，因为需要立即处理）。
+      await this.queue.add('generation.cancel', payload, { jobId: `${row.id}:cancel` });
       return this.toView(row);
     }
 
-    await this.queue.remove(jobKey(id));
+    // PENDING/QUEUED cancel：必须在一个事务内原子完成
+    //   outbox → SUPERSEDED（阻止 dispatcher 投递）
+    //   job    → CANCELED
+    //   wallet → release（回滚预留 credits）
+    // P0 红队修复：原来三段是独立 SQL。若进程在 outbox SUPERSEDED 之后、job CANCELED 之前崩溃，
+    // 会留下 "outbox=SUPERSEDED 但 job=QUEUED + credits=RESERVED" 的分裂态；reconcile 会把它当孤儿
+    // 重新投递，导致"用户已取消却仍被执行扣费"。原子化后要么全提交（CANCELED+released），
+    // 要么整事务回滚（仍可正常投递），彻底消除该窗口。
+    const releaseKey = `release:cancel:${id}`;
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(generationDispatchOutbox)
+        .set({ status: 'SUPERSEDED' })
+        .where(
+          and(
+            eq(generationDispatchOutbox.generationJobId, id),
+            eq(generationDispatchOutbox.status, 'PENDING'),
+          ),
+        );
 
-    const [updated] = await this.db
-      .update(generationJobs)
-      .set({ status: GENERATION_STATUSES.CANCELED, canceledAt: new Date(), completedAt: new Date() })
-      .where(and(eq(generationJobs.id, id), eq(generationJobs.workspaceId, workspaceId)))
-      .returning();
+      const [updated] = await tx
+        .update(generationJobs)
+        .set({ status: GENERATION_STATUSES.CANCELED, canceledAt: new Date(), completedAt: new Date() })
+        .where(
+          and(
+            eq(generationJobs.id, id),
+            eq(generationJobs.workspaceId, workspaceId),
+            inArray(generationJobs.status, [
+              GENERATION_STATUSES.PENDING,
+              GENERATION_STATUSES.QUEUED,
+            ]),
+          ),
+        )
+        .returning();
 
-    // 释放已预留 credits
-    await this.wallet.release(workspaceId, id, `release:cancel:${id}`);
+      if (!updated) {
+        // job 已不在 PENDING/QUEUED（可能已被 dispatch 为 RUNNING 或已终态）：
+        // 不能在此路径取消，交给调用方重试（重试时按 RUNNING 走 worker cancel）。
+        throw domainError(ERROR_CODES.GENERATION_INVALID_STATUS_TRANSITION, 'Job cannot be canceled', 409);
+      }
 
-    return this.toView(updated);
+      await this.wallet.releaseInTx(tx, workspaceId, id, releaseKey);
+    });
+
+    // 尝试从 BullMQ 移除（jobId = generationJobId）。best-effort：job 可能已被消费或不存在。
+    try {
+      await this.queue.remove(id);
+    } catch {
+      // 忽略。
+    }
+
+    return this.toView({
+      ...row,
+      status: GENERATION_STATUSES.CANCELED,
+      canceledAt: new Date(),
+      completedAt: new Date(),
+    });
   }
 
   /** IDOR 安全：按 id + workspace 查询。 */
@@ -184,8 +254,14 @@ export class GenerationsService {
     estimatedCredits: number;
     reservedCredits: number;
     actualCredits: number;
+    estimatedCostMicrousd: number;
+    reportedCostMicrousd: number;
+    finalCostMicrousd: number;
+    costStatus: string;
+    attemptCount: number;
     createdAt: Date;
     completedAt: Date | null;
+    canceledAt?: Date | null;
   }): GenerationView {
     return {
       id: r.id,
@@ -200,13 +276,13 @@ export class GenerationsService {
       estimatedCredits: r.estimatedCredits,
       reservedCredits: r.reservedCredits,
       actualCredits: r.actualCredits,
+      estimatedCostMicrousd: r.estimatedCostMicrousd,
+      reportedCostMicrousd: r.reportedCostMicrousd,
+      finalCostMicrousd: r.finalCostMicrousd,
+      costStatus: r.costStatus,
+      attemptCount: r.attemptCount,
       createdAt: r.createdAt,
       completedAt: r.completedAt,
     };
   }
-}
-
-function jobKey(id: string): string {
-  // 与 GenerationProcessor 的 jobId 保持一致（BullMQ 默认 id 或自定义前缀）。
-  return id;
 }

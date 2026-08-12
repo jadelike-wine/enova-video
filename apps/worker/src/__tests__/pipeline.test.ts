@@ -32,6 +32,7 @@ function makeJob(overrides: Partial<GenerationJobRow> = {}): GenerationJobRow {
     providerStartedAt: null,
     pollCount: 0,
     reservedCredits: 10,
+    estimatedCostMicrousd: 500,
     createdAt: new Date(),
     ...overrides,
   };
@@ -53,6 +54,16 @@ function makeDeps(overrides: Partial<GenerationPipelineDeps> = {}): GenerationPi
       finalizeSuccessInTx: vi.fn().mockResolvedValue(undefined),
       finalizeFailureInTx: vi.fn().mockResolvedValue(undefined),
       finalizeCancelInTx: vi.fn().mockResolvedValue(undefined),
+    } as never,
+    attempts: {
+      start: vi.fn().mockResolvedValue({ attemptId: 'att-1', attemptNo: 1 }),
+      markSucceeded: vi.fn().mockResolvedValue(undefined),
+      markFailed: vi.fn().mockResolvedValue(undefined),
+      markCanceled: vi.fn().mockResolvedValue(undefined),
+      attachProviderJobId: vi.fn().mockResolvedValue(undefined),
+      listByJob: vi.fn().mockResolvedValue([]),
+      findRunning: vi.fn().mockResolvedValue(null),
+      attachProviderJobIdInTx: vi.fn().mockResolvedValue(undefined),
     } as never,
     registry: {
       getProvider: vi.fn().mockReturnValue({
@@ -255,6 +266,101 @@ describe('GenerationPipeline', () => {
     expect(deps.repo.providerCostUsd).toHaveBeenCalledWith('IMAGE', 'agnes', 'agn-dream');
     const args = (deps.repo.finalizeSuccessInTx as ReturnType<typeof vi.fn>).mock.calls[0][1];
     expect(args.usage.providerCostUsd).toBe(1234);
+    // P0-4: microusd 成本字段被写入（estimated = job 快照 || legacy）。
+    // P0 红队修复：ESTIMATED 阶段 final_cost 必须为 0（禁止把估值写进 final 字段）。
+    expect(args.estimatedCostMicrousd).toBe(500);
+    expect(args.finalCostMicrousd).toBe(0);
+    expect(args.costStatus).toBe('ESTIMATED');
+  });
+
+  // ---- P0-5: Generation Attempts ----
+
+  it('image success creates attempt and marks it SUCCEEDED with estimated cost', async () => {
+    const deps = makeDeps();
+    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.generateImage as ReturnType<typeof vi.fn>).mockResolvedValue({ sourceUrl: 'https://cdn.test/i.png' });
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.execute(makePayload());
+
+    expect(deps.attempts.start).toHaveBeenCalledWith(expect.objectContaining({
+      generationJobId: 'job-1',
+      provider: 'agnes',
+      model: 'agn-dream',
+      estimatedCostMicrousd: 500,
+    }));
+    expect(deps.attempts.markSucceeded).toHaveBeenCalledWith('att-1', 500);
+    expect(deps.attempts.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('image failure creates attempt and marks it FAILED (cost retained)', async () => {
+    const deps = makeDeps();
+    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.generateImage as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new ProviderError('upstream 500', { category: 'PROVIDER_TEMPORARY_ERROR' }),
+    );
+
+    const pipeline = new GenerationPipeline(deps);
+    await expect(pipeline.execute(makePayload())).rejects.toThrow();
+
+    expect(deps.attempts.start).toHaveBeenCalled();
+    expect(deps.attempts.markFailed).toHaveBeenCalledWith(
+      'att-1',
+      'PROVIDER_TEMPORARY_ERROR',
+      expect.any(String),
+      500,
+    );
+    expect(deps.attempts.markSucceeded).not.toHaveBeenCalled();
+  });
+
+  it('video success marks running attempt SUCCEEDED', async () => {
+    const deps = makeDeps();
+    (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1', pollCount: 1 }),
+    );
+    (deps.attempts.findRunning as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'att-1' });
+    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.getVideoStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'succeeded', sourceUrl: 'https://cdn.test/v.mp4', duration: 5 });
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.poll(makePayload('poll'));
+
+    expect(deps.attempts.findRunning).toHaveBeenCalledWith('job-1');
+    expect(deps.attempts.markSucceeded).toHaveBeenCalledWith('att-1', 500);
+  });
+
+  it('video failure marks running attempt FAILED with cost retained', async () => {
+    const deps = makeDeps();
+    (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1', pollCount: 1 }),
+    );
+    (deps.attempts.findRunning as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'att-1' });
+    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.getVideoStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'failed', errorCode: 'UPSTREAM_FAIL', errorMessage: 'render error' });
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.poll(makePayload('poll'));
+
+    expect(deps.attempts.markFailed).toHaveBeenCalledWith('att-1', 'UPSTREAM_FAIL', 'render error', 500);
+    expect(deps.repo.finalizeFailureInTx).toHaveBeenCalled();
+  });
+
+  it('video submit creates attempt and attaches provider_job_id', async () => {
+    const deps = makeDeps();
+    (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob({ type: 'VIDEO', providerJobId: null }));
+    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.submitVideo as ReturnType<typeof vi.fn>).mockResolvedValue({ providerJobId: 'task-1', status: { status: 'processing' } });
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.execute(makePayload());
+
+    expect(deps.attempts.start).toHaveBeenCalled();
+    expect(deps.attempts.attachProviderJobId).toHaveBeenCalledWith('att-1', 'task-1');
   });
 
   it('cancel RUNNING job notifies upstream cancelJob then CANCELED + release', async () => {

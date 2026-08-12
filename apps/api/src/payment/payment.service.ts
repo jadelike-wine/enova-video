@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { domainError, ERROR_CODES } from '@enova/contracts';
 import { orders, paymentTransactions, wallets, type Database } from '@enova/db';
@@ -15,6 +15,7 @@ import {
 import type { AuthUser } from '../auth/auth.service.js';
 import { DATABASE } from '../database/database.module.js';
 import { SettingsService } from '../settings/settings.service.js';
+import { SubscriptionFulfillmentService } from '../billing/subscription-fulfillment.service.js';
 import { WalletService } from '../billing/wallet.service.js';
 
 export interface RechargeResult {
@@ -39,6 +40,7 @@ export class PaymentService {
     @Inject(DATABASE) private readonly db: Database,
     @Inject(SettingsService) private readonly settings: SettingsService,
     @Inject(WalletService) private readonly wallet: WalletService,
+    @Inject(SubscriptionFulfillmentService) private readonly fulfillment: SubscriptionFulfillmentService,
   ) {}
 
   /**
@@ -66,6 +68,7 @@ export class PaymentService {
     const wechatApiV3Key = await this.settings.getString('payment.wechatApiV3Key');
     const wechatSerialNo = await this.settings.getString('payment.wechatSerialNo');
     const wechatPrivateKey = await this.settings.getString('payment.wechatPrivateKey');
+    const wechatPlatformCert = await this.settings.getString('payment.wechatPlatformCert');
 
     const cfg: PaymentEnvConfig = {
       mode,
@@ -85,6 +88,7 @@ export class PaymentService {
               apiV3Key: wechatApiV3Key,
               serialNo: wechatSerialNo,
               privateKey: wechatPrivateKey,
+              platformCert: wechatPlatformCert ?? undefined,
             }
           : undefined,
     };
@@ -115,14 +119,28 @@ export class PaymentService {
     const provider: PaymentProvider = registry.get(activeProvider);
     const orderId = randomUUID();
     const subject = `充值 ${credits} credits`;
+    // P0-6: 订单快照——下单时的商品/价格/credits 不可变副本。履约时读 snapshot，不重查当前价格。
+    const snapshot = {
+      orderType: 'RECHARGE' as const,
+      amountCents,
+      currency: 'CNY',
+      credits,
+      creditsPerCny,
+      subject,
+      createdAt: new Date().toISOString(),
+    };
 
     await this.db.insert(orders).values({
       id: orderId,
       workspaceId: user.workspaceId,
       userId: user.userId,
+      orderType: 'RECHARGE',
       amountCents,
+      currency: 'CNY',
       credits,
+      snapshotJson: snapshot,
       status: 'PENDING',
+      fulfillmentStatus: 'PENDING',
     });
 
     const created = await provider.createPayment({
@@ -177,22 +195,65 @@ export class PaymentService {
 
   private async settleNotification(notification: PaymentNotification): Promise<void> {
     const order = await this.requireOrder(notification.orderId);
+    // P0-6: 金额校验（防少付）。
     if (order.amountCents !== notification.amountCents) {
       throw domainError(ERROR_CODES.PAYMENT_AMOUNT_MISMATCH, 'Payment amount mismatch with order', 400, {
         order: order.amountCents,
         paid: notification.amountCents,
       });
     }
+    // P0-6: 货币校验（订单 currency 与渠道默认 CNY 一致；未来支持多币种时扩展）。
+    if (order.currency !== 'CNY') {
+      throw domainError(ERROR_CODES.PAYMENT_AMOUNT_MISMATCH, `Unsupported currency: ${order.currency}`, 400);
+    }
+    // P0-6: 回写真实第三方交易号（下单时可能是占位 orderId，回调拿到真实 trade_no/transaction_id）。
+    // provider_ref 唯一索引保证同一渠道交易号不重复入账（防重复回调）。
+    // 若出现唯一约束冲突（同一 trade_no 已被另一订单占用），必须 fail-closed，禁止继续入账。
+    if (notification.tradeNo && notification.tradeNo !== order.id) {
+      try {
+        await this.db
+          .update(paymentTransactions)
+          .set({ providerRef: notification.tradeNo, status: 'SUCCEEDED', updatedAt: new Date() })
+          .where(
+            and(
+              eq(paymentTransactions.orderId, order.id),
+              eq(paymentTransactions.status, 'PENDING'),
+            ),
+          );
+      } catch (err) {
+        // provider_ref 唯一约束冲突：同一交易号已被另一订单入账（跨订单 replayed webhook）。
+        // 这是重复/篡改入账的强信号，绝不能静默吞掉后继续 recharge。
+        throw domainError(
+          ERROR_CODES.PAYMENT_TX_REF_CONFLICT,
+          'Payment transaction ref already bound to another order',
+          409,
+          { orderId: order.id, tradeNo: notification.tradeNo },
+        );
+      }
+    }
     await this.settleOrder(order.workspaceId, order.id, order.credits);
   }
 
   private async settleOrder(workspaceId: string, orderId: string, credits: number): Promise<void> {
     await this.markSucceededAndRecharge(workspaceId, orderId, credits);
+    // P0-7: PLAN 订单支付成功后触发订阅履约（创建 subscription + 发放 credits）。
+    // 履约幂等（idempotency_key = orderId），失败不回滚支付，由 reconciliation 补偿。
+    try {
+      const order = await this.requireOrder(orderId);
+      if (order.orderType === 'PLAN' && order.fulfillmentStatus === 'PENDING') {
+        await this.fulfillment.fulfill(orderId);
+      }
+    } catch {
+      // 履约失败不阻断 webhook 返回（已入账），由 reconciliation 补偿。
+    }
   }
 
   /**
    * 入账核心：事务内锁定订单 → 校验 PENDING → 置 SUCCEEDED → 更新交易单 → 调用
    * WalletGateway.rechargeInTx 写入 RECHARGE（幂等键防重复）。订单行锁保证并发回调串行化。
+   *
+   * P0-6/P0-7: RECHARGE 订单的 fulfillment = recharge 本身，直接标记 SUCCEEDED。
+   * PLAN/CREDIT_PACK 订单的 fulfillment 由 SubscriptionFulfillmentService 处理，此处只标记 payment SUCCEEDED。
    */
   private async markSucceededAndRecharge(workspaceId: string, orderId: string, credits: number): Promise<void> {
     await this.db.transaction(async (tx) => {
@@ -204,9 +265,22 @@ export class PaymentService {
         throw domainError(ERROR_CODES.PAYMENT_ORDER_NOT_PENDING, `Order is not pending (${order.status})`, 409);
       }
 
-      await tx.update(orders).set({ status: 'SUCCEEDED', updatedAt: new Date() }).where(eq(orders.id, orderId));
+      // RECHARGE / CREDIT_PACK：recharge 即 fulfillment，同事务完成。
+      // PLAN：payment 成功后由 SubscriptionFulfillmentService 异步履约，此处只标 payment SUCCEEDED。
+      const isRechargeLike = order.orderType === 'RECHARGE' || order.orderType === 'CREDIT_PACK';
+      await tx
+        .update(orders)
+        .set({
+          status: 'SUCCEEDED',
+          fulfillmentStatus: isRechargeLike ? 'SUCCEEDED' : 'PENDING',
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, orderId));
       await tx.update(paymentTransactions).set({ status: 'SUCCEEDED', updatedAt: new Date() }).where(eq(paymentTransactions.orderId, orderId));
-      await this.wallet.rechargeInTx(tx, workspaceId, credits, orderId, `payment:recharge:${orderId}`);
+
+      if (isRechargeLike) {
+        await this.wallet.rechargeInTx(tx, workspaceId, credits, orderId, `payment:recharge:${orderId}`);
+      }
     });
   }
 
@@ -229,5 +303,65 @@ export class PaymentService {
       throw domainError(ERROR_CODES.IDOR_FORBIDDEN, 'Order does not belong to this workspace', 403);
     }
     return order;
+  }
+
+  // ---- P0-6: query / close（生产就绪支付契约）。产品策略：不支持自动退款。 ----
+
+  /** 查询渠道订单状态（对账用）。 */
+  async queryPayment(orderId: string): Promise<{
+    orderId: string;
+    status: string;
+    channelStatus: string;
+    amountCents: number;
+    tradeNo: string;
+  }> {
+    const order = await this.requireOrder(orderId);
+    const txRows = await this.db
+      .select()
+      .from(paymentTransactions)
+      .where(eq(paymentTransactions.orderId, orderId))
+      .limit(1);
+    const tx = txRows[0];
+    if (!tx) throw domainError(ERROR_CODES.PAYMENT_NOT_FOUND, 'Payment transaction not found', 404);
+
+    const { registry } = await this.buildConfig();
+    const provider = registry.get(tx.provider as PaymentProviderKey);
+    const result = await provider.queryPayment(tx.providerRef ?? orderId, orderId);
+
+    return {
+      orderId,
+      status: order.status,
+      channelStatus: result.status,
+      amountCents: result.amountCents,
+      tradeNo: result.tradeNo ?? tx.providerRef ?? orderId,
+    };
+  }
+
+  /** 关闭未支付订单（防止用户长期挂单）。 */
+  async closePayment(orderId: string): Promise<void> {
+    const order = await this.requireOrder(orderId);
+    if (order.status !== 'PENDING') {
+      throw domainError(ERROR_CODES.PAYMENT_ORDER_NOT_PENDING, `Cannot close order in status ${order.status}`, 409);
+    }
+    const txRows = await this.db
+      .select()
+      .from(paymentTransactions)
+      .where(eq(paymentTransactions.orderId, orderId))
+      .limit(1);
+    const tx = txRows[0];
+    if (!tx) return;
+
+    const { registry } = await this.buildConfig();
+    const provider = registry.get(tx.provider as PaymentProviderKey);
+    try {
+      await provider.closePayment(orderId);
+    } catch {
+      // 渠道关单失败不阻断本地关闭（订单可能已被渠道自动关闭）。
+    }
+
+    await this.db
+      .update(orders)
+      .set({ status: 'FAILED', updatedAt: new Date() })
+      .where(eq(orders.id, orderId));
   }
 }

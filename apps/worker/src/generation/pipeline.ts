@@ -20,6 +20,7 @@ import { WalletGateway } from '@enova/billing';
 import type { Database } from '@enova/db';
 import { downloadToTempFile, cleanupTempFile } from '@enova/provider';
 import { WorkerLogger } from '../logger.js';
+import { GenerationAttemptsRepo } from './attempts.repo.js';
 import { GenerationRepo, type GenerationJobRow } from './repo.js';
 import { isTerminal, isRunnable } from './state.js';
 
@@ -52,6 +53,7 @@ export interface GenerationPipelineConfig {
 export interface GenerationPipelineDeps {
   db: Database;
   repo: GenerationRepo;
+  attempts: GenerationAttemptsRepo;
   registry: ProviderRegistry;
   credentials: CredentialManager;
   storage: ObjectStorage;
@@ -150,9 +152,24 @@ export class GenerationPipeline {
         providerJobId: job.providerJobId,
         sourceUrl: status.sourceUrl,
       });
+      // P0-5: 视频成功 → 标记当前 RUNNING attempt 为 SUCCEEDED（保留估算成本）。
+      const runningAttempt = await this.deps.attempts.findRunning(job.id);
+      if (runningAttempt) {
+        await this.deps.attempts.markSucceeded(runningAttempt.id, job.estimatedCostMicrousd);
+      }
       await this.ingestAndFinalize(job, 'video', status);
     } else {
       // 上游明确失败：永久失败，直接 release + FAILED。
+      // P0-5: 标记当前 RUNNING attempt 为 FAILED（保留失败成本记录）。
+      const runningAttempt = await this.deps.attempts.findRunning(job.id);
+      if (runningAttempt) {
+        await this.deps.attempts.markFailed(
+          runningAttempt.id,
+          status.errorCode ?? 'PROVIDER_JOB_FAILED',
+          status.errorMessage ?? 'Provider job failed',
+          job.estimatedCostMicrousd,
+        );
+      }
       await this.fail(job, status.errorCode ?? 'PROVIDER_JOB_FAILED', status.errorMessage ?? 'Provider job failed');
     }
   }
@@ -198,11 +215,32 @@ export class GenerationPipeline {
   // ---- IMAGE ----
 
   private async runImage(job: GenerationJobRow): Promise<void> {
-    const result = await this.withCredential(job.provider ?? 'agnes', async (cred) => {
-      const provider = await this.deps.registry.getProvider(job.provider ?? 'agnes');
-      return provider.generateImage(this.buildImageInput(job), cred.secret);
+    // P0-5: 开启 attempt 记录。
+    const attempt = await this.deps.attempts.start({
+      generationJobId: job.id,
+      provider: job.provider ?? 'agnes',
+      model: job.model ?? '',
+      estimatedCostMicrousd: job.estimatedCostMicrousd,
     });
-    await this.ingestAndFinalize(job, 'image', result);
+
+    try {
+      const result = await this.withCredential(job.provider ?? 'agnes', async (cred) => {
+        const provider = await this.deps.registry.getProvider(job.provider ?? 'agnes');
+        return provider.generateImage(this.buildImageInput(job), cred.secret);
+      });
+      await this.deps.attempts.markSucceeded(attempt.attemptId, job.estimatedCostMicrousd);
+      await this.ingestAndFinalize(job, 'image', result);
+    } catch (err) {
+      // P0-5: 失败 attempt 也保留成本记录。
+      const providerErr = err as ProviderError;
+      await this.deps.attempts.markFailed(
+        attempt.attemptId,
+        providerErr.category ?? 'PROVIDER_UPSTREAM_ERROR',
+        err instanceof Error ? err.message : String(err),
+        job.estimatedCostMicrousd,
+      );
+      throw err;
+    }
   }
 
   // ---- VIDEO execute ----
@@ -211,18 +249,43 @@ export class GenerationPipeline {
     // 幂等：provider_job_id 已存在说明已提交过，不再重复提交（防重复计费）。
     let providerJobId = job.providerJobId;
     let submission: ProviderVideoSubmission | null = null;
-    if (!providerJobId) {
-      submission = await this.withCredential(job.provider ?? 'agnes', async (cred) => {
-        const provider = await this.deps.registry.getProvider(job.provider ?? 'agnes');
-        return provider.submitVideo(this.buildVideoInput(job), cred.secret);
-      });
-      providerJobId = submission.providerJobId;
 
-      const persisted = await this.deps.repo.persistProviderJob(job.id, providerJobId);
-      if (!persisted) {
-        // 并发下另一 Worker 已写入：以 DB 为准，不重复提交。
-        const fresh = await this.deps.repo.load(job.id);
-        if (fresh?.providerJobId) providerJobId = fresh.providerJobId;
+    if (!providerJobId) {
+      // P0-5: 首次提交开启 attempt。
+      const attempt = await this.deps.attempts.start({
+        generationJobId: job.id,
+        provider: job.provider ?? 'agnes',
+        model: job.model ?? '',
+        estimatedCostMicrousd: job.estimatedCostMicrousd,
+      });
+
+      try {
+        submission = await this.withCredential(job.provider ?? 'agnes', async (cred) => {
+          const provider = await this.deps.registry.getProvider(job.provider ?? 'agnes');
+          return provider.submitVideo(this.buildVideoInput(job), cred.secret);
+        });
+        providerJobId = submission.providerJobId;
+
+        // 关联 provider_job_id 到 attempt。
+        await this.deps.attempts.attachProviderJobId(attempt.attemptId, providerJobId);
+
+        const persisted = await this.deps.repo.persistProviderJob(job.id, providerJobId);
+        if (!persisted) {
+          // 并发下另一 Worker 已写入：以 DB 为准，不重复提交。
+          const fresh = await this.deps.repo.load(job.id);
+          if (fresh?.providerJobId) providerJobId = fresh.providerJobId;
+        }
+
+        // 提交成功但不结束 attempt（视频生成仍在进行，等 poll 成功后再 markSucceeded）。
+      } catch (err) {
+        const providerErr = err as ProviderError;
+        await this.deps.attempts.markFailed(
+          attempt.attemptId,
+          providerErr.category ?? 'PROVIDER_UPSTREAM_ERROR',
+          err instanceof Error ? err.message : String(err),
+          job.estimatedCostMicrousd,
+        );
+        throw err;
       }
     }
 
@@ -416,8 +479,16 @@ export class GenerationPipeline {
     // MVP pricing policy：Provider 未返回足够信息计算真实成本，按保留额度结算。
     // 这不是临时 TODO，而是第一版明确的定价策略；后续可接入真实 Pricing 计算 actualCredits。
     const actualCredits = job.reservedCredits;
-    // 供应商成本由定价规则驱动（pricing_rules.pricingJson.providerCostUsd，微美元），缺省 0 不伪造。
-    const providerCostUsd = await this.deps.repo.providerCostUsd(job.type, job.provider ?? 'agnes', job.model ?? '');
+    // 供应商成本：P0-4 优先使用 job 上的 estimatedCostMicrousd（来自 PriceQuote 快照），
+    // 兼容旧 pricing_rules.pricingJson.providerCostUsd 字段（微美元），缺省 0 不伪造。
+    const legacyProviderCostUsd = await this.deps.repo.providerCostUsd(job.type, job.provider ?? 'agnes', job.model ?? '');
+    const estimatedCostMicrousd = job.estimatedCostMicrousd || legacyProviderCostUsd || 0;
+    // 当前 Provider 未回报真实账单成本：cost_status = ESTIMATED，reported=0。
+    // P0 红队修复：final_cost_microusd 只有在成本真正"最终化"（REPORTED/RECONCILED）时才能写入。
+    // 禁止把静态估值写进 final_cost（否则 final 字段语义虚假，且无法区分"尚未对账"与"已确认"）。
+    const reportedCostMicrousd = 0;
+    const finalCostMicrousd = 0;
+    const costStatus = 'ESTIMATED' as const;
 
     await this.deps.db.transaction(async (tx) => {
       await this.deps.repo.finalizeSuccessInTx(tx, {
@@ -442,11 +513,16 @@ export class GenerationPipeline {
         usage: {
           duration: mediaType === 'video' ? asset.duration ?? null : null,
           resolution: this.resolution(job),
-          providerCostUsd,
+          providerCostUsd: legacyProviderCostUsd,
           creditsCharged: actualCredits,
           metadata: { provider: job.provider ?? 'agnes', model: job.model ?? '' },
         },
         actualCredits,
+        // P0-4: 明确成本语义，保证 Job 与 UsageEvent 一致。
+        estimatedCostMicrousd,
+        reportedCostMicrousd,
+        finalCostMicrousd,
+        costStatus,
         output: {
           url: displayUrl,
           width: asset.width ?? null,
@@ -470,6 +546,8 @@ export class GenerationPipeline {
       generationJobId: job.id,
       workspaceId: job.workspaceId,
       actualCredits,
+      estimatedCostMicrousd,
+      costStatus,
     });
   }
 

@@ -27,6 +27,16 @@ describe('SandboxPaymentProvider', () => {
     await expect(provider.verifyNotification('not-json', {})).rejects.toThrow('Invalid sandbox notification body');
     await expect(provider.verifyNotification(JSON.stringify({ status: 'success' }), {})).rejects.toThrow('missing orderId/tradeNo');
   });
+
+  it('queryPayment returns success mock', async () => {
+    const r = await provider.queryPayment('T1', 'o1');
+    expect(r.status).toBe('success');
+    expect(r.tradeNo).toBe('T1');
+  });
+
+  it('closePayment is a no-op', async () => {
+    await expect(provider.closePayment('o1')).resolves.toBeUndefined();
+  });
 });
 
 describe('buildPaymentRegistry', () => {
@@ -69,8 +79,9 @@ describe('AlipayPaymentProvider / WechatPaymentProvider config gating', () => {
     await expect(wechat.createPayment()).rejects.toThrow('requires merchant credentials');
   });
 
-  it('throws clear non-implemented error when credentials present (local cannot verify)', async () => {
+  it('rejects malformed Alipay privateKey PEM as PAYMENT_CHANNEL_NOT_CONFIGURED', async () => {
     const alipay = new AlipayPaymentProvider({ appId: 'a', privateKey: 'k', publicKey: 'p', gateway: 'g' });
-    await expect(alipay.createPayment()).rejects.toThrow('use sandbox mode');
+    await expect(alipay.createPayment({ orderId: 'o1', amountCents: 100, subject: 's', notifyUrl: 'n' }))
+      .rejects.toThrow('not a valid PEM');
   });
 });

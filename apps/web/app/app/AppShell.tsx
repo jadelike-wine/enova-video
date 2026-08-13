@@ -1,11 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { DialogProvider } from '../../components/application/DialogProvider'
 import { SessionProvider, useSession } from '../../lib/auth'
 import { BRAND } from '../../lib/brand'
+
+// 模块级变量：持久化侧边栏滚动位置。
+// AppShell 在每个页面组件内独立渲染，路由切换会重新挂载整个 ShellInner，
+// 因此不能用组件 state 保存滚动位置。模块作用域在同一个 SPA 会话内不会销毁，
+// 跨路由切换（图片/视频/钱包/设置等）可稳定保持滚动位置；
+// 刷新浏览器后模块重新加载并回到默认顶部，符合预期。
 
 // 普通用户（个人端）导航项
 const userNavItems = [
@@ -52,10 +58,21 @@ function NavLink({ item, pathname, onTabClick }: NavItemProps) {
   )
 }
 
+// 模块级变量：保存侧边栏滚动位置，跨路由切换持续（见上方注释）
+let sidebarScrollTop = 0
+
 function ShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { loading, user, balance, logout } = useSession()
+  const navRef = useRef<HTMLElement>(null)
+
+  // 路由切换后 ShellInner 重新挂载，恢复侧边栏滚动位置。
+  // 依赖留空：仅在首次挂载（含每次切页后的重新挂载）时执行一次。
+  useEffect(() => {
+    const nav = navRef.current
+    if (nav) nav.scrollTop = sidebarScrollTop
+  }, [])
 
   // 平滑过渡：切换侧边栏 tab 时用 View Transitions API 做淡入淡出，
   // 避免整页“闪一下”。不支持该 API 的浏览器会自动退化为普通导航。
@@ -103,7 +120,13 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           </div>
         </Link>
 
-        <nav className="flex-1 p-4 overflow-y-auto">
+        <nav
+          ref={navRef}
+          onScroll={(e) => {
+            sidebarScrollTop = e.currentTarget.scrollTop
+          }}
+          className="flex-1 p-4 overflow-y-auto"
+        >
           {user?.role === 'ADMIN' ? (
             <>
               {/* 管理员后台 */}

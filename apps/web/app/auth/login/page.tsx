@@ -73,16 +73,16 @@ export default function LoginPage() {
   return (
     <div className="glass-card p-8">
       <div className="flex flex-col items-center mb-8">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-cyan-400 flex items-center justify-center text-2xl font-extrabold shadow-glow mb-4">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center text-2xl font-extrabold text-white mb-4">
           {BRAND.logoMarkZh}
         </div>
-        <h1 className="text-2xl font-extrabold">登录 {BRAND.nameZh}</h1>
-        <p className="text-sm text-white/50 mt-1">继续你的 AI 创作之旅</p>
+        <h1 className="text-2xl font-bold">登录 {BRAND.nameZh}</h1>
+        <p className="text-sm text-gray-500 mt-1">继续你的 AI 创作之旅</p>
       </div>
 
       <form onSubmit={submit} className="space-y-4">
         <div>
-          <label className="block text-sm text-white/70 mb-1.5">邮箱</label>
+          <label className="block text-sm text-gray-700 mb-1.5">邮箱</label>
           <input
             type="email"
             required
@@ -94,7 +94,7 @@ export default function LoginPage() {
           />
         </div>
         <div>
-          <label className="block text-sm text-white/70 mb-1.5">密码</label>
+          <label className="block text-sm text-gray-700 mb-1.5">密码</label>
           <input
             type="password"
             required
@@ -117,16 +117,16 @@ export default function LoginPage() {
           </div>
         )}
 
-        {error && <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-400/30 rounded-xl px-3 py-2">{error}</p>}
+        {error && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</p>}
 
         <button type="submit" disabled={busy} className="btn-primary w-full">
           {busy ? '登录中…' : '登录'}
         </button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-white/50">
+      <p className="mt-6 text-center text-sm text-gray-500">
         还没有账号？{' '}
-        <Link href="/auth/register" className="text-cyan-300 hover:underline">
+        <Link href="/auth/register" className="text-[#7C3AED] hover:underline">
           立即注册
         </Link>
       </p>

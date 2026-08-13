@@ -73,8 +73,8 @@ export default function AdminGenerationDetailView({ jobId }: { jobId: string }) 
     <div className="h-full overflow-y-auto">
       <div className="p-5 pb-2">
         <BackLink href="/app/admin/generations" label="返回任务列表" />
-        <h2 className="text-xl font-extrabold text-white mt-2">生成任务详情</h2>
-        <p className="text-sm text-white/50">{job.id}</p>
+        <h2 className="text-xl font-extrabold text-gray-900 mt-2">生成任务详情</h2>
+        <p className="text-sm text-gray-500">{job.id}</p>
       </div>
 
       <div className="p-5 space-y-5">
@@ -92,43 +92,43 @@ export default function AdminGenerationDetailView({ jobId }: { jobId: string }) 
           }
         >
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-            <div><p className="text-white/50">类型</p><p className="font-bold text-white">{job.type}</p></div>
-            <div><p className="text-white/50">Provider</p><p className="font-bold text-white">{job.provider ?? '—'}</p></div>
-            <div><p className="text-white/50">模型</p><p className="font-bold text-white">{job.model ?? '—'}</p></div>
-            <div><p className="text-white/50">状态</p><p className="font-bold text-white"><StatusBadge status={job.status} /></p></div>
-            <div><p className="text-white/50">尝试次数</p><p className="font-bold text-white">{job.attemptCount}</p></div>
-            <div><p className="text-white/50">Provider Job</p><p className="font-bold text-white">{job.providerJobId ?? '—'}</p></div>
-            <div><p className="text-white/50">成本状态</p><p className="font-bold text-white">{job.costStatus}</p></div>
-            <div><p className="text-white/50">错误</p><p className="font-bold text-rose-300">{job.errorCode ?? '—'}</p></div>
+            <div><p className="text-gray-500">类型</p><p className="font-bold text-gray-900">{job.type}</p></div>
+            <div><p className="text-gray-500">Provider</p><p className="font-bold text-gray-900">{job.provider ?? '—'}</p></div>
+            <div><p className="text-gray-500">模型</p><p className="font-bold text-gray-900">{job.model ?? '—'}</p></div>
+            <div><p className="text-gray-500">状态</p><p className="font-bold text-gray-900"><StatusBadge status={job.status} /></p></div>
+            <div><p className="text-gray-500">尝试次数</p><p className="font-bold text-gray-900">{job.attemptCount}</p></div>
+            <div><p className="text-gray-500">Provider Job</p><p className="font-bold text-gray-900">{job.providerJobId ?? '—'}</p></div>
+            <div><p className="text-gray-500">成本状态</p><p className="font-bold text-gray-900">{job.costStatus}</p></div>
+            <div><p className="text-gray-500">错误</p><p className="font-bold text-rose-600">{job.errorCode ?? '—'}</p></div>
           </div>
           {job.errorMessage && (
-            <p className="mt-3 text-sm text-rose-300">{job.errorMessage}</p>
+            <p className="mt-3 text-sm text-rose-600">{job.errorMessage}</p>
           )}
         </Card>
 
         <Card title="报价（冻结）">
           {job.quote ? (
-            <div className="text-sm text-white/70 space-y-1">
+            <div className="text-sm text-gray-700 space-y-1">
               <p>Pricing Version：{job.quote.pricingVersionId.slice(0, 8)}</p>
               <p>估算 Credits：{job.quote.estimatedCredits}</p>
               <p>估算成本：{fmtMicrousd(job.quote.estimatedCostMicrousd)}</p>
               <p>过期时间：{fmtDate(job.quote.expiresAt)}</p>
             </div>
           ) : (
-            <p className="text-white/40 text-sm">无冻结报价</p>
+            <p className="text-gray-400 text-sm">无冻结报价</p>
           )}
         </Card>
 
         <Card title="Credit 预留 / 结算">
           {job.reservation ? (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-              <div><p className="text-white/50">预留</p><p className="font-bold text-white">{job.reservation.reservedCredits}</p></div>
-              <div><p className="text-white/50">已结算</p><p className="font-bold text-cyan-300">{job.reservation.capturedCredits}</p></div>
-              <div><p className="text-white/50">已释放</p><p className="font-bold text-white">{job.reservation.releasedCredits}</p></div>
-              <div><p className="text-white/50">状态</p><p className="font-bold text-white"><StatusBadge status={job.reservation.status} /></p></div>
+              <div><p className="text-gray-500">预留</p><p className="font-bold text-gray-900">{job.reservation.reservedCredits}</p></div>
+              <div><p className="text-gray-500">已结算</p><p className="font-bold text-cyan-600">{job.reservation.capturedCredits}</p></div>
+              <div><p className="text-gray-500">已释放</p><p className="font-bold text-gray-900">{job.reservation.releasedCredits}</p></div>
+              <div><p className="text-gray-500">状态</p><p className="font-bold text-gray-900"><StatusBadge status={job.reservation.status} /></p></div>
             </div>
           ) : (
-            <p className="text-white/40 text-sm">无预留记录</p>
+            <p className="text-gray-400 text-sm">无预留记录</p>
           )}
         </Card>
 
@@ -140,14 +140,14 @@ export default function AdminGenerationDetailView({ jobId }: { jobId: string }) 
               {job.attempts.map((a) => (
                 <tr key={a.id}>
                   <td className="px-3 py-2">{a.attemptNo}</td>
-                  <td className="px-3 py-2 text-white/60">{a.provider}</td>
-                  <td className="px-3 py-2 text-white/60">{a.model}</td>
+                  <td className="px-3 py-2 text-gray-600">{a.provider}</td>
+                  <td className="px-3 py-2 text-gray-600">{a.model}</td>
                   <td className="px-3 py-2"><StatusBadge status={a.status} /></td>
-                  <td className="px-3 py-2 text-white/60">{a.providerJobId ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-600">{a.providerJobId ?? '—'}</td>
                   <td className="px-3 py-2">{fmtMicrousd(a.estimatedCostMicrousd)}</td>
                   <td className="px-3 py-2">{fmtMicrousd(a.reportedCostMicrousd)}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(a.startedAt)}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(a.endedAt)}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(a.startedAt)}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(a.endedAt)}</td>
                 </tr>
               ))}
             </DataTable>
@@ -164,9 +164,9 @@ export default function AdminGenerationDetailView({ jobId }: { jobId: string }) 
                   <td className="px-3 py-2">{o.eventType}</td>
                   <td className="px-3 py-2"><StatusBadge status={o.status} /></td>
                   <td className="px-3 py-2">{o.attempts}</td>
-                  <td className="px-3 py-2 text-rose-300">{o.lastError ?? '—'}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(o.dispatchedAt)}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(o.createdAt)}</td>
+                  <td className="px-3 py-2 text-rose-600">{o.lastError ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(o.dispatchedAt)}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(o.createdAt)}</td>
                 </tr>
               ))}
             </DataTable>
@@ -175,12 +175,12 @@ export default function AdminGenerationDetailView({ jobId }: { jobId: string }) 
 
         <Card title="Usage Event">
           {job.usageEvent ? (
-            <div className="text-sm text-white/70 space-y-1">
+            <div className="text-sm text-gray-700 space-y-1">
               <p>估算：{fmtMicrousd(job.usageEvent.estimatedCostMicrousd)} · 上报：{fmtMicrousd(job.usageEvent.reportedCostMicrousd)} · 最终：{fmtMicrousd(job.usageEvent.finalCostMicrousd)}</p>
               <p>成本状态：{job.usageEvent.costStatus} · 扣费 Credits：{job.usageEvent.creditsCharged}</p>
             </div>
           ) : (
-            <p className="text-white/40 text-sm">无用量事件</p>
+            <p className="text-gray-400 text-sm">无用量事件</p>
           )}
         </Card>
       </div>

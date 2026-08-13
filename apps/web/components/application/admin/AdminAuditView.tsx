@@ -41,15 +41,15 @@ export default function AdminAuditView() {
           ) : (
             <DataTable headers={['时间', '操作', '资源类型', '资源', '操作者', 'Before', 'After', 'IP']}>
               {logs.map((l) => (
-                <tr key={l.id} className="hover:bg-white/5">
-                  <td className="px-3 py-2 text-white/50 whitespace-nowrap">{fmtDate(l.createdAt)}</td>
-                  <td className="px-3 py-2 text-white/80">{l.action}</td>
-                  <td className="px-3 py-2 text-white/60">{l.resourceType}</td>
-                  <td className="px-3 py-2 text-white/50">{l.resourceId?.slice(0, 8) ?? '—'}</td>
-                  <td className="px-3 py-2 text-white/60">{l.actorUserId?.slice(0, 8) ?? '—'}</td>
-                  <td className="px-3 py-2 text-white/50 max-w-[200px] truncate">{l.before ? JSON.stringify(l.before) : '—'}</td>
-                  <td className="px-3 py-2 text-white/50 max-w-[200px] truncate">{l.after ? JSON.stringify(l.after) : '—'}</td>
-                  <td className="px-3 py-2 text-white/50">{l.ip ?? '—'}</td>
+                <tr key={l.id} className="hover:bg-gray-100">
+                  <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{fmtDate(l.createdAt)}</td>
+                  <td className="px-3 py-2 text-gray-800">{l.action}</td>
+                  <td className="px-3 py-2 text-gray-600">{l.resourceType}</td>
+                  <td className="px-3 py-2 text-gray-500">{l.resourceId?.slice(0, 8) ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-600">{l.actorUserId?.slice(0, 8) ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500 max-w-[200px] truncate">{l.before ? JSON.stringify(l.before) : '—'}</td>
+                  <td className="px-3 py-2 text-gray-500 max-w-[200px] truncate">{l.after ? JSON.stringify(l.after) : '—'}</td>
+                  <td className="px-3 py-2 text-gray-500">{l.ip ?? '—'}</td>
                 </tr>
               ))}
             </DataTable>
@@ -58,7 +58,7 @@ export default function AdminAuditView() {
             <button className="btn-ghost text-xs" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
               上一页
             </button>
-            <span className="text-xs text-white/40">offset {offset}</span>
+            <span className="text-xs text-gray-400">offset {offset}</span>
             <button className="btn-ghost text-xs" disabled={logs.length < PAGE_SIZE || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
               下一页
             </button>

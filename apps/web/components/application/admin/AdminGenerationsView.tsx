@@ -54,16 +54,16 @@ export default function AdminGenerationsView() {
               headers={['Job', '类型', 'Provider', '模型', '状态', '尝试', '最终成本', '错误', '创建时间', '操作']}
             >
               {jobs.map((j) => (
-                <tr key={j.id} className="hover:bg-white/5">
-                  <td className="px-3 py-2 text-white/60">{j.id.slice(0, 8)}</td>
+                <tr key={j.id} className="hover:bg-gray-100">
+                  <td className="px-3 py-2 text-gray-600">{j.id.slice(0, 8)}</td>
                   <td className="px-3 py-2">{j.type}</td>
-                  <td className="px-3 py-2 text-white/60">{j.provider ?? '—'}</td>
-                  <td className="px-3 py-2 text-white/60">{j.model ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-600">{j.provider ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-600">{j.model ?? '—'}</td>
                   <td className="px-3 py-2"><StatusBadge status={j.status} /></td>
                   <td className="px-3 py-2">{j.attemptCount}</td>
-                  <td className="px-3 py-2 text-white/60">{j.finalCostMicrousd ? `$${(j.finalCostMicrousd / 1_000_000).toFixed(4)}` : '—'}</td>
-                  <td className="px-3 py-2 text-rose-300">{j.errorCode ?? '—'}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(j.createdAt)}</td>
+                  <td className="px-3 py-2 text-gray-600">{j.finalCostMicrousd ? `$${(j.finalCostMicrousd / 1_000_000).toFixed(4)}` : '—'}</td>
+                  <td className="px-3 py-2 text-rose-600">{j.errorCode ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(j.createdAt)}</td>
                   <td className="px-3 py-2">
                     <AdminLink href={`/app/admin/generations/${j.id}`}>详情</AdminLink>
                   </td>
@@ -75,7 +75,7 @@ export default function AdminGenerationsView() {
             <button className="btn-ghost text-xs" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
               上一页
             </button>
-            <span className="text-xs text-white/40">offset {offset}</span>
+            <span className="text-xs text-gray-400">offset {offset}</span>
             <button className="btn-ghost text-xs" disabled={jobs.length < PAGE_SIZE || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
               下一页
             </button>

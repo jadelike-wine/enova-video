@@ -39,7 +39,7 @@ function formatAmount(amount: number): string {
 }
 
 function amountClass(amount: number): string {
-  return (Number(amount) || 0) >= 0 ? 'text-emerald-300' : 'text-rose-300'
+  return (Number(amount) || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'
 }
 
 function formatTime(iso?: string): string {
@@ -134,12 +134,12 @@ export default function WalletView() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <header className="flex-shrink-0 px-8 py-6 border-b border-white/10 flex items-center justify-between">
+      <header className="flex-shrink-0 px-8 py-6 border-b border-gray-200 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold bg-gradient-to-r from-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
             钱包
           </h2>
-          <p className="text-sm text-white/50 mt-1">充值 Credits，用于对话与图片/视频生成</p>
+          <p className="text-sm text-gray-500 mt-1">充值 Credits，用于对话与图片/视频生成</p>
         </div>
         <Link href="/app/settings" className="btn-secondary text-sm">
           账户设置
@@ -150,31 +150,31 @@ export default function WalletView() {
         {/* 余额总览 */}
         <section className="glass-card">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-white">当前余额</h3>
+            <h3 className="text-lg font-bold text-gray-900">当前余额</h3>
             {!loading && (
-              <span className="text-xs text-white/40">{user?.email ?? ''}</span>
+              <span className="text-xs text-gray-400">{user?.email ?? ''}</span>
             )}
           </div>
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
-              <p className="text-xs text-white/40 mb-1">可用余额</p>
-              <p className="text-3xl font-extrabold text-cyan-300">
+            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
+              <p className="text-xs text-gray-400 mb-1">可用余额</p>
+              <p className="text-3xl font-extrabold text-cyan-600">
                 {balance.toLocaleString()}
-                <span className="text-sm font-normal text-white/50 ml-1">Credits</span>
+                <span className="text-sm font-normal text-gray-500 ml-1">Credits</span>
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
-              <p className="text-xs text-white/40 mb-1">已预留（进行中任务）</p>
-              <p className="text-3xl font-extrabold text-amber-300">
+            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
+              <p className="text-xs text-gray-400 mb-1">已预留（进行中任务）</p>
+              <p className="text-3xl font-extrabold text-amber-600">
                 {reservedBalance.toLocaleString()}
-                <span className="text-sm font-normal text-white/50 ml-1">Credits</span>
+                <span className="text-sm font-normal text-gray-500 ml-1">Credits</span>
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-5">
-              <p className="text-xs text-white/40 mb-1">总余额</p>
-              <p className="text-3xl font-extrabold text-white">
+            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
+              <p className="text-xs text-gray-400 mb-1">总余额</p>
+              <p className="text-3xl font-extrabold text-gray-900">
                 {(balance + reservedBalance).toLocaleString()}
-                <span className="text-sm font-normal text-white/50 ml-1">Credits</span>
+                <span className="text-sm font-normal text-gray-500 ml-1">Credits</span>
               </p>
             </div>
           </div>
@@ -182,8 +182,8 @@ export default function WalletView() {
 
         {/* 充值 */}
         <section className="glass-card">
-          <h3 className="text-lg font-bold text-white mb-1">充值</h3>
-          <p className="text-sm text-white/50 mb-4">
+          <h3 className="text-lg font-bold text-gray-900 mb-1">充值</h3>
+          <p className="text-sm text-gray-500 mb-4">
             选择或输入充值金额（人民币），创建订单后完成支付，Credits 即时到账。
           </p>
 
@@ -200,8 +200,8 @@ export default function WalletView() {
                   }}
                   className={`px-5 py-2.5 rounded-2xl text-sm font-medium border transition-all duration-200 ${
                     active
-                      ? 'border-fuchsia-400/50 bg-gradient-to-r from-fuchsia-500/25 to-cyan-400/15 text-white shadow-glow-cyan'
-                      : 'border-white/10 text-white/50 hover:border-white/25 hover:bg-white/5'
+                      ? 'border-fuchsia-400/50 bg-gradient-to-r from-fuchsia-500/25 to-cyan-400/15 text-white'
+                      : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-100'
                   }`}
                 >
                   ¥{cny}
@@ -229,11 +229,11 @@ export default function WalletView() {
           </div>
 
           {rechargeResult && (
-            <div className="rounded-2xl border border-white/15 bg-black/20 p-5 space-y-4">
-              <p className="text-sm text-white/80">
-                订单 <code className="text-cyan-300/90">{rechargeResult.orderId.slice(0, 8)}</code>{' '}
+            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5 space-y-4">
+              <p className="text-sm text-gray-800">
+                订单 <code className="text-cyan-600">{rechargeResult.orderId.slice(0, 8)}</code>{' '}
                 已创建，到账{' '}
-                <strong className="text-cyan-300">
+                <strong className="text-cyan-600">
                   +{Number(rechargeResult.credits).toLocaleString()} Credits
                 </strong>
               </p>
@@ -249,11 +249,11 @@ export default function WalletView() {
               )}
               {rechargeResult.qrCode && (
                 <div>
-                  <p className="text-xs text-white/40 mb-2">扫码支付：</p>
+                  <p className="text-xs text-gray-400 mb-2">扫码支付：</p>
                   <img
                     src={rechargeResult.qrCode}
                     alt="支付二维码"
-                    className="w-40 h-40 rounded-xl border border-white/15 bg-white"
+                    className="w-40 h-40 rounded-xl border border-gray-200 bg-white"
                   />
                 </div>
               )}
@@ -271,7 +271,7 @@ export default function WalletView() {
         {/* 交易流水 */}
         <section className="glass-card">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-white">交易流水</h3>
+            <h3 className="text-lg font-bold text-gray-900">交易流水</h3>
             <button
               className="btn-ghost text-xs"
               onClick={() => void loadLedger()}
@@ -282,11 +282,11 @@ export default function WalletView() {
           </div>
 
           {ledgerLoading && (
-            <div className="text-center py-12 text-white/40">加载中…</div>
+            <div className="text-center py-12 text-gray-400">加载中…</div>
           )}
 
           {!ledgerLoading && ledger.length === 0 && (
-            <div className="text-center py-12 text-white/40">暂无交易记录</div>
+            <div className="text-center py-12 text-gray-400">暂无交易记录</div>
           )}
 
           {!ledgerLoading && ledger.length > 0 && (
@@ -296,7 +296,7 @@ export default function WalletView() {
                 return (
                   <div
                     key={entry.id}
-                    className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3"
+                    className="flex items-center justify-between gap-4 rounded-2xl border border-gray-200 bg-white/[0.03] px-4 py-3"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -308,18 +308,18 @@ export default function WalletView() {
                           {ledgerTypeLabel(entry.type)}
                         </span>
                         {entry.description && (
-                          <span className="text-xs text-white/40 truncate">
+                          <span className="text-xs text-gray-400 truncate">
                             {entry.description}
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-white/30 mt-1">{formatTime(entry.createdAt)}</p>
+                      <p className="text-xs text-gray-400 mt-1">{formatTime(entry.createdAt)}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <p className={`font-bold ${amountClass(amount)}`}>
                         {formatAmount(amount)}
                       </p>
-                      <p className="text-xs text-white/40">
+                      <p className="text-xs text-gray-400">
                         余额 {Number(entry.balanceAfter || 0).toLocaleString()}
                       </p>
                     </div>

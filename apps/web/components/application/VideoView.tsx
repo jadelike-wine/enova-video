@@ -18,6 +18,7 @@ import {
   VIDEO_FRAME_PRESETS,
   VIDEO_RESOLUTION_PRESETS,
   DEFAULT_VIDEO_MODEL,
+  modelDisplayName,
 } from '../../lib/models'
 
 /** 新架构统一状态：PENDING/QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELED */
@@ -86,12 +87,12 @@ function modeLabel(mode?: string): string {
 
 function modeTagClass(mode?: string): string {
   const map: Record<string, string> = {
-    text2video: 'bg-cyan-400/15 text-cyan-200 border-cyan-400/25',
-    img2video: 'bg-violet-400/15 text-violet-200 border-violet-400/25',
-    multi_img: 'bg-orange-400/15 text-orange-200 border-orange-400/25',
-    keyframes: 'bg-pink-400/15 text-pink-200 border-pink-400/25',
+    text2video: 'bg-cyan-400/15 text-cyan-600 border-cyan-400/25',
+    img2video: 'bg-violet-400/15 text-violet-600 border-violet-400/25',
+    multi_img: 'bg-orange-400/15 text-orange-600 border-orange-400/25',
+    keyframes: 'bg-pink-400/15 text-pink-600 border-pink-400/25',
   }
-  return map[mode || ''] || 'bg-white/10 text-white/60 border-white/15'
+  return map[mode || ''] || 'bg-gray-100 text-gray-600 border-gray-200'
 }
 
 /** 将后端 Generation 归一化为视图所需的 VideoTask。 */
@@ -452,15 +453,15 @@ export default function VideoView() {
   return (
     <div className="flex h-full">
       {/* Task list sidebar */}
-      <div className="w-96 border-r border-white/10 flex flex-col bg-black/10">
-        <div className="p-4 border-b border-white/10">
+      <div className="w-96 border-r border-gray-200 flex flex-col bg-gray-50">
+        <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="font-bold text-white">任务列表</h3>
+            <h3 className="font-bold text-gray-900">任务列表</h3>
             {activeTasks.length > 0 && (
               <span className="badge-progress">{activeTasks.length} 进行中</span>
             )}
           </div>
-          <p className="text-xs text-white/40">提交后自动轮询进度</p>
+          <p className="text-xs text-gray-400">提交后自动轮询进度</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -473,25 +474,25 @@ export default function VideoView() {
                 onClick={() => selectTask(task)}
                 className={`group p-4 rounded-2xl cursor-pointer transition-all duration-200 border ${
                   isSelected
-                    ? 'bg-gradient-to-r from-fuchsia-500/20 to-cyan-400/10 border-white/25 shadow-glow-cyan'
-                    : 'border-white/15 hover:bg-white/10 hover:border-white/20'
+                    ? 'bg-gradient-to-r from-fuchsia-500/20 to-cyan-400/10 border-gray-300'
+                    : 'border-gray-200 hover:bg-gray-100 hover:border-gray-300'
                 }`}
               >
                 <div className="flex gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="text-xs text-white/40 font-mono">
+                      <span className="text-xs text-gray-400 font-mono">
                         #{task._optimistic ? '...' : String(task.id).slice(0, 8)}
                       </span>
                       <span className={statusBadgeClass(task.status)}>{statusLabel(task.status)}</span>
                     </div>
-                    <p className="text-sm text-white/90 truncate font-medium">{task.prompt}</p>
+                    <p className="text-sm text-gray-800 truncate font-medium">{task.prompt}</p>
                     {task.negative_prompt && (
-                      <p className="text-xs text-white/40 truncate mt-0.5">
+                      <p className="text-xs text-gray-400 truncate mt-0.5">
                         负向: {task.negative_prompt}
                       </p>
                     )}
-                    <p className="text-[11px] text-white/35 mt-1 font-mono">{formatTaskMeta(task)}</p>
+                    <p className="text-[11px] text-gray-500 mt-1 font-mono">{formatTaskMeta(task)}</p>
                     <div className="mt-1">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${modeTagClass(
@@ -509,7 +510,7 @@ export default function VideoView() {
                             key={i}
                             src={url}
                             alt={inputImagesOf(task).length > 1 ? `参考图 ${i + 1}` : '参考图'}
-                            className="w-10 h-10 object-cover rounded-lg border border-white/15"
+                            className="w-10 h-10 object-cover rounded-lg border border-gray-200"
                           />
                         ))}
                       </div>
@@ -520,12 +521,12 @@ export default function VideoView() {
                         <div className="progress-bar">
                           <div className="progress-fill animate-pulse" style={{ width: '40%' }} />
                         </div>
-                        <p className="text-xs text-white/40 mt-1.5">{statusLabel(task.status)}...</p>
+                        <p className="text-xs text-gray-400 mt-1.5">{statusLabel(task.status)}...</p>
                       </div>
                     )}
 
                     {task.status === 'FAILED' && (
-                      <p className="text-xs text-rose-300/80 mt-2 truncate">{taskErrorMessage(task)}</p>
+                      <p className="text-xs text-rose-600 mt-2 truncate">{taskErrorMessage(task)}</p>
                     )}
                   </div>
                 </div>
@@ -534,14 +535,14 @@ export default function VideoView() {
           })}
 
           {!history.length && historyLoading && (
-            <div className="flex flex-col items-center justify-center py-16 text-white/40">
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <div className="w-6 h-6 border-2 border-fuchsia-400/30 border-t-fuchsia-400 rounded-full animate-spin" />
               <p className="text-xs mt-3">加载中...</p>
             </div>
           )}
 
           {!history.length && !historyLoading && (
-            <div className="flex flex-col items-center justify-center py-16 text-white/40">
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <div className="text-4xl mb-3">🎬</div>
               <p className="text-sm">暂无任务</p>
               <p className="text-xs mt-1">填写参数后点击生成</p>
@@ -555,17 +556,17 @@ export default function VideoView() {
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-5xl mx-auto space-y-6">
             <div>
-              <h2 className="text-2xl font-extrabold bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-orange-300 bg-clip-text text-transparent">
+              <h2 className="text-2xl font-extrabold bg-gradient-to-r from-cyan-600 via-fuchsia-600 to-orange-600 bg-clip-text text-transparent">
                 视频生成
               </h2>
-              <p className="text-white/50 text-sm mt-1">文生视频 · 图生视频 · 多图视频 · 关键帧动画</p>
+              <p className="text-gray-500 text-sm mt-1">文生视频 · 图生视频 · 多图视频 · 关键帧动画</p>
             </div>
 
             {!keyStatusLoading && !hasActiveKey && (
               <div className="glass-card border border-amber-400/30 bg-amber-400/10 py-3 px-4">
-                <p className="text-sm text-amber-100/90">
+                <p className="text-sm text-amber-600">
                   余额不足，无法生成视频。请先前往
-                  <Link href="/app/wallet" className="text-cyan-300 hover:underline">
+                  <Link href="/app/wallet" className="text-cyan-600 hover:underline">
                     {' '}钱包
                   </Link>
                   充值后再试。
@@ -577,7 +578,7 @@ export default function VideoView() {
               {/* Form */}
               <div ref={formCardRef} className="glass-card space-y-4">
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block font-medium">生成模式</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">生成模式</label>
                   <div className="grid grid-cols-2 gap-2">
                     {VIDEO_MODES.map((m) => (
                       <button
@@ -585,8 +586,8 @@ export default function VideoView() {
                         onClick={() => selectMode(m.id)}
                         className={`px-3 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 border ${
                           form.mode === m.id
-                            ? 'border-fuchsia-400/50 bg-gradient-to-r from-fuchsia-500/25 to-cyan-400/15 text-white shadow-glow-cyan'
-                            : 'border-white/10 text-white/50 hover:border-white/25 hover:bg-white/5'
+                            ? 'border-fuchsia-400/50 bg-gradient-to-r from-fuchsia-500/25 to-cyan-400/15 text-white'
+                            : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
                         }`}
                       >
                         {m.name}
@@ -596,7 +597,7 @@ export default function VideoView() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block font-medium">模型</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">模型</label>
                   <select
                     value={form.model}
                     onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))}
@@ -612,7 +613,7 @@ export default function VideoView() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block font-medium">提示词</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">提示词</label>
                   <textarea
                     value={form.prompt}
                     onChange={(e) => setForm((prev) => ({ ...prev, prompt: e.target.value }))}
@@ -623,7 +624,7 @@ export default function VideoView() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block font-medium">
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">
                     负向提示词（可选）
                   </label>
                   <input
@@ -638,7 +639,7 @@ export default function VideoView() {
 
                 {form.mode !== 'text2video' && (
                   <div>
-                    <label className="text-sm text-white/60 mb-2 block font-medium">
+                    <label className="text-sm text-gray-600 mb-2 block font-medium">
                       {form.mode === 'img2video' ? '输入图片' : '参考图片'}
                     </label>
                     <div className="flex flex-wrap gap-2 mb-2">
@@ -647,7 +648,7 @@ export default function VideoView() {
                           <img
                             src={url}
                             alt="参考图"
-                            className="w-20 h-20 object-cover rounded-2xl border border-white/20"
+                            className="w-20 h-20 object-cover rounded-2xl border border-gray-200"
                           />
                           <button
                             onClick={() => removeImage(i)}
@@ -672,7 +673,7 @@ export default function VideoView() {
                 )}
 
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block font-medium">分辨率</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">分辨率</label>
                   <select
                     value={selectedResolutionId}
                     onChange={(e) => {
@@ -700,7 +701,7 @@ export default function VideoView() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block font-medium">视频时长</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">视频时长</label>
                   <div className="flex flex-wrap gap-2">
                     {VIDEO_FRAME_PRESETS.map((p) => (
                       <button
@@ -708,8 +709,8 @@ export default function VideoView() {
                         onClick={() => applyPreset(p)}
                         className={`px-4 py-1.5 rounded-full text-xs border transition-all duration-200 ${
                           form.num_frames === p.numFrames
-                            ? 'border-fuchsia-400/50 text-fuchsia-200 bg-fuchsia-500/20'
-                            : 'border-white/15 text-white/50 hover:border-white/30'
+                            ? 'border-fuchsia-400/50 text-fuchsia-600 bg-fuchsia-500/20'
+                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
                         }`}
                       >
                         {p.label}
@@ -720,7 +721,7 @@ export default function VideoView() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-sm text-white/60 mb-2 block">帧数</label>
+                    <label className="text-sm text-gray-600 mb-2 block">帧数</label>
                     <input
                       value={form.num_frames}
                       onChange={(e) =>
@@ -734,7 +735,7 @@ export default function VideoView() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm text-white/60 mb-2 block">帧率</label>
+                    <label className="text-sm text-gray-600 mb-2 block">帧率</label>
                     <input
                       value={form.frame_rate}
                       onChange={(e) =>
@@ -750,7 +751,7 @@ export default function VideoView() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block">随机种子（可选）</label>
+                  <label className="text-sm text-gray-600 mb-2 block">随机种子（可选）</label>
                   <input
                     value={form.seed ?? ''}
                     onChange={(e) =>
@@ -766,7 +767,7 @@ export default function VideoView() {
                 </div>
 
                 {error && (
-                  <p className="text-rose-300 text-sm glass px-4 py-2 rounded-2xl border border-rose-400/30">
+                  <p className="text-rose-600 text-sm glass px-4 py-2 rounded-2xl border border-rose-400/30">
                     {error}
                   </p>
                 )}
@@ -781,7 +782,7 @@ export default function VideoView() {
                 {selectedTask ? (
                   <div className="flex-1 flex flex-col">
                     <div className="flex items-center justify-between mb-4">
-                      <span className="font-bold text-white">
+                      <span className="font-bold text-gray-900">
                         {selectedTask._optimistic ? '新任务' : `任务 #${String(selectedTask.id).slice(0, 8)}`}
                       </span>
                       <span className={statusBadgeClass(selectedTask.status)}>
@@ -794,7 +795,7 @@ export default function VideoView() {
                         <div className="progress-bar h-3">
                           <div className="progress-fill animate-pulse" style={{ width: '40%' }} />
                         </div>
-                        <p className="text-sm text-white/50 mt-2">
+                        <p className="text-sm text-gray-500 mt-2">
                           {statusLabel(selectedTask.status)}，请耐心等待（可能需要数分钟）
                         </p>
                       </div>
@@ -805,22 +806,22 @@ export default function VideoView() {
                         <video
                           src={displayUrl(selectedTask)}
                           controls
-                          className="w-full rounded-2xl border border-white/15 shadow-glow"
+                          className="w-full rounded-2xl border border-gray-200"
                         />
-                        <div className="mt-3 text-xs text-white/50 flex flex-wrap gap-4">
+                        <div className="mt-3 text-xs text-gray-500 flex flex-wrap gap-4">
                           <span>{formatResolution(selectedTask)}</span>
                           <span>{formatDuration(selectedTask)}</span>
                         </div>
                         {inputImagesOf(selectedTask).length > 0 && (
                           <div className="mt-4">
-                            <p className="text-xs text-white/50 mb-2 font-medium">参考图</p>
+                            <p className="text-xs text-gray-500 mb-2 font-medium">参考图</p>
                             <div className="flex flex-wrap gap-2">
                               {inputImagesOf(selectedTask).map((url, i) => (
                                 <img
                                   key={i}
                                   src={url}
                                   alt="参考图"
-                                  className="w-20 h-20 object-cover rounded-xl border border-white/20"
+                                  className="w-20 h-20 object-cover rounded-xl border border-gray-200"
                                 />
                               ))}
                             </div>
@@ -830,17 +831,17 @@ export default function VideoView() {
                     ) : ACTIVE_STATUSES.includes(selectedTask.status) ? (
                       <div className="flex-1 flex flex-col items-center justify-center">
                         <div className="w-16 h-16 rounded-full border-4 border-fuchsia-400/30 border-t-fuchsia-400 animate-spin" />
-                        <p className="text-white/50 mt-5 text-sm">视频生成中，可能需要数分钟</p>
+                        <p className="text-gray-500 mt-5 text-sm">视频生成中，可能需要数分钟</p>
                         {inputImagesOf(selectedTask).length > 0 && (
                           <div className="mt-4">
-                            <p className="text-xs text-white/50 mb-2 font-medium">参考图</p>
+                            <p className="text-xs text-gray-500 mb-2 font-medium">参考图</p>
                             <div className="flex flex-wrap gap-2">
                               {inputImagesOf(selectedTask).map((url, i) => (
                                 <img
                                   key={i}
                                   src={url}
                                   alt="参考图"
-                                  className="w-20 h-20 object-cover rounded-xl border border-white/20"
+                                  className="w-20 h-20 object-cover rounded-xl border border-gray-200"
                                 />
                               ))}
                             </div>
@@ -851,7 +852,7 @@ export default function VideoView() {
 
                     {selectedTask.status === 'FAILED' || selectedTask.status === 'CANCELED' ? (
                       <div className="glass px-4 py-3 rounded-2xl border border-rose-400/30 mt-2">
-                        <p className="text-rose-300 text-sm whitespace-pre-wrap break-words">
+                        <p className="text-rose-600 text-sm whitespace-pre-wrap break-words">
                           {statusLabel(selectedTask.status)}
                           {taskErrorMessage(selectedTask) ? `：${taskErrorMessage(selectedTask)}` : ''}
                         </p>
@@ -860,7 +861,7 @@ export default function VideoView() {
 
                     <div className="mt-4 space-y-3">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs text-white/50 font-medium">生成参数</p>
+                        <p className="text-xs text-gray-500 font-medium">生成参数</p>
                         {!selectedTask._optimistic && (
                           <button
                             onClick={() => fillFormFromTask(selectedTask)}
@@ -870,61 +871,61 @@ export default function VideoView() {
                           </button>
                         )}
                       </div>
-                      <div className="glass px-4 py-3 rounded-2xl border border-white/10 space-y-2 text-sm">
+                      <div className="glass px-4 py-3 rounded-2xl border border-gray-200 space-y-2 text-sm">
                         <div>
-                          <span className="text-white/40 text-xs">正向提示词</span>
-                          <p className="text-white/80 mt-0.5 leading-relaxed">
+                          <span className="text-gray-400 text-xs">正向提示词</span>
+                          <p className="text-gray-800 mt-0.5 leading-relaxed">
                             {selectedTask.prompt || '—'}
                           </p>
                         </div>
                         {selectedTask.negative_prompt && (
                           <div>
-                            <span className="text-white/40 text-xs">负向提示词</span>
-                            <p className="text-white/60 mt-0.5 leading-relaxed">
+                            <span className="text-gray-400 text-xs">负向提示词</span>
+                            <p className="text-gray-600 mt-0.5 leading-relaxed">
                               {selectedTask.negative_prompt}
                             </p>
                           </div>
                         )}
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs pt-1">
                           <div>
-                            <span className="text-white/40">分辨率</span>{' '}
-                            <span className="text-white/70">{formatResolution(selectedTask)}</span>
+                            <span className="text-gray-400">分辨率</span>{' '}
+                            <span className="text-gray-700">{formatResolution(selectedTask)}</span>
                           </div>
                           <div>
-                            <span className="text-white/40">时长</span>{' '}
-                            <span className="text-white/70">{formatDuration(selectedTask)}</span>
+                            <span className="text-gray-400">时长</span>{' '}
+                            <span className="text-gray-700">{formatDuration(selectedTask)}</span>
                           </div>
                           <div>
-                            <span className="text-white/40">帧数</span>{' '}
-                            <span className="text-white/70">{selectedTask.num_frames ?? '—'}</span>
+                            <span className="text-gray-400">帧数</span>{' '}
+                            <span className="text-gray-700">{selectedTask.num_frames ?? '—'}</span>
                           </div>
                           <div>
-                            <span className="text-white/40">帧率</span>{' '}
-                            <span className="text-white/70">
+                            <span className="text-gray-400">帧率</span>{' '}
+                            <span className="text-gray-700">
                               {selectedTask.frame_rate != null
                                 ? `${selectedTask.frame_rate} fps`
                                 : '—'}
                             </span>
                           </div>
                           <div className="col-span-2">
-                            <span className="text-white/40">随机种子</span>{' '}
-                            <span className="text-white/70 font-mono">
+                            <span className="text-gray-400">随机种子</span>{' '}
+                            <span className="text-gray-700 font-mono">
                               {selectedTask.seed != null && selectedTask.seed !== ''
                                 ? selectedTask.seed
                                 : '随机'}
                             </span>
                           </div>
                           <div className="col-span-2">
-                            <span className="text-white/40">模型</span>{' '}
-                            <span className="text-white/70">{selectedTask.model || '—'}</span>
+                            <span className="text-gray-400">模型</span>{' '}
+                            <span className="text-gray-700">{modelDisplayName(selectedTask.model)}</span>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-white/40">
-                    <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-cyan-400/30 to-fuchsia-500/30 flex items-center justify-center text-4xl mb-4 border border-white/20 animate-float">
+                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                    <div className="w-20 h-20 rounded-3xl bg-cyan-100 flex items-center justify-center text-4xl mb-4 border border-gray-200">
                       🎬
                     </div>
                     <p>选择左侧任务或创建新任务</p>

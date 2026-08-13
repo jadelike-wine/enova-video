@@ -175,7 +175,7 @@ export default function AdminSettingsView() {
   if (user && user.role !== 'ADMIN') {
     return (
       <div className="h-full flex items-center justify-center">
-        <p className="text-white/50">仅管理员可访问系统配置</p>
+        <p className="text-gray-500">仅管理员可访问系统配置</p>
       </div>
     )
   }
@@ -200,12 +200,12 @@ export default function AdminSettingsView() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <header className="flex-shrink-0 px-8 py-6 border-b border-white/10 flex items-center justify-between">
+      <header className="flex-shrink-0 px-8 py-6 border-b border-gray-200 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold bg-gradient-to-r from-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
             系统配置
           </h2>
-          <p className="text-sm text-white/50 mt-1">
+          <p className="text-sm text-gray-500 mt-1">
             动态配置立即生效，无需重启服务；未修改的项回退到环境变量/默认值
           </p>
         </div>
@@ -215,10 +215,10 @@ export default function AdminSettingsView() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-8 space-y-8">
-        {loading && <div className="text-center py-16 text-white/40">加载中…</div>}
+        {loading && <div className="text-center py-16 text-gray-400">加载中…</div>}
 
         {!loading && settings.length === 0 && (
-          <div className="text-center py-16 text-white/40">暂无配置项</div>
+          <div className="text-center py-16 text-gray-400">暂无配置项</div>
         )}
 
         {!loading &&
@@ -229,9 +229,9 @@ export default function AdminSettingsView() {
               <section key={group} className="glass-card">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-bold text-white">{groupLabel(group)}</h3>
+                    <h3 className="text-lg font-bold text-gray-900">{groupLabel(group)}</h3>
                     {isSecurityGroup && (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30">
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-red-500/20 text-red-600 border border-red-500/30">
                         高风险
                       </span>
                     )}
@@ -256,55 +256,55 @@ export default function AdminSettingsView() {
                     return (
                       <div
                         key={setting.key}
-                        className={`rounded-2xl border bg-black/20 p-4 ${
-                          isSecurityGroup ? 'border-red-500/20' : 'border-white/10'
+                        className={`rounded-2xl border bg-gray-100 p-4 ${
+                          isSecurityGroup ? 'border-red-200' : 'border-gray-200'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <p className="text-white/90 font-medium">{setting.label}</p>
+                              <p className="text-gray-800 font-medium">{setting.label}</p>
                               {setting.persisted && (
                                 <span className="badge text-[10px]">已覆盖</span>
                               )}
                               {setting.isSecret && setting.configured && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-300">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-600">
                                   已配置
                                 </span>
                               )}
                               {setting.isSecret && !setting.configured && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600">
                                   未配置
                                 </span>
                               )}
                               {setting.restartRequired && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-600">
                                   需重启
                                 </span>
                               )}
                               {setting.permission === 'settings.security_write' && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-300">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-600">
                                   需超管
                                 </span>
                               )}
                             </div>
                             {setting.description && (
-                              <p className="text-xs text-white/40 mt-0.5">{setting.description}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">{setting.description}</p>
                             )}
                             {setting.isSecret && (
-                              <p className="text-[10px] text-amber-300/70 mt-1">
+                              <p className="text-[10px] text-amber-600 mt-1">
                                 {setting.configured
                                   ? '已加密存储，留空保持不变，输入新值覆盖'
                                   : '敏感字段，AES-GCM 加密存储'}
                               </p>
                             )}
                             {isSecurityGroup && (
-                              <p className="text-[10px] text-red-300/70 mt-1">
+                              <p className="text-[10px] text-red-600 mt-1">
                                 ⚠ 降低安全边界可能引入 SSRF/内网访问风险
                               </p>
                             )}
                           </div>
-                          <code className="text-[10px] text-white/30 flex-shrink-0 mt-1">
+                          <code className="text-[10px] text-gray-400 flex-shrink-0 mt-1">
                             {setting.key}
                           </code>
                         </div>
@@ -320,7 +320,7 @@ export default function AdminSettingsView() {
                                 }
                                 className="w-4 h-4 rounded"
                               />
-                              <span className="text-sm text-white/60">
+                              <span className="text-sm text-gray-600">
                                 {drafts[setting.key] === 'true' ? '启用' : '禁用'}
                               </span>
                             </label>
@@ -365,7 +365,7 @@ export default function AdminSettingsView() {
                             </button>
                             {setting.isSecret && setting.configured && (
                               <button
-                                className="btn-secondary text-sm text-red-300 disabled:opacity-50"
+                                className="btn-secondary text-sm text-red-600 disabled:opacity-50"
                                 disabled={saving[setting.key]}
                                 onClick={() => void handleClearSecret(setting.key)}
                                 title="清除 Secret"
@@ -402,28 +402,28 @@ export default function AdminSettingsView() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-white">变更历史：{historyFor}</h3>
+              <h3 className="text-lg font-bold text-gray-900">变更历史：{historyFor}</h3>
               <button className="btn-secondary text-sm" onClick={() => setHistoryFor(null)}>
                 关闭
               </button>
             </div>
             {historyLoading ? (
-              <div className="text-center py-8 text-white/40">加载中…</div>
+              <div className="text-center py-8 text-gray-400">加载中…</div>
             ) : history.length === 0 ? (
-              <div className="text-center py-8 text-white/40">暂无变更记录</div>
+              <div className="text-center py-8 text-gray-400">暂无变更记录</div>
             ) : (
               <div className="space-y-2">
                 {history.map((h) => (
-                  <div key={h.id} className="rounded-lg border border-white/10 bg-black/20 p-3 text-sm">
+                  <div key={h.id} className="rounded-lg border border-gray-200 bg-gray-100 p-3 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="text-white/80">v{h.version}</span>
-                      <span className="text-[10px] text-white/40">{new Date(h.createdAt).toLocaleString()}</span>
+                      <span className="text-gray-800">v{h.version}</span>
+                      <span className="text-[10px] text-gray-400">{new Date(h.createdAt).toLocaleString()}</span>
                     </div>
-                    <div className="text-xs text-white/50 mt-1">
+                    <div className="text-xs text-gray-500 mt-1">
                       {h.reason && <span>原因：{h.reason}</span>}
                       {h.updatedBy && <span> 操作者：{h.updatedBy}</span>}
                     </div>
-                    <div className="text-xs text-white/40 mt-0.5 font-mono">
+                    <div className="text-xs text-gray-400 mt-0.5 font-mono">
                       {h.before ? '[REDACTED]' : '(空)'} → {h.after ? '[REDACTED]' : '(空)'}
                     </div>
                   </div>

@@ -8,120 +8,128 @@
   }
 
   body {
-    @apply antialiased text-white mesh-bg min-h-screen;
+    @apply antialiased text-gray-900 min-h-screen;
+    background-color: #f7f7f8;
     overflow-x: hidden;
   }
 }
 
 @layer components {
+  /* 卡片容器：白色卡片 */
   .glass {
-    @apply backdrop-blur-xl bg-white/[0.08] border border-white/[0.15] shadow-glass;
+    @apply bg-white border border-gray-200;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
   }
 
   .glass-strong {
-    @apply backdrop-blur-2xl bg-white/[0.12] border border-white/[0.2] shadow-glass;
+    @apply bg-white border border-gray-200;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
   }
 
   .glass-card {
-    @apply glass rounded-3xl p-5;
+    @apply bg-white rounded-2xl p-5 border border-gray-200;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
   }
 
   .glass-sidebar {
-    @apply backdrop-blur-2xl bg-black/20 border border-white/[0.1];
+    @apply bg-white border border-gray-200;
   }
 
+  /* 按钮体系 */
   .btn-primary {
-    @apply px-5 py-2.5 rounded-2xl font-semibold text-white transition-all duration-300
-      bg-gradient-to-r from-fuchsia-500 via-violet-500 to-cyan-400
-      hover:shadow-glow hover:scale-[1.02] active:scale-[0.98]
-      disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none;
+    @apply inline-flex items-center justify-center px-6 font-semibold text-white transition-all duration-300
+      rounded-xl bg-gradient-to-r from-[#7C3AED] to-[#06B6D4]
+      hover:opacity-95 active:scale-[0.98]
+      disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100;
+    min-height: 44px;
+    box-shadow: 0 8px 20px rgba(124, 58, 237, 0.18);
   }
 
   .btn-secondary {
-    @apply px-5 py-2.5 rounded-2xl font-medium text-white/90 transition-all duration-300
-      glass hover:bg-white/[0.15] hover:border-white/30 active:scale-[0.98];
+    @apply inline-flex items-center justify-center px-6 font-semibold text-[#374151] transition-all duration-300
+      rounded-xl bg-white border border-[#E5E7EB]
+      hover:border-gray-300 hover:bg-gray-50 active:scale-[0.98];
+    min-height: 44px;
   }
 
   .btn-danger {
-    @apply px-5 py-2.5 rounded-2xl font-semibold text-white transition-all duration-300
-      bg-gradient-to-r from-rose-500 to-orange-500
-      hover:shadow-[0_0_30px_rgba(244,63,94,0.35)] hover:scale-[1.02] active:scale-[0.98];
+    @apply inline-flex items-center justify-center px-6 font-semibold text-white transition-all duration-300
+      rounded-xl bg-gradient-to-r from-rose-500 to-orange-500
+      hover:opacity-95 active:scale-[0.98];
+    min-height: 44px;
   }
 
   .btn-ghost {
-    @apply px-4 py-2 rounded-xl font-medium text-white/70 transition-all duration-200
-      hover:bg-white/10 hover:text-white;
+    @apply inline-flex items-center justify-center px-4 font-medium text-gray-500 transition-colors duration-200
+      rounded-lg hover:bg-gray-100 hover:text-gray-900;
+    min-height: 36px;
   }
 
+  /* 表单 */
   .input-field {
-    @apply w-full px-4 py-2.5 rounded-2xl text-white placeholder-white/40
-      bg-white/[0.06] border border-white/[0.12]
-      focus:outline-none focus:ring-2 focus:ring-fuchsia-400/50 focus:border-fuchsia-400/50
+    @apply w-full px-4 text-gray-900 placeholder-gray-400 rounded-xl
+      bg-white border border-gray-200
+      focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/30 focus:border-[#7C3AED]/60
       transition-all duration-200;
+    min-height: 44px;
   }
 
   .select-field {
     @apply input-field appearance-none cursor-pointer;
   }
 
+  /* 导航 */
   .nav-item {
-    @apply flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300;
+    @apply flex items-center gap-3 px-4 rounded-xl text-sm font-medium transition-all duration-300;
+    min-height: 44px;
   }
 
   .nav-item-active {
-    @apply bg-gradient-to-r from-fuchsia-500/25 to-cyan-400/20 text-white border border-white/20 shadow-glow;
+    @apply bg-[#7C3AED]/10 text-[#7C3AED] border border-[#7C3AED]/20 font-semibold;
   }
 
   .nav-item-inactive {
-    @apply text-white/60 hover:bg-white/10 hover:text-white border border-white/15 hover:border-white/20;
+    @apply text-gray-500 hover:bg-gray-100 hover:text-gray-900 border border-transparent;
   }
 
+  /* 徽标 */
   .badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
   }
 
   .badge-queued {
-    @apply badge bg-amber-400/20 text-amber-300 border border-amber-400/30;
+    @apply badge bg-amber-100 text-amber-700 border border-amber-200;
   }
 
   .badge-progress {
-    @apply badge bg-cyan-400/20 text-cyan-300 border border-cyan-400/30;
+    @apply badge bg-cyan-100 text-cyan-700 border border-cyan-200;
   }
 
   .badge-completed {
-    @apply badge bg-emerald-400/20 text-emerald-300 border border-emerald-400/30;
+    @apply badge bg-emerald-100 text-emerald-700 border border-emerald-200;
   }
 
   .badge-failed {
-    @apply badge bg-rose-400/20 text-rose-300 border border-rose-400/30;
+    @apply badge bg-rose-100 text-rose-700 border border-rose-200;
   }
 
+  /* 进度条 */
   .progress-bar {
-    @apply w-full h-2 rounded-full bg-white/10 overflow-hidden;
+    @apply w-full h-2 rounded-full bg-gray-100 overflow-hidden;
   }
 
   .progress-fill {
-    @apply h-full rounded-full bg-gradient-to-r from-fuchsia-500 via-violet-500 to-cyan-400 transition-all duration-500;
+    @apply h-full rounded-full bg-gradient-to-r from-[#7C3AED] to-[#06B6D4] transition-all duration-500;
   }
 }
 
-/* Animated mesh background */
-.mesh-bg {
-  background:
-    radial-gradient(ellipse at 20% 20%, rgba(217, 70, 239, 0.35) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(34, 211, 238, 0.3) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 80%, rgba(244, 114, 182, 0.25) 0%, transparent 50%),
-    radial-gradient(ellipse at 90% 70%, rgba(251, 146, 60, 0.2) 0%, transparent 40%),
-    linear-gradient(135deg, #0f0c29 0%, #1a0a2e 30%, #16213e 60%, #0f0c29 100%);
-  background-size: 200% 200%;
-  animation: gradient-shift 15s ease infinite;
-}
-
-/* Markdown body (chat messages) */
+/* Markdown body（聊天消息）浅色 */
 .markdown-body {
-  @apply prose prose-invert prose-sm max-w-none;
-  --tw-prose-bullets: rgb(165 243 252 / 0.95);
-  --tw-prose-counters: rgb(165 243 252 / 0.95);
+  @apply prose prose-gray prose-sm max-w-none;
+  --tw-prose-bullets: rgb(124 58 237 / 0.9);
+  --tw-prose-counters: rgb(124 58 237 / 0.9);
+  --tw-prose-links: rgb(124 58 237);
+  --tw-prose-underline: rgb(124 58 237 / 0.4);
 }
 
 .markdown-body > :first-child {
@@ -133,7 +141,7 @@
 }
 
 .markdown-body pre {
-  @apply bg-black/40 rounded-2xl p-4 overflow-x-auto border border-white/10 my-3;
+  @apply bg-gray-900 rounded-2xl p-4 overflow-x-auto border border-gray-200 my-3;
 }
 
 .markdown-body pre code {
@@ -141,15 +149,15 @@
 }
 
 .markdown-body :not(pre) > code {
-  @apply bg-white/10 text-cyan-300 px-1.5 py-0.5 rounded-md text-xs font-mono;
+  @apply bg-[#7C3AED]/10 text-[#7C3AED] px-1.5 py-0.5 rounded-md text-xs font-mono;
 }
 
 .markdown-body a {
-  @apply text-fuchsia-300 underline decoration-fuchsia-400/40 hover:text-fuchsia-200;
+  @apply text-[#7C3AED] underline decoration-[#7C3AED]/40 hover:text-[#6D28D9];
 }
 
 .markdown-body blockquote {
-  @apply border-l-4 border-fuchsia-400/50 pl-4 text-white/70 italic;
+  @apply border-l-4 border-[#7C3AED]/40 pl-4 text-gray-500 italic;
 }
 
 .markdown-body table {
@@ -158,33 +166,33 @@
 
 .markdown-body th,
 .markdown-body td {
-  @apply border border-white/15 px-3 py-2 text-left;
+  @apply border border-gray-200 px-3 py-2 text-left;
 }
 
 .markdown-body th {
-  @apply bg-white/10 font-semibold;
+  @apply bg-gray-50 font-semibold;
 }
 
 .markdown-body hr {
-  @apply border-white/15 my-4;
+  @apply border-gray-200 my-4;
 }
 
 .markdown-body ul,
 .markdown-body ol {
-  @apply my-2 pl-5 text-white/90;
+  @apply my-2 pl-5 text-gray-800;
 }
 
 .markdown-body li {
-  @apply text-white/90 pl-1;
+  @apply text-gray-800 pl-1;
 }
 
 .markdown-body li::marker {
-  color: rgb(165 243 252);
+  color: rgb(124 58 237);
   font-weight: 600;
 }
 
 .markdown-body ol li::marker {
-  color: rgb(103 232 249);
+  color: rgb(124 58 237);
   font-weight: 700;
 }
 
@@ -192,7 +200,7 @@
 .markdown-body h2,
 .markdown-body h3,
 .markdown-body h4 {
-  @apply text-white font-bold mt-4 mb-2;
+  @apply text-gray-900 font-bold mt-4 mb-2;
 }
 
 .markdown-body p {
@@ -200,7 +208,7 @@
 }
 
 .markdown-body strong {
-  @apply text-white font-semibold;
+  @apply text-gray-900 font-semibold;
 }
 
 /* scrollbar */
@@ -212,6 +220,6 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(217, 70, 239, 0.5), rgba(34, 211, 238, 0.5));
+  background: rgba(124, 58, 237, 0.25);
   border-radius: 999px;
 }

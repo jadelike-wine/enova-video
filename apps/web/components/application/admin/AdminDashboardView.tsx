@@ -45,10 +45,10 @@ export default function AdminDashboardView() {
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
           {statCards.map((c) => (
             <Card key={c.label}>
-              <p className="text-xs text-white/50">{c.label}</p>
-              <p className="text-2xl font-extrabold mt-1 text-white">
+              <p className="text-xs text-gray-500">{c.label}</p>
+              <p className="text-2xl font-extrabold mt-1 text-gray-900">
                 {c.value.toLocaleString()}
-                {c.unit && <span className="text-xs font-normal text-white/50 ml-1">{c.unit}</span>}
+                {c.unit && <span className="text-xs font-normal text-gray-500 ml-1">{c.unit}</span>}
               </p>
             </Card>
           ))}
@@ -60,13 +60,13 @@ export default function AdminDashboardView() {
               <ul className="space-y-2">
                 {Object.entries(stats.generationsByStatus).map(([k, v]) => (
                   <li key={k} className="flex justify-between text-sm">
-                    <span className="text-white/60">{k}</span>
-                    <span className="font-semibold text-white">{v}</span>
+                    <span className="text-gray-600">{k}</span>
+                    <span className="font-semibold text-gray-900">{v}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-white/40 text-sm">暂无数据</p>
+              <p className="text-gray-400 text-sm">暂无数据</p>
             )}
           </Card>
           <Card title="任务类型分布">
@@ -74,13 +74,13 @@ export default function AdminDashboardView() {
               <ul className="space-y-2">
                 {Object.entries(stats.generationsByType).map(([k, v]) => (
                   <li key={k} className="flex justify-between text-sm">
-                    <span className="text-white/60">{k}</span>
-                    <span className="font-semibold text-white">{v}</span>
+                    <span className="text-gray-600">{k}</span>
+                    <span className="font-semibold text-gray-900">{v}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-white/40 text-sm">暂无数据</p>
+              <p className="text-gray-400 text-sm">暂无数据</p>
             )}
           </Card>
         </div>

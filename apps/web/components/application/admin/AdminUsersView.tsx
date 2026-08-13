@@ -117,16 +117,16 @@ export default function AdminUsersView() {
               headers={['邮箱', '角色', '状态', 'Workspace', '可用', '预留', '注册时间', '操作']}
             >
               {filtered.map((u) => (
-                <tr key={u.id} className="hover:bg-white/5">
+                <tr key={u.id} className="hover:bg-gray-100">
                   <td className="px-3 py-2">
                     <AdminLink href={`/app/admin/customers/${u.id}`}>{u.email}</AdminLink>
                   </td>
-                  <td className="px-3 py-2 text-white/60">{u.role}</td>
+                  <td className="px-3 py-2 text-gray-600">{u.role}</td>
                   <td className="px-3 py-2"><StatusBadge status={u.status} /></td>
-                  <td className="px-3 py-2 text-white/60">{u.workspaceId?.slice(0, 8) ?? '—'}</td>
-                  <td className="px-3 py-2 text-cyan-300">{u.balance}</td>
-                  <td className="px-3 py-2 text-white/60">{u.reservedBalance}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(u.createdAt)}</td>
+                  <td className="px-3 py-2 text-gray-600">{u.workspaceId?.slice(0, 8) ?? '—'}</td>
+                  <td className="px-3 py-2 text-cyan-600">{u.balance}</td>
+                  <td className="px-3 py-2 text-gray-600">{u.reservedBalance}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(u.createdAt)}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     <button className="btn-ghost text-xs mr-2" disabled={busyId === u.id} onClick={() => void toggleStatus(u)}>
                       {u.status === 'ACTIVE' ? '禁用' : '启用'}
@@ -143,7 +143,7 @@ export default function AdminUsersView() {
             <button className="btn-ghost text-xs" disabled={offset === 0 || loading} onClick={() => void load(Math.max(0, offset - PAGE_SIZE))}>
               上一页
             </button>
-            <span className="text-xs text-white/40">offset {offset}</span>
+            <span className="text-xs text-gray-400">offset {offset}</span>
             <button className="btn-ghost text-xs" disabled={users.length < PAGE_SIZE || loading} onClick={() => void load(offset + PAGE_SIZE)}>
               下一页
             </button>

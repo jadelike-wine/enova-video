@@ -66,15 +66,15 @@ export default function AdminOrdersView() {
               headers={['订单', '用户', '类型', '金额', '状态', '履约', 'Credits', '创建时间', '操作']}
             >
               {orders.map((o) => (
-                <tr key={o.id} className="hover:bg-white/5">
-                  <td className="px-3 py-2 text-white/60">{o.id.slice(0, 8)}</td>
-                  <td className="px-3 py-2 text-white/60">{o.userId.slice(0, 8)}</td>
+                <tr key={o.id} className="hover:bg-gray-100">
+                  <td className="px-3 py-2 text-gray-600">{o.id.slice(0, 8)}</td>
+                  <td className="px-3 py-2 text-gray-600">{o.userId.slice(0, 8)}</td>
                   <td className="px-3 py-2">{o.orderType}</td>
                   <td className="px-3 py-2">{fmtMoney(o.amountCents, o.currency)}</td>
                   <td className="px-3 py-2"><StatusBadge status={o.status} /></td>
                   <td className="px-3 py-2"><StatusBadge status={o.fulfillmentStatus} /></td>
                   <td className="px-3 py-2">{o.credits}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(o.createdAt)}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(o.createdAt)}</td>
                   <td className="px-3 py-2">
                     <AdminLink href={`/app/admin/orders/${o.id}`}>详情</AdminLink>
                   </td>
@@ -86,7 +86,7 @@ export default function AdminOrdersView() {
             <button className="btn-ghost text-xs" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
               上一页
             </button>
-            <span className="text-xs text-white/40">offset {offset}</span>
+            <span className="text-xs text-gray-400">offset {offset}</span>
             <button className="btn-ghost text-xs" disabled={orders.length < PAGE_SIZE || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
               下一页
             </button>

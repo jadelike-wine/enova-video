@@ -33,8 +33,8 @@ export default function AdminCustomer360View({ userId }: { userId: string }) {
     <div className="h-full overflow-y-auto">
       <div className="p-5 pb-2">
         <BackLink href="/app/admin/users" label="返回用户列表" />
-        <h2 className="text-xl font-extrabold text-white mt-2">{data.user.email}</h2>
-        <p className="text-sm text-white/50">
+        <h2 className="text-xl font-extrabold text-gray-900 mt-2">{data.user.email}</h2>
+        <p className="text-sm text-gray-500">
           {data.user.id} · {data.user.role} · <StatusBadge status={data.user.status} /> · 注册于 {fmtDate(data.user.createdAt)}
         </p>
       </div>
@@ -43,43 +43,43 @@ export default function AdminCustomer360View({ userId }: { userId: string }) {
         {/* 概览卡片 */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card title="可用余额">
-            <p className="text-2xl font-extrabold text-cyan-300">{data.wallet?.balance ?? 0}</p>
+            <p className="text-2xl font-extrabold text-cyan-600">{data.wallet?.balance ?? 0}</p>
           </Card>
           <Card title="预留余额">
-            <p className="text-2xl font-extrabold text-white/80">{data.wallet?.reservedBalance ?? 0}</p>
+            <p className="text-2xl font-extrabold text-gray-800">{data.wallet?.reservedBalance ?? 0}</p>
           </Card>
           <Card title="当前订阅">
-            <p className="text-lg font-bold text-white">{data.subscription?.planName ?? '无'}</p>
-            <p className="text-xs text-white/50">
+            <p className="text-lg font-bold text-gray-900">{data.subscription?.planName ?? '无'}</p>
+            <p className="text-xs text-gray-500">
               {data.subscription?.status ?? '—'} · {fmtDate(data.subscription?.currentPeriodEnd)}
             </p>
           </Card>
           <Card title="累计消耗">
-            <p className="text-2xl font-extrabold text-white/80">{data.generationsSummary.totalCreditsCharged}</p>
-            <p className="text-xs text-white/50">Credits</p>
+            <p className="text-2xl font-extrabold text-gray-800">{data.generationsSummary.totalCreditsCharged}</p>
+            <p className="text-xs text-gray-500">Credits</p>
           </Card>
         </div>
 
         {/* Workspace */}
         <Card title="Workspace">
           {data.workspace ? (
-            <div className="text-sm text-white/70 space-y-1">
+            <div className="text-sm text-gray-700 space-y-1">
               <p>名称：{data.workspace.name}</p>
               <p>ID：{data.workspace.id}</p>
               <p>类型：{data.workspace.type} · 角色：{data.workspace.role} · 创建于 {fmtDate(data.workspace.createdAt)}</p>
             </div>
           ) : (
-            <p className="text-white/40 text-sm">无 Workspace</p>
+            <p className="text-gray-400 text-sm">无 Workspace</p>
           )}
         </Card>
 
         {/* 生成任务统计 */}
         <Card title="生成任务统计">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-            <div><p className="text-white/50">总数</p><p className="font-bold text-white">{data.generationsSummary.total}</p></div>
-            <div><p className="text-white/50">估算成本</p><p className="font-bold text-white">{fmtMicrousd(data.generationsSummary.totalEstimatedCostMicrousd)}</p></div>
-            <div><p className="text-white/50">最终成本</p><p className="font-bold text-white">{fmtMicrousd(data.generationsSummary.totalFinalCostMicrousd)}</p></div>
-            <div><p className="text-white/50">状态分布</p><p className="font-bold text-white">{Object.entries(data.generationsSummary.byStatus).map(([k, v]) => `${k}:${v}`).join(' ') || '—'}</p></div>
+            <div><p className="text-gray-500">总数</p><p className="font-bold text-gray-900">{data.generationsSummary.total}</p></div>
+            <div><p className="text-gray-500">估算成本</p><p className="font-bold text-gray-900">{fmtMicrousd(data.generationsSummary.totalEstimatedCostMicrousd)}</p></div>
+            <div><p className="text-gray-500">最终成本</p><p className="font-bold text-gray-900">{fmtMicrousd(data.generationsSummary.totalFinalCostMicrousd)}</p></div>
+            <div><p className="text-gray-500">状态分布</p><p className="font-bold text-gray-900">{Object.entries(data.generationsSummary.byStatus).map(([k, v]) => `${k}:${v}`).join(' ') || '—'}</p></div>
           </div>
         </Card>
 
@@ -91,12 +91,12 @@ export default function AdminCustomer360View({ userId }: { userId: string }) {
             <DataTable headers={['Job', '预留', '已结算', '已释放', '状态', '创建时间']}>
               {data.reservations.map((r) => (
                 <tr key={r.id}>
-                  <td className="px-3 py-2 text-white/60">{r.generationJobId.slice(0, 8)}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.generationJobId.slice(0, 8)}</td>
                   <td className="px-3 py-2">{r.reservedCredits}</td>
-                  <td className="px-3 py-2 text-cyan-300">{r.capturedCredits}</td>
-                  <td className="px-3 py-2 text-white/60">{r.releasedCredits}</td>
+                  <td className="px-3 py-2 text-cyan-600">{r.capturedCredits}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.releasedCredits}</td>
                   <td className="px-3 py-2"><StatusBadge status={r.status} /></td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(r.createdAt)}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(r.createdAt)}</td>
                 </tr>
               ))}
             </DataTable>
@@ -113,9 +113,9 @@ export default function AdminCustomer360View({ userId }: { userId: string }) {
                 <tr key={l.id}>
                   <td className="px-3 py-2"><StatusBadge status={l.type} /></td>
                   <td className="px-3 py-2">{l.amount}</td>
-                  <td className="px-3 py-2 text-white/60">{l.balanceAfter}</td>
-                  <td className="px-3 py-2 text-white/50">{l.description ?? '—'}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(l.createdAt)}</td>
+                  <td className="px-3 py-2 text-gray-600">{l.balanceAfter}</td>
+                  <td className="px-3 py-2 text-gray-500">{l.description ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(l.createdAt)}</td>
                 </tr>
               ))}
             </DataTable>
@@ -130,13 +130,13 @@ export default function AdminCustomer360View({ userId }: { userId: string }) {
             <DataTable headers={['订单', '类型', '金额', '状态', '履约', 'Provider', '时间']}>
               {data.payments.map((p) => (
                 <tr key={p.orderId}>
-                  <td className="px-3 py-2 text-white/60">{p.orderId.slice(0, 8)}</td>
+                  <td className="px-3 py-2 text-gray-600">{p.orderId.slice(0, 8)}</td>
                   <td className="px-3 py-2">{p.orderType}</td>
                   <td className="px-3 py-2">{fmtMoney(p.amountCents, p.currency)}</td>
                   <td className="px-3 py-2"><StatusBadge status={p.status} /></td>
                   <td className="px-3 py-2"><StatusBadge status={p.fulfillmentStatus} /></td>
-                  <td className="px-3 py-2 text-white/60">{p.provider ?? '—'}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(p.createdAt)}</td>
+                  <td className="px-3 py-2 text-gray-600">{p.provider ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(p.createdAt)}</td>
                 </tr>
               ))}
             </DataTable>
@@ -153,10 +153,10 @@ export default function AdminCustomer360View({ userId }: { userId: string }) {
                 {data.recentGenerations.map((g) => (
                   <tr key={g.id}>
                     <td className="px-3 py-2">{g.type}</td>
-                    <td className="px-3 py-2 text-white/60">{g.provider ?? '—'}</td>
+                    <td className="px-3 py-2 text-gray-600">{g.provider ?? '—'}</td>
                     <td className="px-3 py-2"><StatusBadge status={g.status} /></td>
                     <td className="px-3 py-2">{g.estimatedCredits}</td>
-                    <td className="px-3 py-2 text-white/50">{fmtDate(g.createdAt)}</td>
+                    <td className="px-3 py-2 text-gray-500">{fmtDate(g.createdAt)}</td>
                   </tr>
                 ))}
               </DataTable>
@@ -170,10 +170,10 @@ export default function AdminCustomer360View({ userId }: { userId: string }) {
                 {data.recentUsage.map((u) => (
                   <tr key={u.id}>
                     <td className="px-3 py-2">{u.type}</td>
-                    <td className="px-3 py-2 text-white/60">{u.provider}</td>
+                    <td className="px-3 py-2 text-gray-600">{u.provider}</td>
                     <td className="px-3 py-2">{fmtMicrousd(u.finalCostMicrousd)}</td>
-                    <td className="px-3 py-2 text-cyan-300">{u.creditsCharged}</td>
-                    <td className="px-3 py-2 text-white/50">{fmtDate(u.createdAt)}</td>
+                    <td className="px-3 py-2 text-cyan-600">{u.creditsCharged}</td>
+                    <td className="px-3 py-2 text-gray-500">{fmtDate(u.createdAt)}</td>
                   </tr>
                 ))}
               </DataTable>
@@ -189,10 +189,10 @@ export default function AdminCustomer360View({ userId }: { userId: string }) {
             <DataTable headers={['Action', '资源类型', '资源', '时间']}>
               {data.audit.map((a) => (
                 <tr key={a.id}>
-                  <td className="px-3 py-2 text-white/80">{a.action}</td>
-                  <td className="px-3 py-2 text-white/60">{a.resourceType}</td>
-                  <td className="px-3 py-2 text-white/50">{a.resourceId?.slice(0, 8) ?? '—'}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(a.createdAt)}</td>
+                  <td className="px-3 py-2 text-gray-800">{a.action}</td>
+                  <td className="px-3 py-2 text-gray-600">{a.resourceType}</td>
+                  <td className="px-3 py-2 text-gray-500">{a.resourceId?.slice(0, 8) ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(a.createdAt)}</td>
                 </tr>
               ))}
             </DataTable>

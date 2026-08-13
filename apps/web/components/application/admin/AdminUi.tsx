@@ -54,7 +54,7 @@ export function Card({ title, children, action }: { title?: string; children: Re
     <div className="glass rounded-2xl p-5">
       {(title || action) && (
         <div className="flex items-center justify-between mb-3">
-          {title && <h3 className="font-bold text-white/90">{title}</h3>}
+          {title && <h3 className="font-bold text-gray-900">{title}</h3>}
           {action}
         </div>
       )}
@@ -65,8 +65,8 @@ export function Card({ title, children, action }: { title?: string; children: Re
 
 export function PageHeader({ title, ...rest }: { title: string; [k: string]: unknown }) {
   return (
-    <div className="p-5 border-b border-white/10">
-      <h2 className="text-xl font-extrabold text-white">{title}</h2>
+    <div className="p-5 border-b border-gray-200">
+      <h2 className="text-xl font-bold text-gray-900">{title}</h2>
     </div>
   )
 }
@@ -83,7 +83,7 @@ export function DataTable({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-white/50 text-xs uppercase tracking-wide">
+          <tr className="text-left text-gray-500 text-xs uppercase tracking-wide">
             {headers.map((h, i) => (
               <th key={i} className="px-3 py-2 font-medium whitespace-nowrap">
                 {h}
@@ -91,23 +91,23 @@ export function DataTable({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-white/5">{children}</tbody>
+        <tbody className="divide-y divide-gray-100">{children}</tbody>
       </table>
     </div>
   )
 }
 
 export function EmptyState({ text }: { text: string }) {
-  return <div className="py-10 text-center text-white/40 text-sm">{text}</div>
+  return <div className="py-10 text-center text-gray-400 text-sm">{text}</div>
 }
 
 export function Loading({ text = '加载中…' }: { text?: string }) {
-  return <div className="py-10 text-center text-white/50 text-sm animate-pulse">{text}</div>
+  return <div className="py-10 text-center text-gray-500 text-sm animate-pulse">{text}</div>
 }
 
 export function AdminLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link href={href} className="text-cyan-300 hover:text-cyan-100 underline underline-offset-2">
+    <Link href={href} className="text-[#7C3AED] hover:text-[#6D28D9] underline underline-offset-2">
       {children}
     </Link>
   )
@@ -115,7 +115,7 @@ export function AdminLink({ href, children }: { href: string; children: ReactNod
 
 export function BackLink({ href, label }: { href: string; label: string }) {
   return (
-    <Link href={href} className="text-xs text-white/50 hover:text-white/80">
+    <Link href={href} className="text-xs text-gray-500 hover:text-gray-900">
       ← {label}
     </Link>
   )

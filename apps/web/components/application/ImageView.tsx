@@ -12,7 +12,7 @@ import { useDialog } from './DialogProvider'
 import { useApiKeyGuard } from './useApiKeyGuard'
 import { usePaginatedTaskHistory, type TaskItem } from './usePaginatedTaskHistory'
 import { formatErrorMessage } from '../../lib/errorMessage'
-import { IMAGE_MODELS, IMAGE_MODES, IMAGE_SIZES, DEFAULT_IMAGE_MODEL } from '../../lib/models'
+import { IMAGE_MODELS, IMAGE_MODES, IMAGE_SIZES, DEFAULT_IMAGE_MODEL, modelDisplayName } from '../../lib/models'
 
 /** 新架构统一状态：PENDING/QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELED */
 const ACTIVE_STATUSES = ['PENDING', 'QUEUED', 'RUNNING']
@@ -68,11 +68,11 @@ function modeLabel(mode?: string): string {
 
 function modeTagClass(mode?: string): string {
   const map: Record<string, string> = {
-    text2img: 'bg-pink-400/15 text-pink-200 border-pink-400/25',
-    img2img: 'bg-violet-400/15 text-violet-200 border-violet-400/25',
-    multi_img: 'bg-orange-400/15 text-orange-200 border-orange-400/25',
+    text2img: 'bg-pink-400/15 text-pink-600 border-pink-400/25',
+    img2img: 'bg-violet-400/15 text-violet-600 border-violet-400/25',
+    multi_img: 'bg-orange-400/15 text-orange-600 border-orange-400/25',
   }
-  return map[mode || ''] || 'bg-white/10 text-white/60 border-white/15'
+  return map[mode || ''] || 'bg-gray-100 text-gray-600 border-gray-200'
 }
 
 function formatSizeLabel(size: string): string {
@@ -314,13 +314,13 @@ export default function ImageView() {
   return (
     <div className="flex h-full">
       {/* Task list sidebar */}
-      <div className="w-96 border-r border-white/10 flex flex-col bg-black/10">
-        <div className="p-4 border-b border-white/10">
+      <div className="w-96 border-r border-gray-200 flex flex-col bg-gray-50">
+        <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="font-bold text-white">生成历史</h3>
+            <h3 className="font-bold text-gray-900">生成历史</h3>
             {generating && <span className="badge-progress">生成中</span>}
           </div>
-          <p className="text-xs text-white/40">点击预览</p>
+          <p className="text-xs text-gray-400">点击预览</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -333,12 +333,12 @@ export default function ImageView() {
                 onClick={() => selectTask(task)}
                 className={`group p-3 rounded-2xl cursor-pointer transition-all duration-200 border ${
                   isSelected
-                    ? 'bg-gradient-to-r from-pink-500/20 to-orange-400/10 border-white/25 shadow-glow-cyan'
-                    : 'border-white/15 hover:bg-white/10 hover:border-white/20'
+                    ? 'bg-gradient-to-r from-pink-500/20 to-orange-400/10 border-gray-300'
+                    : 'border-gray-200 hover:bg-gray-100 hover:border-gray-300'
                 }`}
               >
                 <div className="flex gap-3">
-                  <div className="w-16 h-16 rounded-xl flex-shrink-0 overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
+                  <div className="w-16 h-16 rounded-xl flex-shrink-0 overflow-hidden bg-gray-50 border border-gray-200 flex items-center justify-center">
                     {displayUrl(task) ? (
                       <img
                         src={displayUrl(task)}
@@ -352,18 +352,18 @@ export default function ImageView() {
                     ) : ACTIVE_STATUSES.includes(task.status) ? (
                       <div className="w-6 h-6 border-2 border-fuchsia-400/30 border-t-fuchsia-400 rounded-full animate-spin" />
                     ) : (
-                      <span className="text-xs text-white/40">{statusLabel(task.status)}</span>
+                      <span className="text-xs text-gray-400">{statusLabel(task.status)}</span>
                     )}
                   </div>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-white/40 font-mono">
+                      <span className="text-xs text-gray-400 font-mono">
                         #{task._optimistic ? '...' : String(task.id).slice(0, 8)}
                       </span>
                       <span className={statusBadgeClass(task.status)}>{statusLabel(task.status)}</span>
                     </div>
-                    <p className="text-sm text-white/90 truncate font-medium mt-1">{task.prompt}</p>
+                    <p className="text-sm text-gray-800 truncate font-medium mt-1">{task.prompt}</p>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${modeTagClass(
@@ -372,10 +372,10 @@ export default function ImageView() {
                       >
                         {modeLabel(task.mode)}
                       </span>
-                      <span className="text-xs text-white/40">{formatSizeLabel(task.size || '')}</span>
+                      <span className="text-xs text-gray-400">{formatSizeLabel(task.size || '')}</span>
                     </div>
                     {task.status === 'FAILED' && (
-                      <p className="text-xs text-rose-300/80 mt-1.5 truncate">{taskErrorMessage(task)}</p>
+                      <p className="text-xs text-rose-600 mt-1.5 truncate">{taskErrorMessage(task)}</p>
                     )}
                   </div>
                 </div>
@@ -384,7 +384,7 @@ export default function ImageView() {
           })}
 
           {!history.length && !historyLoading && (
-            <div className="flex flex-col items-center justify-center py-16 text-white/40">
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <div className="text-4xl mb-3">🎨</div>
               <p className="text-sm">暂无生成记录</p>
               <p className="text-xs mt-1">填写参数后点击生成</p>
@@ -398,17 +398,17 @@ export default function ImageView() {
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-5xl mx-auto space-y-6">
             <div>
-              <h2 className="text-2xl font-extrabold bg-gradient-to-r from-pink-300 via-fuchsia-300 to-orange-300 bg-clip-text text-transparent">
+              <h2 className="text-2xl font-extrabold bg-gradient-to-r from-pink-600 via-fuchsia-600 to-orange-600 bg-clip-text text-transparent">
                 图片生成
               </h2>
-              <p className="text-white/50 text-sm mt-1">文生图 · 单图编辑 · 多图合成</p>
+              <p className="text-gray-500 text-sm mt-1">文生图 · 单图编辑 · 多图合成</p>
             </div>
 
             {!keyStatusLoading && !hasActiveKey && (
               <div className="glass-card border border-amber-400/30 bg-amber-400/10 py-3 px-4">
-                <p className="text-sm text-amber-100/90">
+                <p className="text-sm text-amber-600">
                   余额不足，无法生成图片。请先前往
-                  <Link href="/app/wallet" className="text-cyan-300 hover:underline">
+                  <Link href="/app/wallet" className="text-cyan-600 hover:underline">
                     {' '}钱包
                   </Link>
                   充值后再试。
@@ -420,7 +420,7 @@ export default function ImageView() {
               {/* Form */}
               <div ref={formCardRef} className="glass-card space-y-4">
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block font-medium">生成模式</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">生成模式</label>
                   <div className="grid grid-cols-3 gap-2">
                     {IMAGE_MODES.map((m) => (
                       <button
@@ -428,8 +428,8 @@ export default function ImageView() {
                         onClick={() => selectMode(m.id)}
                         className={`px-3 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 border ${
                           form.mode === m.id
-                            ? 'border-fuchsia-400/50 bg-gradient-to-r from-fuchsia-500/25 to-pink-400/15 text-white shadow-glow-cyan'
-                            : 'border-white/10 text-white/50 hover:border-white/25 hover:bg-white/5'
+                            ? 'border-fuchsia-400/50 bg-gradient-to-r from-fuchsia-500/25 to-pink-400/15 text-white'
+                            : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
                         }`}
                       >
                         {m.name}
@@ -439,7 +439,7 @@ export default function ImageView() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block font-medium">模型</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">模型</label>
                   <select
                     value={form.model}
                     onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))}
@@ -455,7 +455,7 @@ export default function ImageView() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block font-medium">尺寸</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">尺寸</label>
                   <select
                     value={form.size}
                     onChange={(e) => setForm((prev) => ({ ...prev, size: e.target.value }))}
@@ -470,7 +470,7 @@ export default function ImageView() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-white/60 mb-2 block font-medium">提示词</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">提示词</label>
                   <textarea
                     value={form.prompt}
                     onChange={(e) => setForm((prev) => ({ ...prev, prompt: e.target.value }))}
@@ -482,7 +482,7 @@ export default function ImageView() {
 
                 {form.mode !== 'text2img' && (
                   <div>
-                    <label className="text-sm text-white/60 mb-2 block font-medium">
+                    <label className="text-sm text-gray-600 mb-2 block font-medium">
                       {form.mode === 'img2img' ? '参考图' : '输入图片'}
                     </label>
                     <div className="flex flex-wrap gap-2 mb-2">
@@ -491,7 +491,7 @@ export default function ImageView() {
                           <img
                             src={item.preview}
                             alt="参考图"
-                            className="w-20 h-20 object-cover rounded-2xl border border-white/20"
+                            className="w-20 h-20 object-cover rounded-2xl border border-gray-200"
                           />
                           <button
                             onClick={() => removeInputImage(i)}
@@ -521,7 +521,7 @@ export default function ImageView() {
                 )}
 
                 {error && (
-                  <p className="text-rose-300 text-sm glass px-4 py-2 rounded-2xl border border-rose-400/30">
+                  <p className="text-rose-600 text-sm glass px-4 py-2 rounded-2xl border border-rose-400/30">
                     {error}
                   </p>
                 )}
@@ -540,7 +540,7 @@ export default function ImageView() {
                 {selectedTask ? (
                   <div className="flex-1 flex flex-col">
                     <div className="flex items-center justify-between mb-4">
-                      <span className="font-bold text-white">
+                      <span className="font-bold text-gray-900">
                         {selectedTask._optimistic ? '新任务' : `任务 #${String(selectedTask.id).slice(0, 8)}`}
                       </span>
                       <span className={statusBadgeClass(selectedTask.status)}>
@@ -551,20 +551,20 @@ export default function ImageView() {
                     {ACTIVE_STATUSES.includes(selectedTask.status) && (
                       <div className="flex-1 flex flex-col items-center justify-center">
                         <div className="w-16 h-16 rounded-full border-4 border-fuchsia-400/30 border-t-fuchsia-400 animate-spin" />
-                        <p className="text-white/50 mt-5 text-sm">图片生成中，请稍候...</p>
+                        <p className="text-gray-500 mt-5 text-sm">图片生成中，请稍候...</p>
                       </div>
                     )}
 
                     {!ACTIVE_STATUSES.includes(selectedTask.status) && displayUrl(selectedTask) && (
                       <div className="flex-1">
-                        <p className="text-xs text-white/50 mb-2 font-medium">生成结果</p>
+                        <p className="text-xs text-gray-500 mb-2 font-medium">生成结果</p>
                         <img
                           src={displayUrl(selectedTask)}
                           alt={selectedTask.prompt || '生成的图片'}
-                          className="w-full rounded-2xl border border-white/15 shadow-glow object-contain max-h-[360px] bg-black/20 cursor-zoom-in hover:opacity-90 transition-opacity"
+                          className="w-full rounded-2xl border border-gray-200 object-contain max-h-[360px] bg-gray-100 cursor-zoom-in hover:opacity-90 transition-opacity"
                           onClick={() => openLightbox(displayUrl(selectedTask))}
                         />
-                        <div className="mt-3 text-xs text-white/50 flex flex-wrap gap-4">
+                        <div className="mt-3 text-xs text-gray-500 flex flex-wrap gap-4">
                           <span>{formatSizeLabel(selectedTask.size || '')}</span>
                         </div>
                       </div>
@@ -572,7 +572,7 @@ export default function ImageView() {
 
                     {selectedTask.status === 'FAILED' || selectedTask.status === 'CANCELED' ? (
                       <div className="glass px-4 py-3 rounded-2xl border border-rose-400/30">
-                        <p className="text-rose-300 text-sm whitespace-pre-wrap break-words">
+                        <p className="text-rose-600 text-sm whitespace-pre-wrap break-words">
                           {statusLabel(selectedTask.status)}
                           {taskErrorMessage(selectedTask) ? `：${taskErrorMessage(selectedTask)}` : ''}
                         </p>
@@ -581,7 +581,7 @@ export default function ImageView() {
 
                     <div className="mt-4 space-y-3">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs text-white/50 font-medium">生成参数</p>
+                        <p className="text-xs text-gray-500 font-medium">生成参数</p>
                         {!selectedTask._optimistic && (
                           <button
                             onClick={() => fillFormFromTask(selectedTask)}
@@ -591,31 +591,31 @@ export default function ImageView() {
                           </button>
                         )}
                       </div>
-                      <div className="glass px-4 py-3 rounded-2xl border border-white/10 space-y-2 text-sm">
+                      <div className="glass px-4 py-3 rounded-2xl border border-gray-200 space-y-2 text-sm">
                         <div>
-                          <span className="text-white/40 text-xs">提示词</span>
-                          <p className="text-white/80 mt-0.5 leading-relaxed">{selectedTask.prompt || '—'}</p>
+                          <span className="text-gray-400 text-xs">提示词</span>
+                          <p className="text-gray-800 mt-0.5 leading-relaxed">{selectedTask.prompt || '—'}</p>
                         </div>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs pt-1">
                           <div>
-                            <span className="text-white/40">模式</span>{' '}
-                            <span className="text-white/70">{modeLabel(selectedTask.mode)}</span>
+                            <span className="text-gray-400">模式</span>{' '}
+                            <span className="text-gray-700">{modeLabel(selectedTask.mode)}</span>
                           </div>
                           <div>
-                            <span className="text-white/40">尺寸</span>{' '}
-                            <span className="text-white/70">{formatSizeLabel(selectedTask.size || '')}</span>
+                            <span className="text-gray-400">尺寸</span>{' '}
+                            <span className="text-gray-700">{formatSizeLabel(selectedTask.size || '')}</span>
                           </div>
                           <div className="col-span-2">
-                            <span className="text-white/40">模型</span>{' '}
-                            <span className="text-white/70">{selectedTask.model || '—'}</span>
+                            <span className="text-gray-400">模型</span>{' '}
+                            <span className="text-gray-700">{modelDisplayName(selectedTask.model)}</span>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-white/40">
-                    <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-pink-400/30 to-orange-400/30 flex items-center justify-center text-4xl mb-4 border border-white/20 animate-float">
+                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                    <div className="w-20 h-20 rounded-3xl bg-pink-100 flex items-center justify-center text-4xl mb-4 border border-gray-200">
                       🎨
                     </div>
                     <p>选择左侧记录或创建新任务</p>
@@ -631,7 +631,7 @@ export default function ImageView() {
       {lightboxUrl && (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 md:p-8" onClick={closeLightbox}>
           <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" />
-          <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-colors z-10">
+          <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-gray-100 text-gray-800 hover:bg-gray-100 hover:text-gray-900 transition-colors z-10">
             ✕
           </button>
           <img

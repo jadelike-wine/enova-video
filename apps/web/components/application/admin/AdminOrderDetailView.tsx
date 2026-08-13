@@ -71,24 +71,24 @@ export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
     <div className="h-full overflow-y-auto">
       <div className="p-5 pb-2">
         <BackLink href="/app/admin/orders" label="返回订单列表" />
-        <h2 className="text-xl font-extrabold text-white mt-2">订单详情</h2>
-        <p className="text-sm text-white/50">{order.id}</p>
+        <h2 className="text-xl font-extrabold text-gray-900 mt-2">订单详情</h2>
+        <p className="text-sm text-gray-500">{order.id}</p>
       </div>
 
       <div className="p-5 space-y-5">
         <Card title="基本信息">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-            <div><p className="text-white/50">类型</p><p className="font-bold text-white">{order.orderType}</p></div>
-            <div><p className="text-white/50">金额</p><p className="font-bold text-white">{fmtMoney(order.amountCents, order.currency)}</p></div>
-            <div><p className="text-white/50">Credits</p><p className="font-bold text-white">{order.credits}</p></div>
-            <div><p className="text-white/50">状态</p><p className="font-bold text-white"><StatusBadge status={order.status} /></p></div>
-            <div><p className="text-white/50">履约</p><p className="font-bold text-white"><StatusBadge status={order.fulfillmentStatus} /></p></div>
-            <div><p className="text-white/50">用户</p><p className="font-bold text-white">{order.userId.slice(0, 8)}</p></div>
-            <div><p className="text-white/50">Workspace</p><p className="font-bold text-white">{order.workspaceId.slice(0, 8)}</p></div>
-            <div><p className="text-white/50">创建时间</p><p className="font-bold text-white">{fmtDate(order.createdAt)}</p></div>
+            <div><p className="text-gray-500">类型</p><p className="font-bold text-gray-900">{order.orderType}</p></div>
+            <div><p className="text-gray-500">金额</p><p className="font-bold text-gray-900">{fmtMoney(order.amountCents, order.currency)}</p></div>
+            <div><p className="text-gray-500">Credits</p><p className="font-bold text-gray-900">{order.credits}</p></div>
+            <div><p className="text-gray-500">状态</p><p className="font-bold text-gray-900"><StatusBadge status={order.status} /></p></div>
+            <div><p className="text-gray-500">履约</p><p className="font-bold text-gray-900"><StatusBadge status={order.fulfillmentStatus} /></p></div>
+            <div><p className="text-gray-500">用户</p><p className="font-bold text-gray-900">{order.userId.slice(0, 8)}</p></div>
+            <div><p className="text-gray-500">Workspace</p><p className="font-bold text-gray-900">{order.workspaceId.slice(0, 8)}</p></div>
+            <div><p className="text-gray-500">创建时间</p><p className="font-bold text-gray-900">{fmtDate(order.createdAt)}</p></div>
           </div>
           {order.snapshotJson && (
-            <pre className="mt-3 bg-black/30 rounded-xl p-3 text-xs text-white/60 overflow-x-auto">
+            <pre className="mt-3 bg-gray-100 rounded-xl p-3 text-xs text-gray-800 overflow-x-auto">
               {JSON.stringify(order.snapshotJson, null, 2)}
             </pre>
           )}
@@ -118,9 +118,9 @@ export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
               {order.paymentTransactions.map((t) => (
                 <tr key={t.id}>
                   <td className="px-3 py-2">{t.provider}</td>
-                  <td className="px-3 py-2 text-white/60">{t.providerRef ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-600">{t.providerRef ?? '—'}</td>
                   <td className="px-3 py-2"><StatusBadge status={t.status} /></td>
-                  <td className="px-3 py-2 text-white/50">—</td>
+                  <td className="px-3 py-2 text-gray-500">—</td>
                 </tr>
               ))}
             </DataTable>
@@ -129,7 +129,7 @@ export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
 
         <Card title="履约信息">
           {order.fulfillment ? (
-            <div className="text-sm text-white/70 space-y-1">
+            <div className="text-sm text-gray-700 space-y-1">
               <p>状态：<StatusBadge status={order.fulfillment.status} /></p>
               <p>订阅：{order.fulfillment.subscriptionId ?? '—'}</p>
               <p>发放 Credits：{order.fulfillment.creditsGranted}</p>
@@ -137,7 +137,7 @@ export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
               <p>完成时间：{fmtDate(order.fulfillment.completedAt)}</p>
             </div>
           ) : (
-            <p className="text-white/40 text-sm">无履约记录</p>
+            <p className="text-gray-400 text-sm">无履约记录</p>
           )}
         </Card>
 
@@ -150,9 +150,9 @@ export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
                 <tr key={l.id}>
                   <td className="px-3 py-2"><StatusBadge status={l.type} /></td>
                   <td className="px-3 py-2">{l.amount}</td>
-                  <td className="px-3 py-2 text-white/60">{l.balanceAfter}</td>
-                  <td className="px-3 py-2 text-white/50">{l.description ?? '—'}</td>
-                  <td className="px-3 py-2 text-white/50">{fmtDate(l.createdAt)}</td>
+                  <td className="px-3 py-2 text-gray-600">{l.balanceAfter}</td>
+                  <td className="px-3 py-2 text-gray-500">{l.description ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-500">{fmtDate(l.createdAt)}</td>
                 </tr>
               ))}
             </DataTable>

@@ -65,7 +65,7 @@ export default function SetupPage() {
 
   if (checking) {
     return (
-      <div className="glass-card p-8 text-center text-white/60">
+      <div className="glass-card p-8 text-center text-gray-500">
         正在检查系统状态…
       </div>
     )
@@ -74,16 +74,16 @@ export default function SetupPage() {
   return (
     <div className="glass-card p-8">
       <div className="flex flex-col items-center mb-8">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-cyan-400 flex items-center justify-center text-2xl font-extrabold shadow-glow mb-4">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center text-2xl font-extrabold text-white mb-4">
           {BRAND.logoMarkZh}
         </div>
-        <h1 className="text-2xl font-extrabold">初始化 {BRAND.nameZh}</h1>
-        <p className="text-sm text-white/50 mt-1">创建首个管理员账号（仅此一次）</p>
+        <h1 className="text-2xl font-bold">初始化 {BRAND.nameZh}</h1>
+        <p className="text-sm text-gray-500 mt-1">创建首个管理员账号（仅此一次）</p>
       </div>
 
       <form onSubmit={submit} className="space-y-4">
         <div>
-          <label className="block text-sm text-white/70 mb-1.5">管理员邮箱</label>
+          <label className="block text-sm text-gray-700 mb-1.5">管理员邮箱</label>
           <input
             type="email"
             required
@@ -95,7 +95,7 @@ export default function SetupPage() {
           />
         </div>
         <div>
-          <label className="block text-sm text-white/70 mb-1.5">管理员密码</label>
+          <label className="block text-sm text-gray-700 mb-1.5">管理员密码</label>
           <input
             type="password"
             required
@@ -107,7 +107,7 @@ export default function SetupPage() {
           />
         </div>
         <div>
-          <label className="block text-sm text-white/70 mb-1.5">确认密码</label>
+          <label className="block text-sm text-gray-700 mb-1.5">确认密码</label>
           <input
             type="password"
             required
@@ -119,7 +119,7 @@ export default function SetupPage() {
           />
         </div>
 
-        {error && <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-400/30 rounded-xl px-3 py-2">{error}</p>}
+        {error && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</p>}
 
         <button type="submit" disabled={busy} className="btn-primary w-full">
           {busy ? '创建中…' : '创建管理员'}

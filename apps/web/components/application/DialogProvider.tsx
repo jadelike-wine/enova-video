@@ -116,16 +116,16 @@ export function DialogProvider({ children }: { children: ReactNode }) {
         >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div
-            className="relative w-full max-w-md glass-strong rounded-3xl p-6 shadow-glow animate-float"
+            className="relative w-full max-w-md glass-strong rounded-3xl p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-fuchsia-500/30 to-cyan-400/30 flex items-center justify-center text-2xl flex-shrink-0 border border-white/20">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-fuchsia-500/30 to-cyan-400/30 flex items-center justify-center text-2xl flex-shrink-0 border border-gray-200">
                 {iconMap[state.type] || '💬'}
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-bold text-white mb-2">{state.title}</h3>
-                <p className="text-sm text-white/70 leading-relaxed whitespace-pre-wrap">
+                <h3 className="text-lg font-bold text-gray-900 mb-2">{state.title}</h3>
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
                   {state.message}
                 </p>
               </div>

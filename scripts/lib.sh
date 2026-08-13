@@ -98,7 +98,8 @@ acquire_lock() {
 release_lock() {
   if [ "$_LOCK_MODE" = "flock" ] && [ -n "$_LOCK_FD" ]; then
     flock -u "$_LOCK_FD"
-    exec "$_LOCK_FD">&-
+    # 引号包裹会让 bash 把 "$_LOCK_FD" 当作命令名而非 fd 重定向，须用 eval 求值。
+    eval "exec ${_LOCK_FD}>&-"
     _LOCK_FD=""
   elif [ "$_LOCK_MODE" = "mkdir" ]; then
     rmdir "$LOCK_MKDIR_DIR" 2>/dev/null || true

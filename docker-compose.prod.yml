@@ -59,6 +59,7 @@ services:
       start_period: 20s
     environment:
       NODE_ENV: production
+      TZ: Asia/Shanghai
       PORT: 3001
       HOST: 0.0.0.0
       # system-update 展示当前版本（与镜像 tag 保持一致）
@@ -135,6 +136,7 @@ services:
     image: ghcr.io/jadelike-wine/enova-video-worker:${APP_VERSION}
     environment:
       NODE_ENV: production
+      TZ: Asia/Shanghai
       DATABASE_URL: postgresql://${POSTGRES_USER:-enova}:${POSTGRES_PASSWORD:-enova}@postgres:5432/${POSTGRES_DB:-enova}
       REDIS_URL: redis://redis:6379
       BULLMQ_PREFIX: ${BULLMQ_PREFIX:-enova}
@@ -185,6 +187,7 @@ services:
     environment:
       # Next rewrite 把 /api/* 代理到 api 服务（运行时读取 BACKEND_URL）
       BACKEND_URL: http://api:3001
+      TZ: Asia/Shanghai
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]

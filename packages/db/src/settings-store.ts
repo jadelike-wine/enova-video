@@ -1,6 +1,11 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import type { ExtractTablesWithRelations } from 'drizzle-orm';
+import type { NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
+import type { PgTransaction } from 'drizzle-orm/pg-core';
 import { settings, settingsHistory } from './schema.js';
 import type { Database } from './index.js';
+import * as schema from './schema.js';
+
 import {
   SETTINGS_BY_KEY,
   isRegisteredSetting,
@@ -8,6 +13,9 @@ import {
   type SettingGroup,
   type SettingValueType,
 } from './settings-registry.js';
+
+/** 事务句柄类型：this.db.transaction() 回调内 tx 参数的类型。 */
+type Tx = PgTransaction<NodePgQueryResultHKT, typeof schema, ExtractTablesWithRelations<typeof schema>>;
 
 export interface SettingValueView {
   key: string;
@@ -20,6 +28,17 @@ export interface SettingValueView {
   options?: string[];
   /** 是否被后台显式覆盖（DB 有记录）；false 表示当前取自 env/默认值。 */
   persisted: boolean;
+  /** 修改后是否需要重启进程才能生效。 */
+  restartRequired?: boolean;
+  /** 修改此配置所需的 RBAC 权限码。 */
+  permission?: string;
+  /** 数值范围约束。 */
+  min?: number;
+  max?: number;
+  /** 同组原子更新的 key 列表。 */
+  groupKeys?: string[];
+  /** 敏感项是否已配置（有非空值）。 */
+  configured?: boolean;
 }
 
 /** 用于敏感配置的 AES-GCM 加解密接口（由调用方注入，如 CredentialCrypto）。 */
@@ -159,6 +178,9 @@ export class SettingsStore {
   /**
    * CAS 更新：`WHERE version = expectedVersion`。expectedVersion 不匹配或并发变更时抛
    * SettingsVersionConflictError。成功则版本 +1、写 settings_history、并向所有实例广播失效。
+   *
+   * 事务保证：update + history 在同一数据库事务内，任何失败均回滚。
+   * Redis invalidation 仅在事务成功 COMMIT 后发布。
    */
   async update(
     key: string,
@@ -169,32 +191,37 @@ export class SettingsStore {
     if (!def) throw new SettingNotRegisteredError(key);
 
     const stored = this.encode(def, plaintextValue);
-    const rows = await this.db.select().from(settings).where(eq(settings.key, key)).limit(1);
-    const current = rows[0];
 
-    // 首次写入：version=1
-    if (!current) {
-      await this.db.insert(settings).values({ key, value: stored, valueType: def.valueType, group: def.group, isSecret: def.isSecret ?? false, version: 1 });
-      await this.insertHistory(key, 1, null, stored, opts);
-      await this.invalidator?.publish(key, 1);
-      return { version: 1 };
-    }
+    const result = await this.db.transaction(async (tx) => {
+      const rows = await tx.select().from(settings).where(eq(settings.key, key)).limit(1);
+      const current = rows[0];
 
-    if (opts.expectedVersion !== undefined && current.version !== opts.expectedVersion) {
-      throw new SettingsVersionConflictError(key, opts.expectedVersion, current.version);
-    }
+      // 首次写入：version=1
+      if (!current) {
+        await tx.insert(settings).values({ key, value: stored, valueType: def.valueType, group: def.group, isSecret: def.isSecret ?? false, version: 1 });
+        await this.insertHistoryWithTx(tx, key, 1, null, stored, opts);
+        return { version: 1 };
+      }
 
-    const nextVersion = current.version + 1;
-    const [row] = await this.db
-      .update(settings)
-      .set({ value: stored, version: nextVersion, updatedAt: new Date() })
-      .where(and(eq(settings.key, key), eq(settings.version, current.version)))
-      .returning();
-    if (!row) throw new SettingsVersionConflictError(key, current.version, nextVersion);
+      if (opts.expectedVersion !== undefined && current.version !== opts.expectedVersion) {
+        throw new SettingsVersionConflictError(key, opts.expectedVersion, current.version);
+      }
 
-    await this.insertHistory(key, nextVersion, current.value, stored, opts);
-    await this.invalidator?.publish(key, nextVersion);
-    return { version: nextVersion };
+      const nextVersion = current.version + 1;
+      const [row] = await tx
+        .update(settings)
+        .set({ value: stored, version: nextVersion, updatedAt: new Date() })
+        .where(and(eq(settings.key, key), eq(settings.version, current.version)))
+        .returning();
+      if (!row) throw new SettingsVersionConflictError(key, current.version, nextVersion);
+
+      await this.insertHistoryWithTx(tx, key, nextVersion, current.value, stored, opts);
+      return { version: nextVersion };
+    });
+
+    // 事务成功 COMMIT 后才发布失效广播（防止 publish 后事务回滚导致其他实例加载不存在的新值）。
+    await this.invalidator?.publish(key, result.version);
+    return result;
   }
 
   /** 读取配置当前版本号（用于后台表单 CAS 提交）。 */
@@ -228,6 +255,7 @@ export class SettingsStore {
   /**
    * 回滚到指定历史版本：把该历史记录的 before 值恢复为当前值，版本 +1，写新历史并广播。
    * 返回回滚后的新版本。
+   * 事务保证：回滚 + history 在同一事务内，invalidation 在 commit 后发布。
    */
   async rollback(
     key: string,
@@ -237,43 +265,49 @@ export class SettingsStore {
     const def = SETTINGS_BY_KEY.get(key);
     if (!def) throw new SettingNotRegisteredError(key);
 
-    const histRows = await this.db
-      .select()
-      .from(settingsHistory)
-      .where(and(eq(settingsHistory.key, key), eq(settingsHistory.id, historyId)))
-      .limit(1);
-    const hist = histRows[0];
-    if (!hist) throw new Error(`SETTING_HISTORY_NOT_FOUND: ${key}/${historyId}`);
+    const result = await this.db.transaction(async (tx) => {
+      const histRows = await tx
+        .select()
+        .from(settingsHistory)
+        .where(and(eq(settingsHistory.key, key), eq(settingsHistory.id, historyId)))
+        .limit(1);
+      const hist = histRows[0];
+      if (!hist) throw new Error(`SETTING_HISTORY_NOT_FOUND: ${key}/${historyId}`);
 
-    const currentRows = await this.db.select().from(settings).where(eq(settings.key, key)).limit(1);
-    const current = currentRows[0];
-    if (!current) throw new Error(`SETTING_NOT_FOUND: ${key}`);
+      const currentRows = await tx.select().from(settings).where(eq(settings.key, key)).limit(1);
+      const current = currentRows[0];
+      if (!current) throw new Error(`SETTING_NOT_FOUND: ${key}`);
 
-    const restoreValue = hist.before ?? '';
-    const nextVersion = current.version + 1;
-    const [row] = await this.db
-      .update(settings)
-      .set({ value: restoreValue, version: nextVersion, updatedAt: new Date() })
-      .where(and(eq(settings.key, key), eq(settings.version, current.version)))
-      .returning();
-    if (!row) throw new SettingsVersionConflictError(key, current.version, nextVersion);
+      const restoreValue = hist.before ?? '';
+      const nextVersion = current.version + 1;
+      const [row] = await tx
+        .update(settings)
+        .set({ value: restoreValue, version: nextVersion, updatedAt: new Date() })
+        .where(and(eq(settings.key, key), eq(settings.version, current.version)))
+        .returning();
+      if (!row) throw new SettingsVersionConflictError(key, current.version, nextVersion);
 
-    await this.insertHistory(key, nextVersion, current.value, restoreValue, {
-      ...opts,
-      reason: opts.reason ?? `rollback to history ${historyId}`,
+      await this.insertHistoryWithTx(tx, key, nextVersion, current.value, restoreValue, {
+        ...opts,
+        reason: opts.reason ?? `rollback to history ${historyId}`,
+      });
+      return { version: nextVersion };
     });
-    await this.invalidator?.publish(key, nextVersion);
-    return { version: nextVersion };
+
+    await this.invalidator?.publish(key, result.version);
+    return result;
   }
 
-  private async insertHistory(
+  /** 事务内写 history（供 update/rollback/updateGroup 在事务内调用）。 */
+  private async insertHistoryWithTx(
+    tx: Tx,
     key: string,
     version: number,
     before: string | null,
     after: string,
     actor: UpdateActor,
   ): Promise<void> {
-    await this.db.insert(settingsHistory).values({
+    await tx.insert(settingsHistory).values({
       key,
       version,
       before,
@@ -282,6 +316,31 @@ export class SettingsStore {
       updatedBy: actor.updatedBy,
       requestId: actor.requestId,
     });
+  }
+
+  /**
+   * 批量读取多个配置（单次 SELECT ... WHERE key IN (...)，一致性快照）。
+   * 返回 Map<key, value>，已解密 Secret。未注册 key 不在结果中。
+   * DB 无值 → env fallback → registry default。
+   */
+  async getMany(keys: string[]): Promise<Map<string, string | null>> {
+    const registered = keys.filter((k) => SETTINGS_BY_KEY.has(k));
+    if (registered.length === 0) return new Map();
+
+    const rows = await this.db.select().from(settings).where(inArray(settings.key, registered));
+    const persisted = new Map(rows.map((r) => [r.key, r]));
+
+    const result = new Map<string, string | null>();
+    for (const key of registered) {
+      const def = SETTINGS_BY_KEY.get(key)!;
+      const row = persisted.get(key);
+      if (row) {
+        result.set(key, def.isSecret && this.crypto ? this.crypto.decrypt(row.value) : row.value);
+      } else {
+        result.set(key, this.envValue(def) ?? def.envDefault ?? null);
+      }
+    }
+    return result;
   }
 
   /** 列出全部注册配置及其当前生效值（敏感项解密后返回，是否脱敏由上层决定）。 */
@@ -308,9 +367,135 @@ export class SettingsStore {
         isSecret: def.isSecret ?? false,
         options: def.options,
         persisted: Boolean(row),
+        restartRequired: def.restartRequired,
+        permission: def.permission,
+        min: def.min,
+        max: def.max,
+        groupKeys: def.groupKeys,
+        configured: def.isSecret ? Boolean(value) : undefined,
       });
     }
     return views;
+  }
+
+  // ---- Legacy env migration ----
+
+  /**
+   * 幂等迁移：对每个注册配置，若 DB 中尚无记录但 legacy env 存在，则将 env 值持久化到 DB。
+   * - 仅初始化缺失值，绝不覆盖管理员后来修改的 DB 设置。
+   * - Secret 先加密再写入。
+   * - 返回迁移的 key 列表（供调用方日志/审计）。
+   */
+  async migrateFromEnv(): Promise<string[]> {
+    const rows = await this.db.select().from(settings);
+    const persistedKeys = new Set(rows.map((r) => r.key));
+    const migrated: string[] = [];
+
+    for (const def of SETTINGS_BY_KEY.values()) {
+      if (persistedKeys.has(def.key)) continue;
+      const envVal = this.envValue(def);
+      if (envVal === null) continue;
+
+      const stored = def.isSecret && this.crypto ? this.crypto.encrypt(envVal) : envVal;
+      try {
+        await this.db
+          .insert(settings)
+          .values({
+            key: def.key,
+            value: stored,
+            valueType: def.valueType,
+            group: def.group,
+            isSecret: def.isSecret ?? false,
+            version: 1,
+          })
+          .onConflictDoNothing();
+        migrated.push(def.key);
+      } catch {
+        // 并发安全：另一实例可能同时迁移了同一 key，onConflictDoNothing 已处理。
+      }
+    }
+
+    if (migrated.length > 0 && this.invalidator) {
+      // 迁移后广播失效，确保所有实例看到新值。
+      for (const key of migrated) {
+        await this.invalidator.publish(key, 1);
+      }
+    }
+
+    return migrated;
+  }
+
+  // ---- 批量原子更新（同组配置一致性）----
+
+  /**
+   * 批量原子更新一组配置（数据库事务内）。用于 payment/storage 等必须成组一致的配置。
+   * Secret 字段若值为空字符串则跳过（保持原值不变），实现"留空保持不变"语义。
+   * 任何一项失败（validation / CAS / DB error / history error）全部回滚。
+   * 返回各 key 的新版本。
+   */
+  async updateGroup(
+    updates: Array<{ key: string; value: string }>,
+    opts: UpdateActor = {},
+  ): Promise<Array<{ key: string; version: number }>> {
+    const results: Array<{ key: string; version: number }> = [];
+
+    await this.db.transaction(async (tx) => {
+      for (const { key, value } of updates) {
+        const def = SETTINGS_BY_KEY.get(key);
+        if (!def) throw new SettingNotRegisteredError(key);
+        // Secret 留空 = 保持不变
+        if (def.isSecret && value === '') {
+          const ver = await this.getVersionInTx(tx, key);
+          if (ver !== null) results.push({ key, version: ver });
+          continue;
+        }
+
+        const stored = this.encode(def, value);
+        const rows = await tx.select().from(settings).where(eq(settings.key, key)).limit(1);
+        const current = rows[0];
+
+        if (!current) {
+          await tx.insert(settings).values({ key, value: stored, valueType: def.valueType, group: def.group, isSecret: def.isSecret ?? false, version: 1 });
+          await this.insertHistoryWithTx(tx, key, 1, null, stored, opts);
+          results.push({ key, version: 1 });
+          continue;
+        }
+
+        const nextVersion = current.version + 1;
+        const [row] = await tx
+          .update(settings)
+          .set({ value: stored, version: nextVersion, updatedAt: new Date() })
+          .where(and(eq(settings.key, key), eq(settings.version, current.version)))
+          .returning();
+        if (!row) throw new SettingsVersionConflictError(key, current.version, nextVersion);
+
+        await this.insertHistoryWithTx(tx, key, nextVersion, current.value, stored, opts);
+        results.push({ key, version: nextVersion });
+      }
+    });
+
+    // 事务成功 COMMIT 后才发布失效广播。
+    if (this.invalidator) {
+      for (const r of results) {
+        await this.invalidator.publish(r.key, r.version);
+      }
+    }
+
+    return results;
+  }
+
+  /** 事务内读取配置版本（仅供 updateGroup 事务内使用）。 */
+  private async getVersionInTx(tx: Tx, key: string): Promise<number | null> {
+    const rows = await tx.select().from(settings).where(eq(settings.key, key)).limit(1);
+    return rows[0]?.version ?? null;
+  }
+
+  /** 清除 Secret：将值设为空字符串。 */
+  async clearSecret(key: string, opts: UpdateActor = {}): Promise<{ version: number }> {
+    const def = SETTINGS_BY_KEY.get(key);
+    if (!def) throw new SettingNotRegisteredError(key);
+    if (!def.isSecret) throw new Error(`SETTING_NOT_SECRET: ${key}`);
+    return this.update(key, '', opts);
   }
 }
 

@@ -5,6 +5,7 @@ import { providers, type Database } from '@enova/db';
 import { validateProviderBaseUrl, type UrlGuardOptions } from '@enova/provider';
 import { DATABASE } from '../database/database.module.js';
 import { ENV, type Env } from '../config/config.module.js';
+import { SettingsService } from '../settings/settings.service.js';
 
 export interface ProviderView {
   id: string;
@@ -41,6 +42,7 @@ export class ProvidersAdminService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(ENV) private readonly env: Env,
+    @Inject(SettingsService) private readonly settings: SettingsService,
   ) {}
 
   async list(limit: number, offset: number): Promise<ProviderView[]> {
@@ -108,15 +110,19 @@ export class ProvidersAdminService {
 
   private async validateBaseUrl(baseUrl: string): Promise<void> {
     if (!baseUrl || !baseUrl.trim()) throw domainError(ERROR_CODES.VALIDATION_ERROR, 'provider base_url is required', 400);
-    await validateProviderBaseUrl(baseUrl.trim(), this.guardOptions());
+    await validateProviderBaseUrl(baseUrl.trim(), await this.guardOptions());
   }
 
-  private guardOptions(): UrlGuardOptions {
+  /** SSRF guard 配置从动态配置读取（管理员后台可修改，实时生效）。 */
+  private async guardOptions(): Promise<UrlGuardOptions> {
+    const allowHttp = (await this.settings.getBoolean('ssrf.allowHttp')) ?? this.env.SSRF_ALLOW_HTTP;
+    const resolveDns = (await this.settings.getBoolean('ssrf.resolveDns')) ?? this.env.SSRF_RESOLVE_DNS;
+    const devAllowList = (await this.settings.getString('ssrf.devAllowList')) ?? this.env.SSRF_DEV_ALLOW_LIST;
     return {
-      allowHttp: this.env.SSRF_ALLOW_HTTP,
-      resolveDns: this.env.SSRF_RESOLVE_DNS,
+      allowHttp,
+      resolveDns,
       devAllowlist: this.env.NODE_ENV !== 'production'
-        ? this.env.SSRF_DEV_ALLOW_LIST.split(',').map((s) => s.trim()).filter(Boolean)
+        ? devAllowList.split(',').map((s) => s.trim()).filter(Boolean)
         : [],
     };
   }

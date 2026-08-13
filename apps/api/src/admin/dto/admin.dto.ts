@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsEnum,
   IsInt,
   IsObject,
@@ -8,6 +10,7 @@ import {
   MaxLength,
   Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import {
   CREDENTIAL_STATUSES,
@@ -172,6 +175,30 @@ export class UpdateSettingDto {
   @IsString()
   @MaxLength(4000)
   value!: string;
+
+  @ApiPropertyOptional({ description: 'CAS 乐观并发版本号（可选）' })
+  @IsOptional()
+  @IsInt()
+  expectedVersion?: number;
+}
+
+export class BatchSettingItemDto {
+  @ApiProperty({ example: 'payment.alipayAppId' })
+  @IsString()
+  key!: string;
+
+  @ApiProperty({ example: '2021000...', description: '字符串形式的新值；Secret 留空=保持不变' })
+  @IsString()
+  @MaxLength(4000)
+  value!: string;
+}
+
+export class BatchUpdateSettingsDto {
+  @ApiProperty({ type: [BatchSettingItemDto], description: '批量更新项（同组配置原子更新）' })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BatchSettingItemDto)
+  items!: BatchSettingItemDto[];
 }
 
 // ---- P0-8: 商业控制台 DTO ----

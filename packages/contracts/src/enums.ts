@@ -135,6 +135,7 @@ export const PERMISSIONS = {
   PRICING_PUBLISH: 'pricing.publish',
   SETTINGS_READ: 'settings.read',
   SETTINGS_WRITE: 'settings.write',
+  SETTINGS_SECURITY_WRITE: 'settings.security_write',
   AUDIT_READ: 'audit.read',
   PROVIDERS_READ: 'providers.read',
   PROVIDERS_WRITE: 'providers.write',

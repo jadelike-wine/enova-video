@@ -1,5 +1,5 @@
 import { Injectable, LoggerService } from '@nestjs/common';
-import pino, { type Logger, type LoggerOptions } from 'pino';
+import pino, { type Logger } from 'pino';
 
 export interface LogFields {
   requestId?: string;
@@ -14,44 +14,60 @@ export interface LogFields {
   [key: string]: unknown;
 }
 
+export type LogLevel = 'silent' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'trace';
+export type LogFormat = 'text' | 'json';
+
+const REDACT_PATHS = [
+  'password', '*.password',
+  'cookie', '*.cookie',
+  'authorization', '*.authorization',
+  'secret', '*.secret', '*Secret',
+  'apiKey', '*.apiKey',
+  'x-step-up-password', '*.x-step-up-password',
+  'headers.x-step-up-password', 'request.headers.x-step-up-password',
+  'stepUpPassword', '*.stepUpPassword',
+];
+
+function createPino(level: LogLevel, format: LogFormat): Logger {
+  return pino({
+    level,
+    ...(format === 'text'
+      ? { transport: { target: 'pino-pretty', options: { colorize: true } } }
+      : {}),
+    redact: { paths: REDACT_PATHS, censor: '[REDACTED]' },
+  });
+}
+
 /**
- * 结构化日志封装。所有日志都以 JSON 结构输出，便于在 ELK / Loki 中检索。
- * 实现 NestJS LoggerService 接口，同时保留结构化字段方法供业务代码使用。
+ * 结构化日志封装。实现 NestJS LoggerService 接口。
  * 严禁记录 password / cookie / authorization / provider secret 等敏感字段。
+ *
+ * 日志级别：运行时动态切换（Redis pub/sub 驱动的 setLevel()）。
+ * 日志格式（text/json）：restartRequired —— 进程启动时从 DB 读取 log.format，
+ *   通过 reconfigure() 应用，运行期间不可热切换。
  */
 @Injectable()
 export class EnovaLogger implements LoggerService {
-  private readonly logger: Logger;
+  private logger: Logger;
 
-  constructor(options?: LoggerOptions) {
-    this.logger = pino(
-      options ?? {
-        level: process.env.LOG_LEVEL ?? 'info',
-        redact: {
-          paths: [
-            'password',
-            '*.password',
-            'cookie',
-            '*.cookie',
-            'authorization',
-            '*.authorization',
-            'secret',
-            '*.secret',
-            '*Secret',
-            'apiKey',
-            '*.apiKey',
-            // P1.6: 高危操作 step-up password header 全链路脱敏
-            'x-step-up-password',
-            '*.x-step-up-password',
-            'headers.x-step-up-password',
-            'request.headers.x-step-up-password',
-            'stepUpPassword',
-            '*.stepUpPassword',
-          ],
-          censor: '[REDACTED]',
-        },
-      },
+  constructor(options?: { level?: LogLevel; format?: LogFormat }) {
+    this.logger = createPino(
+      options?.level ?? (process.env.LOG_LEVEL as LogLevel) ?? 'info',
+      options?.format ?? (process.env.LOG_FORMAT as LogFormat) ?? 'text',
     );
+  }
+
+  /**
+   * 启动时从 DB 读取配置后调用，重建内部 Pino 实例。
+   * log.format 为 restartRequired，运行期间不调用此方法。
+   */
+  reconfigure(config: { level: LogLevel; format: LogFormat }): void {
+    this.logger = createPino(config.level, config.format);
+  }
+
+  /** 运行时动态切换日志级别（无需重启，由 SettingsService 在收到 invalidation 后调用）。 */
+  setLevel(level: LogLevel): void {
+    this.logger.level = level;
   }
 
   /** 结构化 info 日志（业务代码使用）。 */

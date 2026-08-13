@@ -14,6 +14,7 @@ import { GENERATION_QUEUE } from '../queue/queue.module.js';
 import { PricingService } from '../billing/pricing.service.js';
 import { WalletService } from '../billing/wallet.service.js';
 import { EntitlementService } from '@enova/billing';
+import { SettingsService } from '../settings/settings.service.js';
 import type { Queue } from 'bullmq';
 
 export interface GenerationView {
@@ -57,7 +58,15 @@ export class GenerationsService {
     @Inject(PricingService) private readonly pricing: PricingService,
     @Inject(GENERATION_QUEUE) private readonly queue: Queue<GenerationJobPayload>,
     @Inject(EntitlementService) private readonly entitlement: EntitlementService,
+    @Inject(SettingsService) private readonly settings: SettingsService,
   ) {}
+
+  /** 从动态配置获取当前 job 级别 options。 */
+  private async getJobOpts(): Promise<{ attempts: number; backoff: { type: 'exponential'; delay: number } }> {
+    const attempts = (await this.settings.getNumber('queue.jobAttempts')) ?? 5;
+    const backoffMs = (await this.settings.getNumber('queue.jobBackoffMs')) ?? 5_000;
+    return { attempts, backoff: { type: 'exponential', delay: backoffMs } };
+  }
 
   async create(
     workspaceId: string,
@@ -182,7 +191,8 @@ export class GenerationsService {
         stage: 'cancel',
       };
       // CANCEL 事件直接入队（不经过 outbox，因为需要立即处理）。
-      await this.queue.add('generation.cancel', payload, { jobId: `${row.id}:cancel` });
+      const jobOpts = await this.getJobOpts();
+      await this.queue.add('generation.cancel', payload, { jobId: `${row.id}:cancel`, attempts: jobOpts.attempts, backoff: jobOpts.backoff });
       return this.toView(row);
     }
 

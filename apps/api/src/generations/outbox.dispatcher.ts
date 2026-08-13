@@ -5,6 +5,7 @@ import { GENERATION_JOB_NAMES, type GenerationJobPayload } from '@enova/contract
 import { generationDispatchOutbox, generationJobs, type Database } from '@enova/db';
 import { DATABASE } from '../database/database.module.js';
 import { GENERATION_QUEUE } from '../queue/queue.module.js';
+import { SettingsService } from '../settings/settings.service.js';
 
 // drizzle-orm 的 .for() 不接受 'update skip locked'，使用 raw SQL 替代。
 
@@ -24,20 +25,31 @@ import { GENERATION_QUEUE } from '../queue/queue.module.js';
  * Reconciliation：
  * - 扫描 QUEUED 状态的 generation_jobs 但无 DISPATCHED outbox → 自动 replay。
  * - 可由 Admin 手动触发 replay。
+ *
+ * 动态配置：每次 queue.add() 时从 SettingsService 读取 queue.jobAttempts / queue.jobBackoffMs，
+ * 确保管理员修改后新 job 立即生效，无需重启 API。
  */
 @Injectable()
 export class OutboxDispatcher implements OnModuleInit {
   private readonly logger = new Logger(OutboxDispatcher.name);
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly pollIntervalMs = 5_000;
-  private readonly maxAttempts = 10;
+  private readonly outboxMaxAttempts = 10;
   private readonly backoffBaseMs = 10_000;
   private readonly batchSize = 50;
 
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     @Inject(GENERATION_QUEUE) private readonly queue: Queue<GenerationJobPayload>,
+    @Inject(SettingsService) private readonly settings: SettingsService,
   ) {}
+
+  /** 从动态配置获取当前 job 级别 options（每次 queue.add 时调用）。 */
+  private async getJobOpts(): Promise<{ attempts: number; backoff: { type: 'exponential'; delay: number } }> {
+    const attempts = (await this.settings.getNumber('queue.jobAttempts')) ?? 5;
+    const backoffMs = (await this.settings.getNumber('queue.jobBackoffMs')) ?? 5_000;
+    return { attempts, backoff: { type: 'exponential', delay: backoffMs } };
+  }
 
   onModuleInit(): void {
     // 启动定时 dispatcher（5 秒间隔）：既投递 PENDING outbox，也定期 reconcile 孤儿任务。
@@ -87,7 +99,7 @@ export class OutboxDispatcher implements OnModuleInit {
       }>;
 
       for (const entry of rows) {
-        if (entry.attempts >= this.maxAttempts) {
+        if (entry.attempts >= this.outboxMaxAttempts) {
           await tx
             .update(generationDispatchOutbox)
             .set({ status: 'SUPERSEDED', lastError: 'Max dispatch attempts exceeded' })
@@ -101,10 +113,11 @@ export class OutboxDispatcher implements OnModuleInit {
             ? `${entry.generation_job_id}:cancel`
             : entry.generation_job_id;
 
+          const jobOpts = await this.getJobOpts();
           await this.queue.add(
             entry.event_type === 'CANCEL' ? GENERATION_JOB_NAMES.CANCEL : GENERATION_JOB_NAMES.PROCESS,
             payload,
-            { jobId },
+            { jobId, attempts: jobOpts.attempts, backoff: jobOpts.backoff },
           );
 
           await tx

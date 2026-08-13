@@ -59,28 +59,35 @@ const providerRow = {
 
 const emptySel = { 'sel:providers': () => [] };
 
+/** Mock SettingsService：返回 null 让 SSRF 配置走 env 兜底。 */
+const mockSettings = {
+  getBoolean: vi.fn().mockResolvedValue(null),
+  getString: vi.fn().mockResolvedValue(null),
+  getNumber: vi.fn().mockResolvedValue(null),
+} as any;
+
 describe('ProvidersAdminService', () => {
   describe('create', () => {
     it('rejects empty provider code', async () => {
-      const svc = new ProvidersAdminService(createDb(emptySel), env);
+      const svc = new ProvidersAdminService(createDb(emptySel), env, mockSettings);
       await expect(svc.create({ code: '  ', name: 'x', baseUrl: 'https://a.example.com' }))
         .rejects.toThrowError(/provider code is required/);
     });
 
     it('rejects missing base_url', async () => {
-      const svc = new ProvidersAdminService(createDb(emptySel), env);
+      const svc = new ProvidersAdminService(createDb(emptySel), env, mockSettings);
       await expect(svc.create({ code: 'agnes', name: 'x', baseUrl: '  ' }))
         .rejects.toThrowError(/base_url is required/);
     });
 
     it('blocks private-network base_url (SSRF)', async () => {
-      const svc = new ProvidersAdminService(createDb(emptySel), env);
+      const svc = new ProvidersAdminService(createDb(emptySel), env, mockSettings);
       await expect(svc.create({ code: 'agnes', name: 'x', baseUrl: 'https://127.0.0.1:9000' }))
         .rejects.toThrowError(/Blocked host/);
     });
 
     it('rejects duplicate provider code with 409', async () => {
-      const svc = new ProvidersAdminService(createDb({ 'sel:providers': () => [providerRow] }), env);
+      const svc = new ProvidersAdminService(createDb({ 'sel:providers': () => [providerRow] }), env, mockSettings);
       await expect(svc.create({ code: 'agnes', name: 'dup', baseUrl: 'https://api.agnes.example.com' }))
         .rejects.toThrowError(/already exists/);
     });
@@ -89,6 +96,7 @@ describe('ProvidersAdminService', () => {
       const svc = new ProvidersAdminService(
         createDb({ 'sel:providers': () => [], 'write:providers': () => [providerRow] }),
         env,
+        mockSettings,
       );
       const view = await svc.create({ code: 'agnes', name: 'Agnes', baseUrl: 'https://api.agnes.example.com' });
       expect(view.id).toBe('p1');
@@ -98,7 +106,7 @@ describe('ProvidersAdminService', () => {
 
   describe('get', () => {
     it('throws 404 when provider not found', async () => {
-      const svc = new ProvidersAdminService(createDb(emptySel), env);
+      const svc = new ProvidersAdminService(createDb(emptySel), env, mockSettings);
       await expect(svc.get('missing')).rejects.toThrowError(/Provider not found/);
     });
   });
@@ -108,6 +116,7 @@ describe('ProvidersAdminService', () => {
       const svc = new ProvidersAdminService(
         createDb({ 'sel:providers': () => [providerRow], 'write:providers': () => [{ ...providerRow, name: 'Agnes v2' }] }),
         env,
+        mockSettings,
       );
       const view = await svc.update('p1', { name: 'Agnes v2' });
       expect(view.name).toBe('Agnes v2');
@@ -118,12 +127,13 @@ describe('ProvidersAdminService', () => {
       const svc = new ProvidersAdminService(
         createDb({ 'sel:providers': () => [providerRow] }),
         env,
+        mockSettings,
       );
       await expect(svc.update('p1', { baseUrl: 'https://192.168.1.1' })).rejects.toThrowError(/Blocked host/);
     });
 
     it('throws 404 when updating a missing provider', async () => {
-      const svc = new ProvidersAdminService(createDb(emptySel), env);
+      const svc = new ProvidersAdminService(createDb(emptySel), env, mockSettings);
       await expect(svc.update('missing', { name: 'x' })).rejects.toThrowError(/Provider not found/);
     });
   });
@@ -133,13 +143,13 @@ describe('ProvidersAdminService', () => {
       const del = vi.fn(() => Promise.resolve({}));
       const db: any = createDb({ 'sel:providers': () => [providerRow] });
       db.delete = () => ({ where: del });
-      const svc = new ProvidersAdminService(db, env);
+      const svc = new ProvidersAdminService(db, env, mockSettings);
       await svc.remove('p1');
       expect(del).toHaveBeenCalled();
     });
 
     it('throws 404 when removing a missing provider', async () => {
-      const svc = new ProvidersAdminService(createDb(emptySel), env);
+      const svc = new ProvidersAdminService(createDb(emptySel), env, mockSettings);
       await expect(svc.remove('missing')).rejects.toThrowError(/Provider not found/);
     });
   });

@@ -2,7 +2,17 @@ import { z } from 'zod';
 
 /**
  * 共享环境变量 Schema（Node 侧：api / worker）。
- * 所有服务统一从这里加载，避免散落的 process.env。
+ *
+ * 架构原则：
+ *   .env = 系统如何启动（bootstrap / infrastructure / root secret）
+ *   System Settings = 系统启动之后如何运行（管理员后台动态配置，存数据库）
+ *
+ * 本 Schema 包含两类配置：
+ * 1. Bootstrap 配置：启动/基础设施/根密钥，必须在进程启动前确定，不可动态修改。
+ * 2. Legacy fallback 配置：已迁移到 System Settings 的业务配置。
+ *    首次启动时 SettingsStore.migrateFromEnv() 会将它们幂等迁移到 DB。
+ *    迁移后这些 env 值仅作为 fallback（DB 值 > legacy env > schema default）。
+ *    新部署无需设置这些变量；管理员后台修改后 DB 值优先。
  */
 
 const envBool = (def = false) =>
@@ -12,6 +22,10 @@ const envBool = (def = false) =>
     .transform((v) => (v === undefined ? def : ['1', 'true', 'yes', 'on'].includes(v.toLowerCase())));
 
 export const envSchema = z.object({
+  // ============================================================
+  // Bootstrap 配置（必须在进程启动前确定）
+  // ============================================================
+
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
   // API
@@ -29,43 +43,71 @@ export const envSchema = z.object({
   // Redis / Queue
   REDIS_URL: z.string().default('redis://localhost:6379'),
   BULLMQ_PREFIX: z.string().default('enova'),
+
+  // 安全
+  /** AES-GCM 用的 32 字节 Master Key，hex 或 base64。生产必须从 KMS/Secret 注入。
+   *  严禁存入数据库或管理员后台——数据库中的 Secret 由它加密。 */
+  CREDENTIAL_MASTER_KEY: z
+    .string()
+    .default('dev-master-key-not-for-production')
+    .describe('32-byte master key for AES-GCM provider secret encryption (hex/base64)'),
+  // ---- System Update / Rollback（后台一键更新，参考 sub2api）----
+  /** 是否启用后台更新/回滚能力。需在 docker-compose 挂载 /var/run/docker.sock 与仓库目录，默认关闭。 */
+  UPDATE_ENABLED: envBool(false),
+  /** 当前部署的 GitHub 仓库（owner/repo），用于检查与回滚版本列表。 */
+  UPDATE_GITHUB_REPOSITORY: z
+    .string()
+    .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'must be an owner/repository name')
+    .default('jadelike-wine/enova-video'),
+  /** 私有仓库只读 token（可选），严禁写入日志。 */
+  UPDATE_GITHUB_TOKEN: z.string().optional().default(''),
+  /** 更新检查结果缓存 TTL（毫秒），默认 20 分钟。 */
+  UPDATE_CHECK_CACHE_TTL_MS: z.coerce.number().int().positive().default(20 * 60 * 1000),
+  /** 更新检查请求超时（毫秒）。 */
+  UPDATE_CHECK_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
+  /** 执行更新/回滚的超时（毫秒），客户端断开后仍继续。 */
+  UPDATE_EXEC_TIMEOUT_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
+  /** Docker daemon socket exposed to the API container for the deploy-tool runner. */
+  UPDATE_DOCKER_SOCKET: z.string().default('/var/run/docker.sock'),
+  /** 触发脚本的 deploy-tool 容器镜像（含 docker CLI + compose + bash + curl + python3）。 */
+  UPDATE_DEPLOY_TOOL_IMAGE: z
+    .string()
+    .default('docker:cli-git'),
+  /** 仓库在 api 容器内的挂载路径（与 docker-compose 卷映射一致）。 */
+  UPDATE_REPO_MOUNT: z.string().default('/host/repo'),
+  /** 仓库内 scripts 目录相对路径。 */
+  UPDATE_SCRIPTS_SUBDIR: z.string().default('scripts'),
+  /** 回滚版本列表最多暴露当前版本之前的 N 个稳定版本。 */
+  UPDATE_MAX_ROLLBACK_VERSIONS: z.coerce.number().int().min(1).max(10).default(3),
+
+  // ============================================================
+  // Legacy fallback 配置（已迁移到 System Settings）
+  // 首次启动自动迁移到 DB；之后仅作为 fallback。
+  // 新部署无需设置以下变量。
+  // ============================================================
+
+  // Worker 并发（BullMQ 构造时固定，restartRequired）
   BULLMQ_CONCURRENCY: z.coerce.number().int().positive().default(3),
   /** 生成任务最大尝试次数（transient 失败重试，耗尽后 failed handler release）。 */
   BULLMQ_JOB_ATTEMPTS: z.coerce.number().int().min(1).default(5),
   /** 指数退避基础延迟（毫秒）。 */
   BULLMQ_JOB_BACKOFF_MS: z.coerce.number().int().positive().default(5_000),
 
-  // 安全
-  /** AES-GCM 用的 32 字节 Master Key，hex 或 base64。生产必须从 KMS/Secret 注入。 */
-  CREDENTIAL_MASTER_KEY: z
-    .string()
-    .default('dev-master-key-not-for-production')
-    .describe('32-byte master key for AES-GCM provider secret encryption (hex/base64)'),
-  SESSION_SECRET: z
-    .string()
-    .default('dev-session-secret-not-for-production')
-    .describe('session signing secret'),
-
   // 日志
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   LOG_FORMAT: z.enum(['text', 'json']).default('text'),
-  LOG_PROMPTS: envBool(false),
 
   // 对象存储（默认 none）
-  STORAGE_PROVIDER: z.enum(['none', 's3', 'qiniu']).default('none'),
+  STORAGE_PROVIDER: z.enum(['none', 's3']).default('none'),
   S3_REGION: z.string().optional().default(''),
   S3_BUCKET: z.string().optional().default(''),
-  S3_PREFIX: z.string().optional().default('agnes-ai'),
+  S3_PREFIX: z.string().optional().default('enova'),
   S3_PUBLIC_BASE_URL: z.string().optional().default(''),
   S3_ENDPOINT_URL: z.string().optional().default(''),
   S3_ACCESS_KEY: z.string().optional().default(''),
   S3_SECRET_KEY: z.string().optional().default(''),
-  QINIU_ACCESS_KEY: z.string().optional().default(''),
-  QINIU_SECRET_KEY: z.string().optional().default(''),
-  QINIU_BUCKET: z.string().optional().default(''),
-  QINIU_DOMAIN: z.string().optional().default(''),
 
-  // ---- Phase 4：Provider 流水线 ----
+  // ---- Provider 流水线 ----
   /** 最大下载生成的资源字节数（防恶意超大文件）。 */
   STORAGE_MAX_BYTES: z.coerce.number().int().positive().default(512 * 1024 * 1024),
   /** 下载上游资源超时（毫秒）。 */
@@ -101,7 +143,7 @@ export const envSchema = z.object({
   TURNSTILE_SITE_KEY: z.string().optional().default(''),
   TURNSTILE_SECRET_KEY: z.string().optional().default(''),
 
-  // ---- Phase 7：支付 ----
+  // ---- 支付 ----
   /** 支付模式：sandbox=本地演示（无需商户密钥）；alipay/wechat=真实渠道。 */
   PAYMENT_MODE: z.enum(['sandbox', 'alipay', 'wechat']).default('sandbox'),
   /** 汇率：1 元人民币可兑换的 credits 数（整数，driver 配置驱动）。 */
@@ -123,40 +165,11 @@ export const envSchema = z.object({
   WECHAT_API_V3_KEY: z.string().optional().default(''),
   WECHAT_SERIAL_NO: z.string().optional().default(''),
   WECHAT_PRIVATE_KEY: z.string().optional().default(''),
-
-  // ---- System Update / Rollback（后台一键更新，参考 sub2api）----
-  /** 是否启用后台更新/回滚能力。需在 docker-compose 挂载 /var/run/docker.sock 与仓库目录，默认关闭。 */
-  UPDATE_ENABLED: envBool(false),
-  /** 当前部署的 GitHub 仓库（owner/repo），用于检查与回滚版本列表。 */
-  UPDATE_GITHUB_REPOSITORY: z
-    .string()
-    .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'must be an owner/repository name')
-    .default('jadelike-wine/enova-video'),
-  /** 私有仓库只读 token（可选），严禁写入日志。 */
-  UPDATE_GITHUB_TOKEN: z.string().optional().default(''),
-  /** 更新检查结果缓存 TTL（毫秒），默认 20 分钟。 */
-  UPDATE_CHECK_CACHE_TTL_MS: z.coerce.number().int().positive().default(20 * 60 * 1000),
-  /** 更新检查请求超时（毫秒）。 */
-  UPDATE_CHECK_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
-  /** 执行更新/回滚的超时（毫秒），客户端断开后仍继续。 */
-  UPDATE_EXEC_TIMEOUT_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
-  /** Docker daemon socket exposed to the API container for the deploy-tool runner. */
-  UPDATE_DOCKER_SOCKET: z.string().default('/var/run/docker.sock'),
-  /** 触发脚本的 deploy-tool 容器镜像（含 docker CLI + compose + bash + curl + python3）。 */
-  UPDATE_DEPLOY_TOOL_IMAGE: z
-    .string()
-    .default('docker:cli-git'),
-  /** 仓库在 api 容器内的挂载路径（与 docker-compose 卷映射一致）。 */
-  UPDATE_REPO_MOUNT: z.string().default('/host/repo'),
-  /** 仓库内 scripts 目录相对路径。 */
-  UPDATE_SCRIPTS_SUBDIR: z.string().default('scripts'),
-  /** 回滚版本列表最多暴露当前版本之前的 N 个稳定版本。 */
-  UPDATE_MAX_ROLLBACK_VERSIONS: z.coerce.number().int().min(1).max(10).default(3),
 });
 
 export type Env = z.infer<typeof envSchema>;
 
-const DEV_DEFAULTS = new Set(['dev-master-key-not-for-production', 'dev-session-secret-not-for-production']);
+const DEV_DEFAULTS = new Set(['dev-master-key-not-for-production']);
 
 export function loadEnv(env: NodeJS.ProcessEnv = process.env): Env {
   const parsed = envSchema.safeParse(env);
@@ -170,7 +183,6 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): Env {
   if (data.NODE_ENV === 'production') {
     const leaked: string[] = [];
     if (DEV_DEFAULTS.has(data.CREDENTIAL_MASTER_KEY)) leaked.push('CREDENTIAL_MASTER_KEY');
-    if (DEV_DEFAULTS.has(data.SESSION_SECRET)) leaked.push('SESSION_SECRET');
     if (leaked.length > 0) {
       throw new Error(`Production requires real secrets, found dev defaults for: ${leaked.join(', ')}`);
     }

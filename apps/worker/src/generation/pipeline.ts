@@ -51,21 +51,46 @@ export interface GenerationPipelineConfig {
   allowedContentTypePrefixes: string[];
 }
 
+/**
+ * 资源提供者：storage/registry/credentials 可在配置变更后热替换。
+ * getConfig() 每次 job 执行时调用，获取最新动态配置。
+ */
+export interface PipelineResourceProvider {
+  readonly storage: ObjectStorage;
+  readonly registry: ProviderRegistry;
+  readonly credentials: CredentialManager;
+  getConfig(): Promise<GenerationPipelineConfig>;
+}
+
 export interface GenerationPipelineDeps {
   db: Database;
   repo: GenerationRepo;
   attempts: GenerationAttemptsRepo;
-  registry: ProviderRegistry;
-  credentials: CredentialManager;
-  storage: ObjectStorage;
+  resources: PipelineResourceProvider;
   wallet: WalletGateway;
   queue: Queue<GenerationJobPayload>;
   logger: WorkerLogger;
-  config: GenerationPipelineConfig;
 }
 
 export class GenerationPipeline {
   constructor(private readonly deps: GenerationPipelineDeps) {}
+
+  /** 获取当前动态配置（每次 job 执行时调用）。 */
+  private async config(): Promise<GenerationPipelineConfig> {
+    return this.deps.resources.getConfig();
+  }
+
+  private get storage(): ObjectStorage {
+    return this.deps.resources.storage;
+  }
+
+  private get registry(): ProviderRegistry {
+    return this.deps.resources.registry;
+  }
+
+  private get credentials(): CredentialManager {
+    return this.deps.resources.credentials;
+  }
 
   /** 执行阶段：IMAGE 直接生成；VIDEO 提交 + 排入延迟轮询。 */
   async execute(payload: GenerationJobPayload): Promise<void> {
@@ -131,7 +156,7 @@ export class GenerationPipeline {
     let status: ProviderJobStatus;
     try {
       status = await this.withCredential(job.provider ?? 'agnes', async (cred) => {
-        const provider = await this.deps.registry.getProvider(job.provider ?? 'agnes');
+        const provider = await this.registry.getProvider(job.provider ?? 'agnes');
         return provider.getVideoStatus(job.providerJobId!, this.buildVideoInput(job), cred.secret);
       });
     } catch (err) {
@@ -190,7 +215,7 @@ export class GenerationPipeline {
     if (job.status === 'RUNNING' && job.providerJobId) {
       try {
         await this.withCredential(job.provider ?? 'agnes', async (cred) => {
-          const provider = await this.deps.registry.getProvider(job.provider ?? 'agnes');
+          const provider = await this.registry.getProvider(job.provider ?? 'agnes');
           await provider.cancelJob(job.providerJobId!, cred.secret);
         });
       } catch (err) {
@@ -226,7 +251,7 @@ export class GenerationPipeline {
 
     try {
       const result = await this.withCredential(job.provider ?? 'agnes', async (cred) => {
-        const provider = await this.deps.registry.getProvider(job.provider ?? 'agnes');
+        const provider = await this.registry.getProvider(job.provider ?? 'agnes');
         return provider.generateImage(this.buildImageInput(job), cred.secret);
       });
       await this.deps.attempts.markSucceeded(attempt.attemptId, job.estimatedCostMicrousd);
@@ -262,7 +287,7 @@ export class GenerationPipeline {
 
       try {
         submission = await this.withCredential(job.provider ?? 'agnes', async (cred) => {
-          const provider = await this.deps.registry.getProvider(job.provider ?? 'agnes');
+          const provider = await this.registry.getProvider(job.provider ?? 'agnes');
           return provider.submitVideo(this.buildVideoInput(job), cred.secret);
         });
         providerJobId = submission.providerJobId;
@@ -307,7 +332,8 @@ export class GenerationPipeline {
     const startedAt = job.providerStartedAt ?? new Date();
     const wallElapsed = Date.now() - startedAt.getTime();
 
-    if (pollCount >= this.deps.config.maxPolls || wallElapsed >= this.deps.config.maxWaitMs) {
+    const cfg = await this.config();
+    if (pollCount >= cfg.maxPolls || wallElapsed >= cfg.maxWaitMs) {
       this.deps.logger.warn('video poll limit reached', {
         generationJobId: job.id,
         pollCount,
@@ -328,7 +354,7 @@ export class GenerationPipeline {
         stage: 'poll',
         providerJobId,
       },
-      { delay: this.deps.config.pollIntervalMs, attempts: 1 },
+      { delay: (await this.config()).pollIntervalMs, attempts: 1 },
     );
   }
 
@@ -338,10 +364,11 @@ export class GenerationPipeline {
 
   private async withCredential<T>(providerCode: string, fn: (cred: AcquiredCredential) => Promise<T>): Promise<T> {
     let lastErr: unknown;
-    for (let attempt = 0; attempt < this.deps.config.credentialRetryAttempts; attempt++) {
+    const cfg = await this.config();
+    for (let attempt = 0; attempt < cfg.credentialRetryAttempts; attempt++) {
       let cred: AcquiredCredential;
       try {
-        cred = await this.deps.credentials.acquire({ providerCode });
+        cred = await this.credentials.acquire({ providerCode });
       } catch (err) {
         // 无可用 credential：transient，交给 BullMQ 重试。
         this.deps.logger.warn('no available credential', { provider: providerCode, attempt });
@@ -350,14 +377,14 @@ export class GenerationPipeline {
 
       try {
         const result = await fn(cred);
-        await this.deps.credentials.markSuccess(cred.credentialId, providerCode);
+        await this.credentials.markSuccess(cred.credentialId, providerCode);
         return result;
       } catch (err) {
         lastErr = err;
         const providerErr = err as ProviderError;
         if (providerErr.category === 'AUTH_ERROR' || providerErr.category === 'RATE_LIMITED') {
           // key 特定问题：标记 health 后切换下一个 credential。
-          await this.deps.credentials.markFailure(cred.credentialId, providerCode, {
+          await this.credentials.markFailure(cred.credentialId, providerCode, {
             category: providerErr.category,
             retryAfterMs: providerErr.retryAfterMs,
             message: providerErr.message,
@@ -399,9 +426,10 @@ export class GenerationPipeline {
       return;
     }
 
+    const cfg = await this.config();
     const dl = await downloadToTempFile(sourceUrl, {
-      ...this.deps.config.download,
-      allowedContentTypePrefixes: this.deps.config.allowedContentTypePrefixes,
+      ...cfg.download,
+      allowedContentTypePrefixes: cfg.allowedContentTypePrefixes,
     });
     let asset: {
       storageProvider: string | null;
@@ -417,7 +445,7 @@ export class GenerationPipeline {
     let displayUrl: string | null = sourceUrl;
 
     try {
-      const stored = await this.deps.storage.uploadFile(dl.filePath, {
+      const stored = await this.storage.uploadFile(dl.filePath, {
         mediaType,
         contentType: dl.contentType,
         ext: mediaType === 'video' ? 'mp4' : undefined,
@@ -437,8 +465,8 @@ export class GenerationPipeline {
         // 优先使用公开/CDN 稳定地址；私有 bucket 生成 presigned URL（1 小时）。
         displayUrl =
           stored.url ||
-          (typeof this.deps.storage.getDisplayUrl === 'function'
-            ? await this.deps.storage.getDisplayUrl(stored.key)
+          (typeof this.storage.getDisplayUrl === 'function'
+            ? await this.storage.getDisplayUrl(stored.key)
             : null) ||
           sourceUrl;
       } else {

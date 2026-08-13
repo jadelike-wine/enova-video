@@ -266,15 +266,43 @@ export interface SettingView {
   isSecret: boolean
   options?: string[]
   persisted: boolean
+  restartRequired?: boolean
+  permission?: string
+  min?: number
+  max?: number
+  configured?: boolean
+}
+
+export interface SettingHistoryEntry {
+  id: string
+  key: string
+  version: number
+  before?: string | null
+  after?: string | null
+  reason?: string | null
+  updatedBy?: string | null
+  requestId?: string | null
+  createdAt: string
 }
 
 export const settingsApi = {
   list: () => json<SettingView[]>('/admin/settings'),
-  update: (key: string, value: string) =>
+  update: (key: string, value: string, expectedVersion?: number) =>
     json<SettingView>(`/admin/settings/${encodeURIComponent(key)}`, {
       method: 'PATCH',
-      body: JSON.stringify({ value }),
+      body: JSON.stringify({ value, expectedVersion }),
     }),
+  batchUpdate: (items: Array<{ key: string; value: string }>) =>
+    json<SettingView[]>('/admin/settings/batch', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    }),
+  clearSecret: (key: string) =>
+    json<SettingView>(`/admin/settings/${encodeURIComponent(key)}/secret`, {
+      method: 'DELETE',
+    }),
+  history: (key: string, limit?: number) =>
+    json<SettingHistoryEntry[]>(`/admin/settings/${encodeURIComponent(key)}/history${limit ? `?limit=${limit}` : ''}`),
 }
 
 // ---------------------------------------------------------------------------

@@ -1,22 +1,17 @@
 import { Worker, Queue } from 'bullmq';
 import IORedis from 'ioredis';
-import { eq } from 'drizzle-orm';
 import { loadEnv } from '@enova/config';
 import { QUEUES, type GenerationJobPayload } from '@enova/contracts';
-import { createDb, providers, SettingsStore, type Database } from '@enova/db';
+import { createDb, type Database } from '@enova/db';
 import { WalletGateway } from '@enova/billing';
-import {
-  CredentialCrypto,
-  ProviderRegistry,
-  RedisCredentialManager,
-  createObjectStorage,
-  type UrlGuardOptions,
-} from '@enova/provider';
+import { CredentialCrypto } from '@enova/provider';
 import { WorkerLogger } from './logger.js';
 import { GenerationAttemptsRepo } from './generation/attempts.repo.js';
 import { GenerationRepo } from './generation/repo.js';
-import { GenerationPipeline } from './generation/pipeline.js';
+import { GenerationPipeline, type GenerationPipelineConfig, type PipelineResourceProvider } from './generation/pipeline.js';
 import { processGenerationPayload } from './processors/generation.processor.js';
+import { WorkerSettings } from './worker-settings.js';
+import { WorkerResources } from './worker-resources.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -29,66 +24,80 @@ async function main(): Promise<void> {
     maxRetriesPerRequest: null,
   });
 
-  // ---- Provider / Credential / Storage ----
+  // ---- 动态配置（DB 覆盖 + env 兜底 + Redis pub/sub 实时失效）----
   const crypto = CredentialCrypto.fromEnv(env.CREDENTIAL_MASTER_KEY);
-  // 动态配置：环境变量兜底 + 管理员后台 DB 覆盖（启动时读取，改配置后重启 Worker 生效）。
-  const settings = new SettingsStore(db, env, crypto);
-  const cfgGetNum = async (key: string, fallback: number): Promise<number> =>
-    (await settings.getNumber(key)) ?? fallback;
-  const cfgGetBool = async (key: string, fallback: boolean): Promise<boolean> =>
-    (await settings.getBoolean(key)) ?? fallback;
-  const cfgGetStr = async (key: string, fallback: string): Promise<string> =>
-    (await settings.getString(key)) ?? fallback;
 
-  const pollIntervalMs = await cfgGetNum('video.pollIntervalMs', env.VIDEO_POLL_INTERVAL_MS);
-  const maxPolls = await cfgGetNum('video.maxPolls', env.VIDEO_MAX_POLLS);
-  const maxWaitMs = await cfgGetNum('video.maxWaitMs', env.VIDEO_MAX_WAIT_MS);
-  const credentialRetryAttempts = await cfgGetNum('credential.retryAttempts', env.CREDENTIAL_RETRY_ATTEMPTS);
-  const credentialLeaseTtlMs = await cfgGetNum('credential.leaseTtlMs', env.CREDENTIAL_LEASE_TTL_MS);
-  const providerHttpTimeoutMs = await cfgGetNum('provider.httpTimeoutMs', env.PROVIDER_HTTP_TIMEOUT_MS);
-  const storageMaxBytes = await cfgGetNum('storage.maxBytes', env.STORAGE_MAX_BYTES);
-  const storageDownloadTimeoutMs = await cfgGetNum('storage.downloadTimeoutMs', env.STORAGE_DOWNLOAD_TIMEOUT_MS);
-  const allowedContentTypes = await cfgGetStr('storage.allowedContentTypes', env.STORAGE_ALLOWED_CONTENT_TYPES);
-  const ssrfAllowHttp = await cfgGetBool('ssrf.allowHttp', env.SSRF_ALLOW_HTTP);
-  const ssrfDevAllowList = await cfgGetStr('ssrf.devAllowList', env.SSRF_DEV_ALLOW_LIST);
-  const ssrfResolveDns = await cfgGetBool('ssrf.resolveDns', env.SSRF_RESOLVE_DNS);
+  // Forward reference：WorkerSettings.onInvalidate 需要 WorkerResources.rebuild，
+  // WorkerResources 需要 WorkerSettings 读取配置。用 mutable holder 打破循环。
+  const resourcesHolder: { current: WorkerResources | undefined } = { current: undefined };
 
-  // ---- SSRF guard（base_url 与上游下载 URL 校验） ----
-  const guard: UrlGuardOptions = {
-    allowHttp: ssrfAllowHttp,
-    resolveDns: ssrfResolveDns,
-    devAllowlist: env.NODE_ENV !== 'production' ? ssrfDevAllowList.split(',').map((s) => s.trim()).filter(Boolean) : [],
-  };
-
-  const credentials = new RedisCredentialManager({ db, redis: connection, crypto, leaseTtlMs: credentialLeaseTtlMs });
-  const registry = new ProviderRegistry({
-    loadProvider: async (code) => {
-      const rows = await db
-        .select({ code: providers.code, name: providers.name, baseUrl: providers.baseUrl, status: providers.status, config: providers.config })
-        .from(providers)
-        .where(eq(providers.code, code))
-        .limit(1);
-      const row = rows[0];
-      if (!row) return null;
-      return { code: row.code, name: row.name, baseUrl: row.baseUrl, status: row.status, config: row.config ?? undefined };
+  const settings = new WorkerSettings({
+    db,
+    env,
+    crypto,
+    redis: connection,
+    logger,
+    onInvalidate: (changedKeys) => {
+      // 配置变更 → 重建 storage/registry/credentials（异步，不阻塞 pub/sub）。
+      if (resourcesHolder.current) {
+        void resourcesHolder.current.rebuild(changedKeys).catch((err) => {
+          logger.error('worker resources rebuild failed', { keys: changedKeys.join(',') }, err);
+        });
+      }
     },
-    guard,
-    timeoutMs: providerHttpTimeoutMs,
   });
-  const storage = createObjectStorage(
-    env.STORAGE_PROVIDER === 's3'
-      ? { kind: 's3', s3: {
-          region: env.S3_REGION,
-          bucket: env.S3_BUCKET,
-          prefix: env.S3_PREFIX,
-          publicBaseUrl: env.S3_PUBLIC_BASE_URL,
-          endpointUrl: env.S3_ENDPOINT_URL,
-          credentials: env.S3_ACCESS_KEY ? { accessKeyId: env.S3_ACCESS_KEY, secretAccessKey: env.S3_SECRET_KEY } : undefined,
-          download: { guard, maxBytes: storageMaxBytes, timeoutMs: storageDownloadTimeoutMs },
-          allowedContentTypePrefixes: allowedContentTypes.split(','),
-        } }
-      : { kind: 'none' },
-  );
+
+  const resources = new WorkerResources({ db, redis: connection, crypto, settings, env, logger });
+  resourcesHolder.current = resources;
+
+  // 首次启动：迁移 legacy env → DB（幂等），然后初始化资源。
+  const migrated = await settings.migrateFromEnv();
+  if (migrated.length > 0) {
+    logger.info('migrated legacy env vars to DB', { keys: migrated.join(',') });
+  }
+  // 应用 DB 日志配置（Bootstrap 阶段用 env/default，启动后覆盖为 DB 配置）。
+  await settings.applyLogSettings();
+  await resources.init();
+
+  // PipelineResourceProvider：pipeline 通过此接口获取动态配置和可热替换的资源。
+  const resourceProvider: PipelineResourceProvider & {
+    getConfig(): Promise<GenerationPipelineConfig>;
+  } = {
+    get storage() {
+      return resources.storage;
+    },
+    get registry() {
+      return resources.registry;
+    },
+    get credentials() {
+      return resources.credentials;
+    },
+    async getConfig(): Promise<GenerationPipelineConfig> {
+      const cfg = await settings.getPipelineConfig({
+        VIDEO_POLL_INTERVAL_MS: env.VIDEO_POLL_INTERVAL_MS,
+        VIDEO_MAX_POLLS: env.VIDEO_MAX_POLLS,
+        VIDEO_MAX_WAIT_MS: env.VIDEO_MAX_WAIT_MS,
+        CREDENTIAL_RETRY_ATTEMPTS: env.CREDENTIAL_RETRY_ATTEMPTS,
+        CREDENTIAL_LEASE_TTL_MS: env.CREDENTIAL_LEASE_TTL_MS,
+        PROVIDER_HTTP_TIMEOUT_MS: env.PROVIDER_HTTP_TIMEOUT_MS,
+        STORAGE_MAX_BYTES: env.STORAGE_MAX_BYTES,
+        STORAGE_DOWNLOAD_TIMEOUT_MS: env.STORAGE_DOWNLOAD_TIMEOUT_MS,
+        STORAGE_ALLOWED_CONTENT_TYPES: env.STORAGE_ALLOWED_CONTENT_TYPES,
+        SSRF_ALLOW_HTTP: env.SSRF_ALLOW_HTTP,
+        SSRF_DEV_ALLOW_LIST: env.SSRF_DEV_ALLOW_LIST,
+        SSRF_RESOLVE_DNS: env.SSRF_RESOLVE_DNS,
+        NODE_ENV: env.NODE_ENV,
+      });
+      return {
+        pollIntervalMs: cfg.pollIntervalMs,
+        maxPolls: cfg.maxPolls,
+        maxWaitMs: cfg.maxWaitMs,
+        credentialRetryAttempts: cfg.credentialRetryAttempts,
+        download: cfg.download,
+        allowedContentTypePrefixes: cfg.allowedContentTypePrefixes,
+      };
+    },
+  };
 
   const repo = new GenerationRepo(db);
   const attempts = new GenerationAttemptsRepo(db);
@@ -99,22 +108,16 @@ async function main(): Promise<void> {
     db,
     repo,
     attempts,
-    registry,
-    credentials,
-    storage,
+    resources: resourceProvider,
     wallet,
     queue,
     logger,
-    config: {
-      pollIntervalMs,
-      maxPolls,
-      maxWaitMs,
-      credentialRetryAttempts,
-      download: { guard, maxBytes: storageMaxBytes, timeoutMs: storageDownloadTimeoutMs },
-      allowedContentTypePrefixes: allowedContentTypes.split(','),
-    },
   });
 
+  // queue.workerConcurrency 仍为 restartRequired：BullMQ Worker concurrency 在构造时固定，
+  // 动态修改需要重启 Worker 进程。管理员后台修改此配置时会看到 restartRequired 标记。
+  // 优先级：DB explicit > legacy BULLMQ_CONCURRENCY env > registry default。
+  const workerConcurrency = (await settings.getNumber('queue.workerConcurrency')) ?? env.BULLMQ_CONCURRENCY;
   const worker = new Worker(
     QUEUES.GENERATION,
     async (job) => {
@@ -138,10 +141,9 @@ async function main(): Promise<void> {
     },
     {
       connection,
-      concurrency: env.BULLMQ_CONCURRENCY,
+      concurrency: workerConcurrency,
       prefix: env.BULLMQ_PREFIX,
-      // attempts/backoff 由 API 侧 Queue.defaultJobOptions 控制（transient 失败按指数退避重试，
-      // 耗尽后由本 Worker 的 failed handler release credits）。
+      // attempts/backoff 由 API 侧 Queue.add() 时从动态配置读取并传入每个 job。
     },
   );
 
@@ -175,8 +177,7 @@ async function main(): Promise<void> {
 
   logger.info('worker started', {
     queue: QUEUES.GENERATION,
-    concurrency: env.BULLMQ_CONCURRENCY,
-    attempts: env.BULLMQ_JOB_ATTEMPTS,
+    concurrency: workerConcurrency,
     redis: env.REDIS_URL,
   });
 
@@ -184,6 +185,7 @@ async function main(): Promise<void> {
     logger.info('worker shutting down', { signal });
     await worker.close();
     await queue.close();
+    await settings.close();
     await connection.quit();
     await db.$client.end();
     process.exit(0);

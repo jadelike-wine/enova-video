@@ -232,16 +232,15 @@ git tag v1.2.0 && git push origin v1.2.0   # 触发 release.yml 构建并推送 
 | `DATABASE_URL` | **是** | PostgreSQL 连接串 |
 | `REDIS_URL` | **是** | Redis 连接串 |
 | `CREDENTIAL_MASTER_KEY` | **是** | AES-GCM 加密 Provider Secret 的 32 字节 Master Key（`openssl rand -hex 32`） |
-| `SESSION_SECRET` | **是** | Session 签名密钥（`openssl rand -hex 32`） |
-| `STORAGE_PROVIDER` | 否 | `none` / `s3` / `qiniu`，默认 `none` |
+| `STORAGE_PROVIDER` | 否 | `none` / `s3`，默认 `none` |
 | `WELCOME_CREDITS` | 否 | 注册发放的 Welcome Credits，默认 `100` |
 | `PAYMENT_MODE` | 否 | `sandbox` / `alipay` / `wechat`，默认 `sandbox` |
 
-> **安全**：生产禁止使用 `.env.example` 中的 dev 占位密钥；`CREDENTIAL_MASTER_KEY`、`SESSION_SECRET`、数据库 / Redis / 对象存储凭证只能通过服务端环境或 IAM / Role 注入。
+> **安全**：生产禁止使用 `.env.example` 中的 dev 占位密钥；`CREDENTIAL_MASTER_KEY`、数据库 / Redis / 对象存储凭证只能通过服务端环境或 IAM / Role 注入。
 
 ## 对象存储
 
-灵动创影支持 **AWS S3**（或任何 S3 兼容存储）与 **七牛云**，通过 `STORAGE_PROVIDER` 统一切换。业务代码只依赖 `packages/provider` 的 `ObjectStorage` 抽象接口，不感知底层实现。
+灵动创影支持 **AWS S3**（或任何 S3 兼容存储），通过 `STORAGE_PROVIDER` 统一切换。业务代码只依赖 `packages/provider` 的 `ObjectStorage` 抽象接口，不感知底层实现。
 
 ### 使用 Access Key 部署
 
@@ -413,9 +412,6 @@ DEPLOY_PATH      # 服务器上仓库克隆路径（如 /opt/enova-video）
 |------|------|------|
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
 | `LOG_FORMAT` | `text`（人读）/ `json`（接 CloudWatch / Loki / ELK） | `text` |
-| `LOG_PROMPTS` | 是否把用户 prompt 写入日志 | `false` |
-
-> `LOG_PROMPTS=true` 仅为排障使用，生产不建议开启。**敏感信息（API Key / Secret / 支付凭证）始终脱敏**，不会写入日志。
 
 ### 常用日志查询命令
 

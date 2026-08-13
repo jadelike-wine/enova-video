@@ -90,7 +90,7 @@ pnpm build
 
 - worker 最终失败时必须幂等释放预留 credits，并把 generation 标记为失败；重复的 BullMQ 事件不能重复退款。
 - provider 凭证使用 `CREDENTIAL_MASTER_KEY` 加密；生产环境禁止使用 `.env.example` 中的 dev 占位密钥。
-- 生产环境的 `SESSION_SECRET`、`CREDENTIAL_MASTER_KEY`、数据库、Redis 和对象存储凭证只能通过服务端环境或 IAM/角色注入。
+- 生产环境的 `CREDENTIAL_MASTER_KEY`、数据库、Redis 和对象存储凭证只能通过服务端环境或 IAM/角色注入。
 - `STORAGE_PROVIDER=none` 是允许的本地默认值；S3/七牛配置必须与实际 provider 分支一致。
 - `docker-compose.dev.yml` 仅用于新架构本地 PostgreSQL/Redis，不代表生产部署方案。
 

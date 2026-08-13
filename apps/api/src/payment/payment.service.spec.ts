@@ -91,7 +91,15 @@ function makeFulfillment() {
 }
 
 function makeSettings() {
+  const paymentSnapshot = new Map([
+    ['payment.mode', 'sandbox'],
+    ['payment.creditsPerCny', '100'],
+    ['payment.minRechargeCents', '100'],
+    ['payment.returnBaseUrl', 'http://localhost:3001'],
+    ['payment.notifyUrl', 'http://localhost:3001/api/v1/payment/notify'],
+  ]);
   return {
+    getMany: vi.fn(async (_keys: string[]) => paymentSnapshot),
     getNumber: vi.fn(async (key: string) => {
       if (key === 'payment.minRechargeCents') return 100;
       if (key === 'payment.creditsPerCny') return 100;

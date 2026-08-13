@@ -43,6 +43,33 @@ function makePayload(stage: string = 'execute'): GenerationJobPayload {
 }
 
 function makeDeps(overrides: Partial<GenerationPipelineDeps> = {}): GenerationPipelineDeps {
+  const registry = {
+    getProvider: vi.fn().mockReturnValue({
+      generateImage: vi.fn(),
+      submitVideo: vi.fn(),
+      getVideoStatus: vi.fn(),
+      cancelJob: vi.fn(),
+    }),
+  } as never;
+  const credentials = {
+    acquire: vi.fn(),
+    markSuccess: vi.fn(),
+    markFailure: vi.fn(),
+    health: vi.fn(),
+    invalidate: vi.fn(),
+  } as never;
+  const storage = {
+    uploadFile: vi.fn().mockResolvedValue({ provider: 's3', key: 'obj/key.png', size: 100 }),
+    provider: 's3',
+  } as never;
+  const config = {
+    pollIntervalMs: 1000,
+    maxPolls: 5,
+    maxWaitMs: 60000,
+    credentialRetryAttempts: 1,
+    download: { guard: { allowHttp: true, resolveDns: false }, maxBytes: 1000, timeoutMs: 1000 },
+    allowedContentTypePrefixes: ['image/', 'video/'],
+  };
   return {
     db: { transaction: (fn: (tx: unknown) => Promise<unknown>) => fn('TX') } as never,
     repo: {
@@ -65,24 +92,11 @@ function makeDeps(overrides: Partial<GenerationPipelineDeps> = {}): GenerationPi
       findRunning: vi.fn().mockResolvedValue(null),
       attachProviderJobIdInTx: vi.fn().mockResolvedValue(undefined),
     } as never,
-    registry: {
-      getProvider: vi.fn().mockReturnValue({
-        generateImage: vi.fn(),
-        submitVideo: vi.fn(),
-        getVideoStatus: vi.fn(),
-        cancelJob: vi.fn(),
-      }),
-    } as never,
-    credentials: {
-      acquire: vi.fn(),
-      markSuccess: vi.fn(),
-      markFailure: vi.fn(),
-      health: vi.fn(),
-      invalidate: vi.fn(),
-    } as never,
-    storage: {
-      uploadFile: vi.fn().mockResolvedValue({ provider: 's3', key: 'obj/key.png', size: 100 }),
-      provider: 's3',
+    resources: {
+      registry,
+      credentials,
+      storage,
+      getConfig: vi.fn().mockResolvedValue(config),
     } as never,
     wallet: {
       settleInTx: vi.fn().mockResolvedValue(undefined),
@@ -93,14 +107,6 @@ function makeDeps(overrides: Partial<GenerationPipelineDeps> = {}): GenerationPi
     logger: {
       info: vi.fn(), warn: vi.fn(), error: vi.fn(),
     } as never,
-    config: {
-      pollIntervalMs: 1000,
-      maxPolls: 5,
-      maxWaitMs: 60000,
-      credentialRetryAttempts: 1,
-      download: { guard: { allowHttp: true, resolveDns: false }, maxBytes: 1000, timeoutMs: 1000 },
-      allowedContentTypePrefixes: ['image/', 'video/'],
-    },
     ...overrides,
   } as unknown as GenerationPipelineDeps;
 }
@@ -120,8 +126,8 @@ describe('GenerationPipeline', () => {
 
   it('image success → Asset + Usage + settle + SUCCEEDED', async () => {
     const deps = makeDeps();
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.generateImage as ReturnType<typeof vi.fn>).mockResolvedValue({ sourceUrl: 'https://cdn.test/i.png' });
 
     const pipeline = new GenerationPipeline(deps);
@@ -136,8 +142,8 @@ describe('GenerationPipeline', () => {
   it('video submit stores provider_job_id and schedules delayed poll', async () => {
     const deps = makeDeps();
     (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob({ type: 'VIDEO', providerJobId: null }));
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.submitVideo as ReturnType<typeof vi.fn>).mockResolvedValue({ providerJobId: 'task-1', status: { status: 'processing' } });
 
     const pipeline = new GenerationPipeline(deps);
@@ -148,7 +154,10 @@ describe('GenerationPipeline', () => {
     expect(deps.queue.add).toHaveBeenCalledWith(
       GENERATION_JOB_NAMES.POLL,
       expect.objectContaining({ providerJobId: 'task-1', stage: 'poll' }),
-      expect.objectContaining({ delay: 1000 }),
+      // Poll jobs intentionally use a single BullMQ attempt.
+      // Poll retries are governed by video polling policy
+      // (pollInterval/maxPolls/maxWait), not queue.jobAttempts.
+      expect.objectContaining({ delay: 1000, attempts: 1 }),
     );
     expect(deps.wallet.settleInTx).not.toHaveBeenCalled();
   });
@@ -158,7 +167,7 @@ describe('GenerationPipeline', () => {
     (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
       makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'existing-task', pollCount: 1 }),
     );
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.submitVideo as ReturnType<typeof vi.fn>).mockResolvedValue({ providerJobId: 'should-not-call', status: { status: 'processing' } });
 
     const pipeline = new GenerationPipeline(deps);
@@ -174,14 +183,14 @@ describe('GenerationPipeline', () => {
     (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
       makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1', pollCount: 1 }),
     );
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.getVideoStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'processing', progress: 20 });
 
     const pipeline = new GenerationPipeline(deps);
     await pipeline.poll(makePayload('poll'));
 
-    expect(deps.queue.add).toHaveBeenCalledWith(GENERATION_JOB_NAMES.POLL, expect.objectContaining({ providerJobId: 'task-1' }), expect.anything());
+    expect(deps.queue.add).toHaveBeenCalledWith(GENERATION_JOB_NAMES.POLL, expect.objectContaining({ providerJobId: 'task-1' }), expect.objectContaining({ attempts: 1 }));
     expect(deps.wallet.settleInTx).not.toHaveBeenCalled();
   });
 
@@ -190,8 +199,8 @@ describe('GenerationPipeline', () => {
     (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
       makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1', pollCount: 1 }),
     );
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.getVideoStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'succeeded', sourceUrl: 'https://cdn.test/v.mp4', duration: 5 });
 
     const pipeline = new GenerationPipeline(deps);
@@ -204,8 +213,8 @@ describe('GenerationPipeline', () => {
 
   it('transient failure throws and does NOT release credits', async () => {
     const deps = makeDeps();
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.generateImage as ReturnType<typeof vi.fn>).mockRejectedValue(
       new ProviderError('upstream 500', { category: 'PROVIDER_TEMPORARY_ERROR' }),
     );
@@ -222,8 +231,8 @@ describe('GenerationPipeline', () => {
   it('permanent bad request fails and releases credits', async () => {
     const deps = makeDeps();
     (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob({ type: 'IMAGE' }));
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.generateImage as ReturnType<typeof vi.fn>).mockRejectedValue(
       new ProviderError('bad input', { category: 'PROVIDER_BAD_REQUEST' }),
     );
@@ -241,8 +250,8 @@ describe('GenerationPipeline', () => {
       makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1', pollCount: 5 }),
     );
     (deps.repo.incrementPoll as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(6); // >= maxPolls(5)
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.getVideoStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'processing', progress: 10 });
 
     const pipeline = new GenerationPipeline(deps);
@@ -255,9 +264,9 @@ describe('GenerationPipeline', () => {
 
   it('provider_cost_usd is driven by pricing rule (default 0)', async () => {
     const deps = makeDeps();
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
     (deps.repo.providerCostUsd as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(1234);
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.generateImage as ReturnType<typeof vi.fn>).mockResolvedValue({ sourceUrl: 'https://cdn.test/i.png' });
 
     const pipeline = new GenerationPipeline(deps);
@@ -277,8 +286,8 @@ describe('GenerationPipeline', () => {
 
   it('image success creates attempt and marks it SUCCEEDED with estimated cost', async () => {
     const deps = makeDeps();
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.generateImage as ReturnType<typeof vi.fn>).mockResolvedValue({ sourceUrl: 'https://cdn.test/i.png' });
 
     const pipeline = new GenerationPipeline(deps);
@@ -296,8 +305,8 @@ describe('GenerationPipeline', () => {
 
   it('image failure creates attempt and marks it FAILED (cost retained)', async () => {
     const deps = makeDeps();
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.generateImage as ReturnType<typeof vi.fn>).mockRejectedValue(
       new ProviderError('upstream 500', { category: 'PROVIDER_TEMPORARY_ERROR' }),
     );
@@ -321,8 +330,8 @@ describe('GenerationPipeline', () => {
       makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1', pollCount: 1 }),
     );
     (deps.attempts.findRunning as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'att-1' });
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.getVideoStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'succeeded', sourceUrl: 'https://cdn.test/v.mp4', duration: 5 });
 
     const pipeline = new GenerationPipeline(deps);
@@ -338,8 +347,8 @@ describe('GenerationPipeline', () => {
       makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1', pollCount: 1 }),
     );
     (deps.attempts.findRunning as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'att-1' });
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.getVideoStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'failed', errorCode: 'UPSTREAM_FAIL', errorMessage: 'render error' });
 
     const pipeline = new GenerationPipeline(deps);
@@ -352,8 +361,8 @@ describe('GenerationPipeline', () => {
   it('video submit creates attempt and attaches provider_job_id', async () => {
     const deps = makeDeps();
     (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(makeJob({ type: 'VIDEO', providerJobId: null }));
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.submitVideo as ReturnType<typeof vi.fn>).mockResolvedValue({ providerJobId: 'task-1', status: { status: 'processing' } });
 
     const pipeline = new GenerationPipeline(deps);
@@ -368,8 +377,8 @@ describe('GenerationPipeline', () => {
     (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
       makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1' }),
     );
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     const cancelJob = (provider.cancelJob as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 
     const pipeline = new GenerationPipeline(deps);
@@ -385,8 +394,8 @@ describe('GenerationPipeline', () => {
     (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
       makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1' }),
     );
-    (deps.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
-    const provider = (deps.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
     (provider.cancelJob as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('upstream down'));
 
     const pipeline = new GenerationPipeline(deps);

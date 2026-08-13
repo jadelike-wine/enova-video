@@ -9,6 +9,10 @@
  * - isSecret：敏感项（如密钥），落库时 AES-GCM 加密，后台返回脱敏。
  * - envKey + envDefault：环境变量兜底。settings 表未显式覆盖时，
  *   以 env 值为准（env 为空时用 envDefault）。管理员后台覆盖后立即生效。
+ * - restartRequired：修改后需要重启进程才能生效（如 BullMQ Worker concurrency）。
+ * - permission：修改此配置所需的 RBAC 权限码（高于基础 SETTINGS_WRITE）。
+ * - groupKeys：同组原子更新的 key 列表（用于 payment/storage 等成组配置一致性）。
+ * - min / max：数值范围约束（valueType=number 时生效）。
  */
 
 export type SettingValueType = 'string' | 'number' | 'boolean' | 'enum';
@@ -19,6 +23,7 @@ export type SettingGroup =
   | 'payment'
   | 'queue'
   | 'storage'
+  | 'security'
   | 'log'
   | 'general';
 
@@ -33,7 +38,47 @@ export interface SettingDef {
   options?: string[];
   envKey?: string;
   envDefault?: string;
+  /** 修改后是否需要重启进程才能生效（如 BullMQ Worker concurrency）。 */
+  restartRequired?: boolean;
+  /** 修改此配置所需的 RBAC 权限码（高于基础 SETTINGS_WRITE）。 */
+  permission?: string;
+  /** 同组原子更新的 key 列表（用于 payment/storage 等成组配置一致性）。 */
+  groupKeys?: string[];
+  /** 数值范围约束（valueType=number 时生效）。 */
+  min?: number;
+  max?: number;
 }
+
+/** 支付组（必须成组原子更新，避免 appId 与 privateKey 版本不一致）。 */
+const PAYMENT_GROUP_KEYS = [
+  'payment.mode',
+  'payment.creditsPerCny',
+  'payment.minRechargeCents',
+  'payment.returnBaseUrl',
+  'payment.notifyUrl',
+  'payment.alipayAppId',
+  'payment.alipayPrivateKey',
+  'payment.alipayPublicKey',
+  'payment.alipayGateway',
+  'payment.wechatAppId',
+  'payment.wechatMchId',
+  'payment.wechatApiV3Key',
+  'payment.wechatSerialNo',
+  'payment.wechatPrivateKey',
+  'payment.wechatPlatformCert',
+];
+
+/** 存储组（必须成组原子更新，避免 accessKey 与 secretKey 版本不一致）。 */
+const STORAGE_GROUP_KEYS = [
+  'storage.provider',
+  'storage.s3Region',
+  'storage.s3Bucket',
+  'storage.s3Prefix',
+  'storage.s3PublicBaseUrl',
+  'storage.s3EndpointUrl',
+  'storage.s3AccessKey',
+  'storage.s3SecretKey',
+];
 
 export const SETTINGS: SettingDef[] = [
   // ---- 计费 ----
@@ -45,6 +90,7 @@ export const SETTINGS: SettingDef[] = [
     description: '新用户注册时自动充入钱包的初始额度。',
     envKey: 'WELCOME_CREDITS',
     envDefault: '100',
+    min: 0,
   },
   // ---- 认证 ----
   {
@@ -69,11 +115,11 @@ export const SETTINGS: SettingDef[] = [
     valueType: 'string',
     group: 'auth',
     label: 'Turnstile Secret Key',
-    description: 'Cloudflare Turnstile 服务端密钥（仅后端校验用，ATS-GCM 加密存储）。',
+    description: 'Cloudflare Turnstile 服务端密钥（仅后端校验用，AES-GCM 加密存储）。',
     isSecret: true,
     envKey: 'TURNSTILE_SECRET_KEY',
   },
-  // ---- 支付 ----
+  // ---- 支付（成组原子更新）----
   {
     key: 'payment.mode',
     valueType: 'enum',
@@ -83,6 +129,7 @@ export const SETTINGS: SettingDef[] = [
     options: ['sandbox', 'alipay', 'wechat'],
     envKey: 'PAYMENT_MODE',
     envDefault: 'sandbox',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.creditsPerCny',
@@ -92,6 +139,8 @@ export const SETTINGS: SettingDef[] = [
     description: '1 元人民币可兑换的 credits 数（整数）。',
     envKey: 'PAYMENT_CREDITS_PER_CNY',
     envDefault: '100',
+    min: 1,
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.minRechargeCents',
@@ -101,6 +150,8 @@ export const SETTINGS: SettingDef[] = [
     description: '单笔充值最小金额（人民币分）。',
     envKey: 'PAYMENT_MIN_RECHARGE_CENTS',
     envDefault: '100',
+    min: 1,
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.returnBaseUrl',
@@ -110,6 +161,7 @@ export const SETTINGS: SettingDef[] = [
     description: '支付完成后页面跳转的基础地址（公网）。',
     envKey: 'PAYMENT_RETURN_BASE_URL',
     envDefault: 'http://localhost:3001',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.notifyUrl',
@@ -119,6 +171,7 @@ export const SETTINGS: SettingDef[] = [
     description: '渠道异步通知回调地址（公网）。',
     envKey: 'PAYMENT_NOTIFY_URL',
     envDefault: 'http://localhost:3001/api/v1/payment/notify',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.alipayAppId',
@@ -128,6 +181,7 @@ export const SETTINGS: SettingDef[] = [
     description: '真实渠道需商户账号。',
     isSecret: true,
     envKey: 'ALIPAY_APP_ID',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.alipayPrivateKey',
@@ -137,6 +191,7 @@ export const SETTINGS: SettingDef[] = [
     description: '敏感字段，AES-GCM 加密存储。',
     isSecret: true,
     envKey: 'ALIPAY_PRIVATE_KEY',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.alipayPublicKey',
@@ -146,6 +201,7 @@ export const SETTINGS: SettingDef[] = [
     description: '用于验签。',
     isSecret: true,
     envKey: 'ALIPAY_PUBLIC_KEY',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.alipayGateway',
@@ -155,6 +211,7 @@ export const SETTINGS: SettingDef[] = [
     description: '渠道网关地址。',
     envKey: 'ALIPAY_GATEWAY',
     envDefault: 'https://openapi.alipay.com/gateway.do',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.wechatAppId',
@@ -164,6 +221,7 @@ export const SETTINGS: SettingDef[] = [
     description: '真实渠道需商户账号。',
     isSecret: true,
     envKey: 'WECHAT_APP_ID',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.wechatMchId',
@@ -173,6 +231,7 @@ export const SETTINGS: SettingDef[] = [
     description: '',
     isSecret: true,
     envKey: 'WECHAT_MCH_ID',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.wechatApiV3Key',
@@ -182,6 +241,7 @@ export const SETTINGS: SettingDef[] = [
     description: '敏感字段，AES-GCM 加密存储。',
     isSecret: true,
     envKey: 'WECHAT_API_V3_KEY',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.wechatSerialNo',
@@ -191,6 +251,7 @@ export const SETTINGS: SettingDef[] = [
     description: '',
     isSecret: true,
     envKey: 'WECHAT_SERIAL_NO',
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   {
     key: 'payment.wechatPrivateKey',
@@ -200,8 +261,31 @@ export const SETTINGS: SettingDef[] = [
     description: '敏感字段，AES-GCM 加密存储。',
     isSecret: true,
     envKey: 'WECHAT_PRIVATE_KEY',
+    groupKeys: PAYMENT_GROUP_KEYS,
+  },
+  {
+    key: 'payment.wechatPlatformCert',
+    valueType: 'string',
+    group: 'payment',
+    label: '微信平台证书',
+    description: '用于验证 webhook 签名。敏感字段，AES-GCM 加密存储。',
+    isSecret: true,
+    groupKeys: PAYMENT_GROUP_KEYS,
   },
   // ---- 任务 / 视频策略 ----
+  {
+    key: 'queue.workerConcurrency',
+    valueType: 'number',
+    group: 'queue',
+    label: 'Worker 并发数',
+    description:
+      'BullMQ Worker concurrency。BullMQ 在构造时固定此值，修改后需要重启 Worker 进程才能生效。',
+    envKey: 'BULLMQ_CONCURRENCY',
+    envDefault: '3',
+    min: 1,
+    max: 32,
+    restartRequired: true,
+  },
   {
     key: 'queue.jobAttempts',
     valueType: 'number',
@@ -210,6 +294,7 @@ export const SETTINGS: SettingDef[] = [
     description: 'transient 失败重试次数，耗尽后释放 credits。',
     envKey: 'BULLMQ_JOB_ATTEMPTS',
     envDefault: '5',
+    min: 1,
   },
   {
     key: 'queue.jobBackoffMs',
@@ -219,6 +304,7 @@ export const SETTINGS: SettingDef[] = [
     description: 'transient 失败重试的指数退避基础延迟。',
     envKey: 'BULLMQ_JOB_BACKOFF_MS',
     envDefault: '5000',
+    min: 100,
   },
   {
     key: 'video.pollIntervalMs',
@@ -228,6 +314,7 @@ export const SETTINGS: SettingDef[] = [
     description: '视频任务延迟轮询间隔。',
     envKey: 'VIDEO_POLL_INTERVAL_MS',
     envDefault: '15000',
+    min: 1000,
   },
   {
     key: 'video.maxPolls',
@@ -237,6 +324,7 @@ export const SETTINGS: SettingDef[] = [
     description: '达到后判定超时并终止。',
     envKey: 'VIDEO_MAX_POLLS',
     envDefault: '240',
+    min: 1,
   },
   {
     key: 'video.maxWaitMs',
@@ -246,6 +334,7 @@ export const SETTINGS: SettingDef[] = [
     description: '视频任务从提交到完成的墙钟超时兜底。',
     envKey: 'VIDEO_MAX_WAIT_MS',
     envDefault: '1800000',
+    min: 10000,
   },
   {
     key: 'credential.retryAttempts',
@@ -255,6 +344,7 @@ export const SETTINGS: SettingDef[] = [
     description: '一次 Worker attempt 内切换 credential 的次数。',
     envKey: 'CREDENTIAL_RETRY_ATTEMPTS',
     envDefault: '3',
+    min: 1,
   },
   {
     key: 'credential.leaseTtlMs',
@@ -264,6 +354,7 @@ export const SETTINGS: SettingDef[] = [
     description: '防止 Worker 崩溃后槽位永久占用。',
     envKey: 'CREDENTIAL_LEASE_TTL_MS',
     envDefault: '120000',
+    min: 5000,
   },
   {
     key: 'provider.httpTimeoutMs',
@@ -273,8 +364,87 @@ export const SETTINGS: SettingDef[] = [
     description: '调用上游 Provider 的超时。',
     envKey: 'PROVIDER_HTTP_TIMEOUT_MS',
     envDefault: '120000',
+    min: 1000,
   },
-  // ---- 下载 / SSRF ----
+  // ---- 对象存储（成组原子更新）----
+  {
+    key: 'storage.provider',
+    valueType: 'enum',
+    group: 'storage',
+    label: '存储 Provider',
+    description: 'none=不转存（dev）；s3=AWS S3 / S3 兼容。',
+    options: ['none', 's3'],
+    envKey: 'STORAGE_PROVIDER',
+    envDefault: 'none',
+    groupKeys: STORAGE_GROUP_KEYS,
+  },
+  {
+    key: 'storage.s3Region',
+    valueType: 'string',
+    group: 'storage',
+    label: 'S3 Region',
+    description: 'AWS 区域。',
+    envKey: 'S3_REGION',
+    groupKeys: STORAGE_GROUP_KEYS,
+  },
+  {
+    key: 'storage.s3Bucket',
+    valueType: 'string',
+    group: 'storage',
+    label: 'S3 Bucket',
+    description: '存储桶名。',
+    envKey: 'S3_BUCKET',
+    groupKeys: STORAGE_GROUP_KEYS,
+  },
+  {
+    key: 'storage.s3Prefix',
+    valueType: 'string',
+    group: 'storage',
+    label: 'S3 Key 前缀',
+    description: '对象 key 前缀，用于隔离多环境。',
+    envKey: 'S3_PREFIX',
+    envDefault: 'enova',
+    groupKeys: STORAGE_GROUP_KEYS,
+  },
+  {
+    key: 'storage.s3PublicBaseUrl',
+    valueType: 'string',
+    group: 'storage',
+    label: 'S3 公网访问基础 URL',
+    description: 'CDN/公网访问基础地址。',
+    envKey: 'S3_PUBLIC_BASE_URL',
+    groupKeys: STORAGE_GROUP_KEYS,
+  },
+  {
+    key: 'storage.s3EndpointUrl',
+    valueType: 'string',
+    group: 'storage',
+    label: 'S3 Endpoint URL',
+    description: 'S3 兼容服务自定义 endpoint（留空用 AWS 默认）。',
+    envKey: 'S3_ENDPOINT_URL',
+    groupKeys: STORAGE_GROUP_KEYS,
+  },
+  {
+    key: 'storage.s3AccessKey',
+    valueType: 'string',
+    group: 'storage',
+    label: 'S3 Access Key',
+    description: '敏感字段，AES-GCM 加密存储。',
+    isSecret: true,
+    envKey: 'S3_ACCESS_KEY',
+    groupKeys: STORAGE_GROUP_KEYS,
+  },
+  {
+    key: 'storage.s3SecretKey',
+    valueType: 'string',
+    group: 'storage',
+    label: 'S3 Secret Key',
+    description: '敏感字段，AES-GCM 加密存储。',
+    isSecret: true,
+    envKey: 'S3_SECRET_KEY',
+    groupKeys: STORAGE_GROUP_KEYS,
+  },
+  // 下载策略（与 storage 同组展示但独立于 provider 切换）
   {
     key: 'storage.maxBytes',
     valueType: 'number',
@@ -283,6 +453,7 @@ export const SETTINGS: SettingDef[] = [
     description: '防恶意超大文件。',
     envKey: 'STORAGE_MAX_BYTES',
     envDefault: '536870912',
+    min: 1,
   },
   {
     key: 'storage.downloadTimeoutMs',
@@ -292,6 +463,7 @@ export const SETTINGS: SettingDef[] = [
     description: '',
     envKey: 'STORAGE_DOWNLOAD_TIMEOUT_MS',
     envDefault: '120000',
+    min: 1000,
   },
   {
     key: 'storage.allowedContentTypes',
@@ -302,32 +474,36 @@ export const SETTINGS: SettingDef[] = [
     envKey: 'STORAGE_ALLOWED_CONTENT_TYPES',
     envDefault: 'image/,video/',
   },
+  // ---- 安全 / SSRF（需 SETTINGS_SECURITY_WRITE 权限）----
   {
     key: 'ssrf.allowHttp',
     valueType: 'boolean',
-    group: 'storage',
+    group: 'security',
     label: '允许 http（非生产）',
-    description: '非生产是否放行 http（本地 mock / 私有 S3）。',
+    description: '非生产是否放行 http（本地 mock / 私有 S3）。生产环境忽略此选项。',
     envKey: 'SSRF_ALLOW_HTTP',
     envDefault: 'false',
+    permission: 'settings.security_write',
   },
   {
     key: 'ssrf.devAllowList',
     valueType: 'string',
-    group: 'storage',
+    group: 'security',
     label: '本地放行 host 白名单',
     description: '逗号分隔，生产忽略。',
     envKey: 'SSRF_DEV_ALLOW_LIST',
     envDefault: '',
+    permission: 'settings.security_write',
   },
   {
     key: 'ssrf.resolveDns',
     valueType: 'boolean',
-    group: 'storage',
+    group: 'security',
     label: '启用 DNS 二次校验',
     description: 'SSRF guard 是否做 DNS 解析二次校验。',
     envKey: 'SSRF_RESOLVE_DNS',
     envDefault: 'true',
+    permission: 'settings.security_write',
   },
   // ---- 日志 ----
   {
@@ -349,15 +525,7 @@ export const SETTINGS: SettingDef[] = [
     options: ['text', 'json'],
     envKey: 'LOG_FORMAT',
     envDefault: 'text',
-  },
-  {
-    key: 'log.prompts',
-    valueType: 'boolean',
-    group: 'log',
-    label: '记录 Prompt 到日志',
-    description: '是否把用户 prompt 写入日志。',
-    envKey: 'LOG_PROMPTS',
-    envDefault: 'false',
+    restartRequired: true,
   },
 ];
 

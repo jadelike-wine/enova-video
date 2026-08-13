@@ -234,16 +234,15 @@ Production environment variables are injected via `.env` (see `.env.example`). K
 | `DATABASE_URL` | **yes** | PostgreSQL connection string |
 | `REDIS_URL` | **yes** | Redis connection string |
 | `CREDENTIAL_MASTER_KEY` | **yes** | 32-byte Master Key for AES-GCM encrypting provider secrets (`openssl rand -hex 32`) |
-| `SESSION_SECRET` | **yes** | Session signing secret (`openssl rand -hex 32`) |
-| `STORAGE_PROVIDER` | no | `none` / `s3` / `qiniu`, default `none` |
+| `STORAGE_PROVIDER` | no | `none` / `s3`, default `none` |
 | `WELCOME_CREDITS` | no | Welcome credits on signup, default `100` |
 | `PAYMENT_MODE` | no | `sandbox` / `alipay` / `wechat`, default `sandbox` |
 
-> **Security**: never use the dev placeholder keys from `.env.example` in production; `CREDENTIAL_MASTER_KEY`, `SESSION_SECRET`, and database / Redis / object-storage credentials must only be injected via server-side env or IAM / Role.
+> **Security**: never use the dev placeholder keys from `.env.example` in production; `CREDENTIAL_MASTER_KEY`, and database / Redis / object-storage credentials must only be injected via server-side env or IAM / Role.
 
 ## Object storage
 
-EnovaMotion supports **AWS S3** (or any S3-compatible store) and **Qiniu Cloud**, switched via `STORAGE_PROVIDER`. Business code depends only on the `ObjectStorage` interface in `packages/provider`.
+EnovaMotion supports **AWS S3** (or any S3-compatible store), switched via `STORAGE_PROVIDER`. Business code depends only on the `ObjectStorage` interface in `packages/provider`.
 
 ### With Access Keys
 

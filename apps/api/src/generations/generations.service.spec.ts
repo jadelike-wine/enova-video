@@ -1,8 +1,8 @@
 /**
- * OutboxDispatcher 行为测试：动态 queue options。
+ * GenerationsService 行为测试：cancel 路径动态 queue options。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { OutboxDispatcher } from './outbox.dispatcher.js';
+import { GenerationsService } from './generations.service.js';
 import type { Queue } from 'bullmq';
 import type { GenerationJobPayload } from '@enova/contracts';
 
@@ -29,14 +29,20 @@ function createMockDb() {
     })),
     insert: vi.fn(() => ({
       values: vi.fn(() => ({
+        returning: async () => [],
         onConflictDoNothing: vi.fn(() => ({
           returning: async () => [],
         })),
-        then: async (resolve: any) => resolve(undefined),
       })),
     })),
     transaction: async (cb: (tx: any) => Promise<any>) => cb({
-      execute: vi.fn(async () => ({ rows: [] })),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            limit: async () => [],
+          })),
+        })),
+      })),
       update: vi.fn(() => ({
         set: vi.fn(() => ({
           where: vi.fn(() => ({
@@ -46,13 +52,13 @@ function createMockDb() {
       })),
       insert: vi.fn(() => ({
         values: vi.fn(() => ({
+          returning: async () => [],
           onConflictDoNothing: vi.fn(() => ({
             returning: async () => [],
           })),
         })),
       })),
     }),
-    execute: vi.fn(async () => ({ rows: [] })),
   };
 }
 
@@ -60,7 +66,6 @@ function createMockQueue() {
   return {
     add: vi.fn().mockResolvedValue(undefined),
     remove: vi.fn().mockResolvedValue(undefined),
-    close: vi.fn().mockResolvedValue(undefined),
   } as unknown as Queue<GenerationJobPayload>;
 }
 
@@ -82,62 +87,63 @@ function createMockSettings(overrides: Record<string, any> = {}) {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('OutboxDispatcher', () => {
+describe('GenerationsService cancel path', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('dynamic queue options', () => {
-    it('uses dynamic attempts and backoff from SettingsService', async () => {
+  describe('cancel uses dynamic queue options', () => {
+    it('adds cancel job with dynamic attempts and backoff', async () => {
       const db = createMockDb();
       const queue = createMockQueue();
       const settings = createMockSettings({ jobAttempts: 7, jobBackoffMs: 1234 });
 
-      const dispatcher = new OutboxDispatcher(db as any, queue as any, settings as any);
+      // Mock wallet, pricing, entitlement
+      const wallet = {} as any;
+      const pricing = {} as any;
+      const entitlement = {} as any;
 
-      // Mock dispatchBatch to have a pending row
-      db.execute = vi.fn(async () => ({
-        rows: [{
-          id: 'outbox-1',
-          generation_job_id: 'job-1',
-          event_type: 'PROCESS',
-          payload_json: { generationJobId: 'job-1' },
-          attempts: 0,
-        }],
-      }));
-      db.transaction = async (cb: (tx: any) => Promise<any>) => {
-        const tx = {
-          execute: vi.fn(async () => ({
-            rows: [{
-              id: 'outbox-1',
-              generation_job_id: 'job-1',
-              event_type: 'PROCESS',
-              payload_json: { generationJobId: 'job-1' },
-              attempts: 0,
-            }],
-          })),
-          update: vi.fn(() => ({
-            set: vi.fn(() => ({
-              where: vi.fn(async () => {}),
-            })),
-          })),
-        };
-        return cb(tx);
+      const service = new GenerationsService(db as any, wallet, pricing, queue as any, entitlement, settings as any);
+
+      // Mock findByIdAndWorkspace to return a RUNNING job
+      const mockJob = {
+        id: 'job-1',
+        workspaceId: 'ws-1',
+        userId: 'u-1',
+        type: 'IMAGE',
+        status: 'RUNNING',
+        provider: 'agnes',
+        model: 'agn-dream',
+        inputJson: { prompt: 'test' },
+        reservedCredits: 10,
+        estimatedCredits: 10,
+        actualCredits: 0,
+        estimatedCostMicrousd: 500,
+        reportedCostMicrousd: 0,
+        finalCostMicrousd: 0,
+        costStatus: 'ESTIMATED',
+        attemptCount: 1,
+        createdAt: new Date(),
+        completedAt: null,
       };
 
-      await dispatcher.dispatchBatch();
+      // Override the private findByIdAndWorkspace
+      (service as any).findByIdAndWorkspace = vi.fn().mockResolvedValue(mockJob);
+
+      await service.cancel('ws-1', 'job-1');
 
       expect(queue.add).toHaveBeenCalledWith(
-        expect.any(String),
+        'generation.cancel',
         expect.any(Object),
         expect.objectContaining({
+          jobId: 'job-1:cancel',
           attempts: 7,
           backoff: { type: 'exponential', delay: 1234 },
         }),
       );
     });
 
-    it('uses updated attempts/backoff after settings change', async () => {
+    it('uses updated queue options after settings change', async () => {
       const db = createMockDb();
       const queue = createMockQueue();
       let currentAttempts = 5;
@@ -151,23 +157,24 @@ describe('OutboxDispatcher', () => {
         }),
       };
 
-      const dispatcher = new OutboxDispatcher(db as any, queue as any, settings as any);
+      const wallet = {} as any;
+      const pricing = {} as any;
+      const entitlement = {} as any;
 
-      // First dispatch with default settings
-      db.transaction = async (cb: (tx: any) => Promise<any>) => {
-        const tx = {
-          execute: vi.fn(async () => ({
-            rows: [{
-              id: 'outbox-1', generation_job_id: 'job-1',
-              event_type: 'PROCESS', payload_json: { generationJobId: 'job-1' }, attempts: 0,
-            }],
-          })),
-          update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(async () => {}) })) })),
-        };
-        return cb(tx);
+      const service = new GenerationsService(db as any, wallet, pricing, queue as any, entitlement, settings as any);
+
+      const mockJob = {
+        id: 'job-1', workspaceId: 'ws-1', userId: 'u-1',
+        type: 'IMAGE', status: 'RUNNING', provider: 'agnes', model: 'agn-dream',
+        inputJson: { prompt: 'test' }, reservedCredits: 10,
+        estimatedCredits: 10, actualCredits: 0,
+        estimatedCostMicrousd: 500, reportedCostMicrousd: 0, finalCostMicrousd: 0,
+        costStatus: 'ESTIMATED', attemptCount: 1, createdAt: new Date(), completedAt: null,
       };
+      (service as any).findByIdAndWorkspace = vi.fn().mockResolvedValue(mockJob);
 
-      await dispatcher.dispatchBatch();
+      // First cancel
+      await service.cancel('ws-1', 'job-1');
       expect(queue.add).toHaveBeenCalledWith(
         expect.any(String), expect.any(Object),
         expect.objectContaining({ attempts: 5, backoff: { type: 'exponential', delay: 5000 } }),
@@ -178,7 +185,7 @@ describe('OutboxDispatcher', () => {
       currentBackoff = 4321;
       vi.clearAllMocks();
 
-      await dispatcher.dispatchBatch();
+      await service.cancel('ws-1', 'job-1');
       expect(queue.add).toHaveBeenCalledWith(
         expect.any(String), expect.any(Object),
         expect.objectContaining({ attempts: 9, backoff: { type: 'exponential', delay: 4321 } }),

@@ -47,32 +47,65 @@ export class PaymentService {
     @Inject(SubscriptionFulfillmentService) private readonly fulfillment: SubscriptionFulfillmentService,
   ) {}
 
+  /** 支付配置的 key 列表（单次 SELECT snapshot，避免跨事务混合版本）。 */
+  private static readonly PAYMENT_KEYS = [
+    'payment.mode',
+    'payment.creditsPerCny',
+    'payment.minRechargeCents',
+    'payment.returnBaseUrl',
+    'payment.notifyUrl',
+    'payment.alipayAppId',
+    'payment.alipayPrivateKey',
+    'payment.alipayPublicKey',
+    'payment.alipayGateway',
+    'payment.wechatAppId',
+    'payment.wechatMchId',
+    'payment.wechatApiV3Key',
+    'payment.wechatSerialNo',
+    'payment.wechatPrivateKey',
+    'payment.wechatPlatformCert',
+  ];
+
   /**
    * 从动态配置构建支付渠道 registry（每次下单实时读取，后台改支付参数立即生效）。
    * 商户密钥等敏感项从 settings 解密获取；未配置时走 sandbox 兜底。
+   *
+   * 使用 getMany() 单次 SELECT snapshot，避免逐个 key 查询跨事务读取混合版本。
    */
   private async buildConfig(): Promise<{
     registry: PaymentRegistry;
     activeProvider: PaymentProviderKey;
     notifyUrl: string;
     returnBaseUrl: string;
+    creditsPerCny: number;
+    minRechargeCents: number;
   }> {
-    const mode = ((await this.settings.getString('payment.mode')) ?? 'sandbox') as PaymentEnvConfig['mode'];
-    const creditsPerCny = (await this.settings.getNumber('payment.creditsPerCny')) ?? 100;
-    const minRechargeCents = (await this.settings.getNumber('payment.minRechargeCents')) ?? 100;
-    const returnBaseUrl = (await this.settings.getString('payment.returnBaseUrl')) ?? 'http://localhost:3001';
-    const notifyUrl = (await this.settings.getString('payment.notifyUrl')) ?? 'http://localhost:3001/api/v1/payment/notify';
+    const snapshot = await this.settings.getMany(PaymentService.PAYMENT_KEYS);
 
-    const alipayAppId = await this.settings.getString('payment.alipayAppId');
-    const alipayPrivateKey = await this.settings.getString('payment.alipayPrivateKey');
-    const alipayPublicKey = await this.settings.getString('payment.alipayPublicKey');
-    const alipayGateway = (await this.settings.getString('payment.alipayGateway')) ?? 'https://openapi.alipay.com/gateway.do';
-    const wechatAppId = await this.settings.getString('payment.wechatAppId');
-    const wechatMchId = await this.settings.getString('payment.wechatMchId');
-    const wechatApiV3Key = await this.settings.getString('payment.wechatApiV3Key');
-    const wechatSerialNo = await this.settings.getString('payment.wechatSerialNo');
-    const wechatPrivateKey = await this.settings.getString('payment.wechatPrivateKey');
-    const wechatPlatformCert = await this.settings.getString('payment.wechatPlatformCert');
+    const getStr = (key: string, fallback: string) => snapshot.get(key) ?? fallback;
+    const getNum = (key: string, fallback: number) => {
+      const v = snapshot.get(key);
+      if (v === null || v === '') return fallback;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    };
+
+    const mode = (getStr('payment.mode', 'sandbox')) as PaymentEnvConfig['mode'];
+    const creditsPerCny = getNum('payment.creditsPerCny', 100);
+    const minRechargeCents = getNum('payment.minRechargeCents', 100);
+    const returnBaseUrl = getStr('payment.returnBaseUrl', 'http://localhost:3001');
+    const notifyUrl = getStr('payment.notifyUrl', 'http://localhost:3001/api/v1/payment/notify');
+
+    const alipayAppId = getStr('payment.alipayAppId', '');
+    const alipayPrivateKey = getStr('payment.alipayPrivateKey', '');
+    const alipayPublicKey = getStr('payment.alipayPublicKey', '');
+    const alipayGateway = getStr('payment.alipayGateway', 'https://openapi.alipay.com/gateway.do');
+    const wechatAppId = getStr('payment.wechatAppId', '');
+    const wechatMchId = getStr('payment.wechatMchId', '');
+    const wechatApiV3Key = getStr('payment.wechatApiV3Key', '');
+    const wechatSerialNo = getStr('payment.wechatSerialNo', '');
+    const wechatPrivateKey = getStr('payment.wechatPrivateKey', '');
+    const wechatPlatformCert = getStr('payment.wechatPlatformCert', '');
 
     const cfg: PaymentEnvConfig = {
       mode,
@@ -92,7 +125,7 @@ export class PaymentService {
               apiV3Key: wechatApiV3Key,
               serialNo: wechatSerialNo,
               privateKey: wechatPrivateKey,
-              platformCert: wechatPlatformCert ?? undefined,
+              platformCert: wechatPlatformCert || undefined,
             }
           : undefined,
     };
@@ -102,14 +135,14 @@ export class PaymentService {
       activeProvider: built.activeProvider,
       notifyUrl,
       returnBaseUrl,
+      creditsPerCny,
+      minRechargeCents,
     };
   }
 
   /** 创建充值订单并调渠道下单。couponCode 可选（P1-8 优惠码）。 */
   async createRecharge(user: AuthUser, amountCents: number, couponCode?: string): Promise<RechargeResult> {
-    const { registry, activeProvider, notifyUrl, returnBaseUrl } = await this.buildConfig();
-    const minRechargeCents = (await this.settings.getNumber('payment.minRechargeCents')) ?? 0;
-    const creditsPerCny = (await this.settings.getNumber('payment.creditsPerCny')) ?? 0;
+    const { registry, activeProvider, notifyUrl, returnBaseUrl, creditsPerCny, minRechargeCents } = await this.buildConfig();
     if (amountCents < minRechargeCents) {
       throw domainError(ERROR_CODES.VALIDATION_ERROR, `Recharge amount below minimum of ${minRechargeCents} cents`, 400, {
         min: minRechargeCents,

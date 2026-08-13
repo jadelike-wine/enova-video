@@ -4,7 +4,7 @@
 </p>
 <h1 align="center">灵动创影 · EnovaMotion</h1>
 <p align="center"><strong>基于 Agnes AI 模型的多模态 AI 创作平台</strong></p>
-<p align="center">AI 对话 · 文生图 / 图生图 · 文生视频 / 图生视频 </p>
+<p align="center">文生图 / 图生图 · 文生视频 / 图生视频 </p>
 <div align="center">
   <a href="https://platform.agnes-ai.com/" target="_blank">
   <img alt="agnes ai" src="https://img.shields.io/badge/platform-Agnes%20AI-ff6b3d?style=flat-square"></a>
@@ -21,11 +21,11 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/ai-img-gen.png" alt="灵动创影 — AI 流式对话界面" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
+  <img src="docs/images/ai-img-gen.png" alt="灵动创影 — AI 创作平台" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
 </p>
 
 <p align="center">
-  <strong>对话 · 生图 · 生视频 · 一个界面全搞定</strong><br/>
+  <strong>生图 · 生视频 · 一个界面全搞定</strong><br/>
 </p>
 
 ## 界面预览
@@ -45,11 +45,6 @@
   </tr>
   <tr>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/ai-chat.png" alt="AI 对话界面" width="100%" style="display:block;margin-bottom:6px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
-      <strong>💬 AI 对话</strong><br/>
-      <span style="font-size:13px">流式输出 · Thinking 模式 · Token 统计 · 多对话切换</span>
-    </td>
-    <td width="50%" align="center" valign="top">
       <img src="docs/images/settings.png" alt="账户设置界面" width="100%" style="display:block;margin-bottom:6px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
       <strong>⚙️ 账户与钱包</strong><br/>
       <span style="font-size:13px">登录注册 · Credits 余额 · Wallet 充值 · 账户设置</span>
@@ -62,7 +57,6 @@
 | 模块 | 能力 |
 |------|------|
 | **账户与鉴权** | 注册 / 登录 / 登出、HttpOnly Cookie 会话、Turnstile 人机校验、用户角色（USER/ADMIN） |
-| **文本对话** | 新建 / 切换对话、流式输出、Thinking 模式、Token 与耗时统计 |
 | **图片生成** | 文生图、单图编辑、多图合成；多模型支持 |
 | **视频生成** | 文生视频、图生视频、多图视频、关键帧动画；BullMQ 异步任务 + 延迟轮询 |
 | **统一任务系统** | `GenerationJob` 统一建模图片 / 视频等生成任务，状态机 PENDING→QUEUED→RUNNING→SUCCEEDED/FAILED/CANCELED |
@@ -99,7 +93,7 @@ Browser
   ↓
 Web (Next.js :3000, apps/web)          # SSR + 静态页面，/api/v1/* rewrite 到 API
   ↓ /api/v1/*（服务端 rewrite）
-API (NestJS :3001, apps/api)           # 鉴权 / 对话 / 生成 / 计费 / 支付 / 管理后台
+API (NestJS :3001, apps/api)           # 鉴权 / 生成 / 计费 / 支付 / 管理后台
   ├── PostgreSQL (Drizzle)             # 数据持久化
   ├── Redis / BullMQ                   # 队列（enqueue 生成任务）
   ↓
@@ -455,17 +449,6 @@ API 为 **NestJS + Fastify**，路由统一前缀 `/api/v1`。运行 `apps/api` 
 | GET | `/api/v1/auth/me` | 当前用户信息 |
 | GET | `/api/v1/auth/turnstile-config` | Turnstile 人机校验配置 |
 
-### 对话
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/v1/conversations` | 对话列表 |
-| POST | `/api/v1/conversations` | 新建对话 |
-| GET/PATCH/DELETE | `/api/v1/conversations/:id` | 对话详情 / 改名 / 删除 |
-| GET | `/api/v1/conversations/:id/messages` | 消息列表 |
-| POST | `/api/v1/conversations/:id/messages` | 发送消息（流式） |
-| POST | `/api/v1/conversations/:id/messages/batch` | 批量消息 |
-
 ### 生成任务
 
 | 方法 | 路径 | 说明 |
@@ -514,7 +497,6 @@ API 为 **NestJS + Fastify**，路由统一前缀 `/api/v1`。运行 `apps/api` 
 |------|------|------|
 | Identity | `users` / `sessions` | 用户与会话（HttpOnly Cookie） |
 | Workspace | `workspaces` / `workspace_members` | 工作区与成员隔离 |
-| Conversation | `conversations` / `messages` | 对话与消息记录 |
 | Generation | `generation_jobs` / `assets` | 统一生成任务与产物 |
 | Provider | `providers` / `provider_credentials` | Provider 与 **AES-GCM 加密**凭证 |
 | Billing | `wallets` / `wallet_ledger` | 钱包余额 / 预留 / 账本（幂等） |
@@ -537,7 +519,6 @@ enova-video/
 │   ├── api/                     # NestJS API（/api/v1 + OpenAPI）
 │   │   └── src/
 │   │       ├── auth/            # 注册 / 登录 / 会话 / Turnstile
-│   │       ├── conversations/   # 对话与消息
 │   │       ├── generations/     # 生成任务
 │   │       ├── billing/         # 钱包 / 定价
 │   │       ├── payment/         # 充值 / 回调

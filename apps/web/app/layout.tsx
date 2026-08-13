@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     template: `%s – ${SITE_NAME}`,
   },
   description:
-    '灵动创影（EnovaMotion）是一个 AI 智能创作平台，提供 AI 对话、AI 图片生成与 AI 视频生成能力，底层基于 Agnes AI 模型。',
+    '灵动创影（EnovaMotion）是一个 AI 智能创作平台，提供 AI 图片生成与 AI 视频生成能力。',
   applicationName: SITE_NAME,
   authors: [{ name: SITE_NAME }],
   openGraph: {
@@ -37,7 +37,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN" className={inter.variable}>
-      <body style={{ fontFamily: 'var(--font-inter), system-ui, sans-serif' }}>
+      <body
+        style={{ fontFamily: 'var(--font-inter), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif' }}
+      >
         {children}
       </body>
     </html>

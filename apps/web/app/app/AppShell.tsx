@@ -1,36 +1,84 @@
 'use client'
 
 import Link from 'next/link'
+import { useCallback } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { DialogProvider } from '../../components/application/DialogProvider'
 import { SessionProvider, useSession } from '../../lib/auth'
 import { BRAND } from '../../lib/brand'
 
-const navItems = [
-  { path: '/app/chat', label: '文本对话', icon: '💬', gradient: 'from-violet-500 to-fuchsia-500', adminOnly: false },
-  { path: '/app/images', label: '图片生成', icon: '🎨', gradient: 'from-pink-500 to-orange-400', adminOnly: false },
-  { path: '/app/videos', label: '视频生成', icon: '🎬', gradient: 'from-cyan-400 to-blue-500', adminOnly: false },
-  { path: '/app/wallet', label: '钱包', icon: '💰', gradient: 'from-emerald-400 to-cyan-500', adminOnly: false },
-  { path: '/app/settings', label: '设置', icon: '⚙️', gradient: 'from-slate-400 to-zinc-500', adminOnly: false },
-  { path: '/app/admin/dashboard', label: '运营概览', icon: '📊', gradient: 'from-emerald-400 to-cyan-500', adminOnly: true },
-  { path: '/app/admin/users', label: '用户管理', icon: '👥', gradient: 'from-violet-500 to-fuchsia-500', adminOnly: true },
-  { path: '/app/admin/orders', label: '订单 / 支付', icon: '💳', gradient: 'from-amber-400 to-orange-500', adminOnly: true },
-  { path: '/app/admin/generations', label: '生成任务', icon: '🎬', gradient: 'from-cyan-400 to-blue-500', adminOnly: true },
-  { path: '/app/admin/audit', label: '审计日志', icon: '🧾', gradient: 'from-slate-400 to-zinc-500', adminOnly: true },
-  { path: '/app/admin/settings', label: '系统配置', icon: '🛠️', gradient: 'from-amber-400 to-rose-500', adminOnly: true },
-  { path: '/app/admin/system-update', label: '系统更新', icon: '🔄', gradient: 'from-cyan-400 to-blue-500', adminOnly: true },
+// 普通用户（个人端）导航项
+const userNavItems = [
+  { path: '/app/images', label: '图片生成', icon: '🎨' },
+  { path: '/app/videos', label: '视频生成', icon: '🎬' },
+  { path: '/app/wallet', label: '钱包', icon: '💰' },
+  { path: '/app/settings', label: '设置', icon: '⚙️' },
 ]
+
+// 管理员后台导航项（仅管理员可见）
+const adminNavItems = [
+  { path: '/app/admin/dashboard', label: '运营概览', icon: '📊' },
+  { path: '/app/admin/users', label: '用户管理', icon: '👥' },
+  { path: '/app/admin/orders', label: '订单 / 支付', icon: '💳' },
+  { path: '/app/admin/generations', label: '生成任务', icon: '🎬' },
+  { path: '/app/admin/audit', label: '审计日志', icon: '🧾' },
+  { path: '/app/admin/settings', label: '系统配置', icon: '🛠️' },
+  { path: '/app/admin/system-update', label: '系统更新', icon: '🔄' },
+]
+
+type NavItemProps = {
+  item: { path: string; label: string; icon: string }
+  pathname: string
+  onTabClick: (e: React.MouseEvent<HTMLAnchorElement>, href: string) => void
+}
+
+function NavLink({ item, pathname, onTabClick }: NavItemProps) {
+  const active = pathname.startsWith(item.path)
+  return (
+    <Link
+      href={item.path}
+      onClick={(e) => onTabClick(e, item.path)}
+      className={`nav-item ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
+    >
+      <span
+        className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg ${
+          active ? 'bg-gradient-to-br from-[#7C3AED] to-[#06B6D4]' : 'bg-gray-100'
+        }`}
+      >
+        {item.icon}
+      </span>
+      {item.label}
+    </Link>
+  )
+}
 
 function ShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { loading, user, balance, logout } = useSession()
 
+  // 平滑过渡：切换侧边栏 tab 时用 View Transitions API 做淡入淡出，
+  // 避免整页“闪一下”。不支持该 API 的浏览器会自动退化为普通导航。
+  const handleTabClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      if (href === pathname) return
+      const prefersReducedMotion =
+        typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (prefersReducedMotion || typeof document.startViewTransition !== 'function') return
+      e.preventDefault()
+      document.startViewTransition(() => {
+        router.push(href)
+      })
+    },
+    [pathname, router],
+  )
+
   // 鉴权守卫：未加载完成显示加载态；未登录重定向到登录页。
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center">
-        <div className="text-white/60 text-sm animate-pulse">加载中…</div>
+        <div className="text-gray-500 text-sm animate-pulse">加载中…</div>
       </div>
     )
   }
@@ -42,76 +90,83 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-72 flex-shrink-0 glass-sidebar rounded-r-3xl flex flex-col m-2 mr-0">
-        <Link href="/" className="p-6 border-b border-white/10 block">
+      <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+        <Link href="/" className="p-6 border-b border-gray-200 block">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-cyan-400 flex items-center justify-center text-xl font-extrabold shadow-glow">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center text-xl font-extrabold text-white">
               {BRAND.logoMarkZh}
             </div>
             <div>
-              <h1 className="font-extrabold text-lg leading-tight bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent">
-                {BRAND.nameZh}
-              </h1>
-              <p className="text-xs text-white/50 mt-0.5">AI 智能创作平台</p>
+              <h1 className="font-bold text-lg leading-tight text-[#111827]">{BRAND.nameZh}</h1>
+              <p className="text-xs text-gray-500 mt-0.5">AI 智能创作平台</p>
             </div>
           </div>
         </Link>
 
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          {navItems
-            .filter((item) => !item.adminOnly || user?.role === 'ADMIN')
-            .map((item) => {
-              const active = pathname.startsWith(item.path)
-              return (
-                <Link
-                  key={item.path}
-                  href={item.path}
-                  className={`nav-item ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
-                >
-                  <span
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg ${
-                      active ? `bg-gradient-to-br ${item.gradient} shadow-glow-cyan` : 'bg-white/10'
-                    }`}
-                  >
-                    {item.icon}
-                  </span>
-                  {item.label}
-                </Link>
-              )
-            })}
+        <nav className="flex-1 p-4 overflow-y-auto">
+          {user?.role === 'ADMIN' ? (
+            <>
+              {/* 管理员后台 */}
+              <div className="space-y-2">
+                {adminNavItems.map((item) => (
+                  <NavLink key={item.path} item={item} pathname={pathname} onTabClick={handleTabClick} />
+                ))}
+              </div>
+
+              {/* 个人（普通用户）区隔，参考 sub2api 管理后台：管理员能看到自己的个人菜单 */}
+              <div className="mt-6 mb-2 flex items-center gap-3">
+                <span className="text-[11px] uppercase tracking-widest text-gray-400">我的账户</span>
+                <span className="h-px flex-1 bg-gray-200" />
+              </div>
+              <div className="space-y-2">
+                {userNavItems.map((item) => (
+                  <NavLink key={item.path} item={item} pathname={pathname} onTabClick={handleTabClick} />
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="space-y-2">
+              {userNavItems.map((item) => (
+                <NavLink key={item.path} item={item} pathname={pathname} onTabClick={handleTabClick} />
+              ))}
+            </div>
+          )}
         </nav>
 
-        <div className="p-5 border-t border-white/10 space-y-3">
+        <div className="p-5 border-t border-gray-200 space-y-3">
           {/* 余额 */}
-          <Link href="/app/wallet" className="flex items-center justify-between glass rounded-2xl px-4 py-3 hover:border-white/30 transition-colors">
+          <Link
+            href="/app/wallet"
+            className="flex items-center justify-between bg-white border border-gray-200 rounded-2xl px-4 py-3 hover:border-gray-300 transition-colors"
+          >
             <div>
-              <p className="text-xs text-white/50">余额</p>
-              <p className="font-bold text-cyan-300">{balance.toLocaleString()} <span className="text-xs font-normal text-white/50">Credits</span></p>
+              <p className="text-xs text-gray-500">余额</p>
+              <p className="font-bold text-[#06B6D4]">
+                {balance.toLocaleString()} <span className="text-xs font-normal text-gray-500">Credits</span>
+              </p>
             </div>
-            <span className="text-white/40">→</span>
+            <span className="text-gray-400">→</span>
           </Link>
           {/* 用户 + 登出 */}
           <div className="flex items-center justify-between">
             <div className="min-w-0">
-              <p className="text-sm text-white/80 truncate">{user.email}</p>
+              <p className="text-sm text-gray-700 truncate">{user.email}</p>
             </div>
-            <button
-              onClick={() => void logout()}
-              className="btn-ghost text-xs"
-              title="退出登录"
-            >
+            <button onClick={() => void logout()} className="btn-ghost text-xs" title="退出登录">
               退出
             </button>
           </div>
-          <p className="text-xs text-white/40 text-center">
+          <p className="text-xs text-gray-400 text-center">
             © {new Date().getFullYear()} {BRAND.nameZh} · {BRAND.name}
           </p>
         </div>
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-hidden p-2 pl-0">
-        <div className="h-full glass rounded-3xl overflow-hidden">{children}</div>
+      <main className="flex-1 overflow-hidden bg-[#F7F7F8]">
+        <div className="h-full m-4 bg-white rounded-2xl border border-gray-200 overflow-hidden" style={{ boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)' }}>
+          {children}
+        </div>
       </main>
     </div>
   )

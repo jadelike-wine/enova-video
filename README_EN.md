@@ -4,7 +4,7 @@
 </p>
 <h1 align="center">EnovaMotion</h1>
 <p align="center"><strong>An AI-powered multimodal creation platform built on Agnes AI models</strong></p>
-<p align="center">AI chat · Text-to-image / image edit · Text-to-video / image-to-video</p>
+<p align="center">Text-to-image / image edit · Text-to-video / image-to-video</p>
 <div align="center">
   <a href="https://platform.agnes-ai.com/" target="_blank">
   <img alt="agnes ai" src="https://img.shields.io/badge/platform-Agnes%20AI-ff6b3d?style=flat-square"></a>
@@ -21,11 +21,11 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/ai-img-gen.png" alt="EnovaMotion — streaming AI chat" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
+  <img src="docs/images/ai-img-gen.png" alt="EnovaMotion — AI creation platform" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
 </p>
 
 <p align="center">
-  <strong>Chat · Images · Video — all in one beautiful UI</strong><br/>
+  <strong>Images · Video — all in one beautiful UI</strong><br/>
   Agnes AI models &nbsp;·&nbsp; Next.js + NestJS + PostgreSQL &nbsp;·&nbsp; Credits billing &nbsp;·&nbsp; Admin console
 </p>
 
@@ -46,11 +46,6 @@
   </tr>
   <tr>
     <td width="50%" align="center" valign="top">
-      <img src="docs/images/ai-chat.png" alt="AI chat" width="100%" style="display:block;margin-bottom:6px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
-      <strong>💬 AI chat</strong><br/>
-      <span style="font-size:13px">Streaming · Thinking mode · Token stats · Multi-conversation</span>
-    </td>
-    <td width="50%" align="center" valign="top">
       <img src="docs/images/settings.png" alt="Account & wallet" width="100%" style="display:block;margin-bottom:6px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
       <strong>⚙️ Account & wallet</strong><br/>
       <span style="font-size:13px">Sign up / log in · Credits balance · Wallet top-up · Account settings</span>
@@ -63,7 +58,6 @@
 | Module | Capabilities |
 |--------|--------------|
 | **Auth & accounts** | Register / login / logout, HttpOnly Cookie sessions, Turnstile bot check, roles (USER/ADMIN) |
-| **Chat** | Create / switch conversations, streaming responses, Thinking mode, token & latency stats |
 | **Image generation** | Text-to-image, single-image edit, multi-image composition; multiple models |
 | **Video generation** | Text-to-video, image-to-video, multi-image video; BullMQ async tasks + delayed polling |
 | **Unified task system** | `GenerationJob` models image / video tasks with a state machine PENDING→QUEUED→RUNNING→SUCCEEDED/FAILED/CANCELED |
@@ -100,7 +94,7 @@ Browser
   ↓
 Web (Next.js :3000, apps/web)          # SSR + static pages, /api/v1/* rewrite to API
   ↓ /api/v1/*（server-side rewrite）
-API (NestJS :3001, apps/api)           # auth / chat / generations / billing / payments / admin
+API (NestJS :3001, apps/api)           # auth / generations / billing / payments / admin
   ├── PostgreSQL (Drizzle)             # persistence
   ├── Redis / BullMQ                   # queue (enqueue generation jobs)
   ↓
@@ -386,17 +380,6 @@ The API is **NestJS + Fastify**, with a unified `/api/v1` prefix. Run `apps/api`
 | GET | `/api/v1/auth/me` | Current user |
 | GET | `/api/v1/auth/turnstile-config` | Turnstile config |
 
-### Conversations
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/conversations` | List conversations |
-| POST | `/api/v1/conversations` | Create conversation |
-| GET/PATCH/DELETE | `/api/v1/conversations/:id` | Get / rename / delete |
-| GET | `/api/v1/conversations/:id/messages` | List messages |
-| POST | `/api/v1/conversations/:id/messages` | Send message (streaming) |
-| POST | `/api/v1/conversations/:id/messages/batch` | Batch messages |
-
 ### Generations
 
 | Method | Path | Description |
@@ -443,7 +426,6 @@ New architecture uses **PostgreSQL 16 + Drizzle ORM**. Schema is defined in `pac
 |--------|--------|---------|
 | Identity | `users` / `sessions` | Users & HttpOnly Cookie sessions |
 | Workspace | `workspaces` / `workspace_members` | Workspace & member isolation |
-| Conversation | `conversations` / `messages` | Chat history |
 | Generation | `generation_jobs` / `assets` | Unified generation tasks & assets |
 | Provider | `providers` / `provider_credentials` | Providers & **AES-GCM encrypted** credentials |
 | Billing | `wallets` / `wallet_ledger` | Balance / reserved / ledger (idempotent) |
@@ -466,7 +448,6 @@ enova-video/
 │   ├── api/                     # NestJS API（/api/v1 + OpenAPI）
 │   │   └── src/
 │   │       ├── auth/            # register / login / session / Turnstile
-│   │       ├── conversations/   # conversations & messages
 │   │       ├── generations/     # generation tasks
 │   │       ├── billing/         # wallet / pricing
 │   │       ├── payment/         # recharge / callback

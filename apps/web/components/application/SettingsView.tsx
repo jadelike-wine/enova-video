@@ -54,6 +54,12 @@ export default function SettingsView() {
               </p>
             </div>
             <div className="rounded-2xl border border-gray-200 bg-gray-100 p-4">
+              <p className="text-xs text-gray-400 mb-1">用户 ID</p>
+              <p className="text-gray-800 font-mono text-sm break-all">
+                {user ? user.userId : '—'}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-4">
               <p className="text-xs text-gray-400 mb-1">工作区</p>
               <p className="text-gray-800 font-mono text-sm">
                 {user ? user.workspaceId.slice(0, 8) : '—'}

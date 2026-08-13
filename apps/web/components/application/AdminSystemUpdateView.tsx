@@ -95,7 +95,6 @@ export default function AdminSystemUpdateView() {
       <header className="flex-shrink-0 px-8 py-6 border-b border-gray-200 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold bg-gradient-to-r from-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">系统更新</h2>
-          <p className="text-sm text-gray-500 mt-1">参考 sub2api 的后台更新治理，执行宿主机 Docker 部署脚本</p>
         </div>
         <button className="btn-secondary text-sm" onClick={() => void load(true)} disabled={loading || working}>刷新检查</button>
       </header>

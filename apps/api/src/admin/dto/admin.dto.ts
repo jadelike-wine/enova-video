@@ -24,6 +24,7 @@ import {
 export class ListQueryDto {
   @ApiPropertyOptional({ example: 50 })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
@@ -31,6 +32,7 @@ export class ListQueryDto {
 
   @ApiPropertyOptional({ example: 0 })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(0)
   offset?: number;

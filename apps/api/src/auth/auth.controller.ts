@@ -38,7 +38,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AuthResult> {
     const result = await this.auth.register(dto.email, dto.password, dto.turnstileToken, req.ip);
-    this.setSessionCookie(res, result);
+    this.setSessionCookie(res, result, req);
     return this.toPublic(result);
   }
 
@@ -50,7 +50,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AuthResult> {
     const result = await this.auth.login(dto.email, dto.password, dto.turnstileToken, req.ip);
-    this.setSessionCookie(res, result);
+    this.setSessionCookie(res, result, req);
     return this.toPublic(result);
   }
 
@@ -72,7 +72,7 @@ export class AuthController {
     if (rawToken) {
       await this.auth.logout(user.userId, this.auth.mustHashToken(rawToken));
     }
-    res.clearCookie(SESSION_COOKIE, this.cookieOptions());
+    res.clearCookie(SESSION_COOKIE, this.cookieOptions(req));
     return { ok: true };
   }
 
@@ -179,16 +179,17 @@ export class AuthController {
   @ApiOperation({ summary: '撤销当前用户所有 Session 并清除 Cookie' })
   async logoutAll(
     @CurrentUser() user: AuthUser,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<{ ok: true }> {
     await this.auth.revokeAllSessions(user.userId);
-    res.clearCookie(SESSION_COOKIE, this.cookieOptions());
+    res.clearCookie(SESSION_COOKIE, this.cookieOptions(req));
     return { ok: true };
   }
 
-  private setSessionCookie(res: FastifyReply, result: AuthResult & { token: string }): void {
+  private setSessionCookie(res: FastifyReply, result: AuthResult & { token: string }, req: FastifyRequest): void {
     res.setCookie(SESSION_COOKIE, result.token, {
-      ...this.cookieOptions(),
+      ...this.cookieOptions(req),
       httpOnly: true,
       maxAge: SESSION_TTL_SECONDS,
     });
@@ -202,11 +203,13 @@ export class AuthController {
     };
   }
 
-  private cookieOptions(): Record<string, unknown> {
+  private cookieOptions(req: FastifyRequest): Record<string, unknown> {
     return {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      // 根据实际请求协议动态决定 Secure：HTTP 部署（无 TLS）下浏览器会丢弃 Secure cookie，
+      // 导致登录后会话无法回传。trustProxy 已开启，HTTPS 终止代理会正确置 req.protocol。
+      secure: req.protocol === 'https',
       path: '/',
     };
   }

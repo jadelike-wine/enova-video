@@ -33,7 +33,8 @@ export class SetupController {
     res.setCookie(SESSION_COOKIE, result.token, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      // 与 auth.controller 一致：按请求协议决定 Secure，避免 HTTP 部署下 cookie 被浏览器丢弃
+      secure: req.protocol === 'https',
       path: '/',
       maxAge: SESSION_TTL_SECONDS,
     });

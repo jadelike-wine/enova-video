@@ -28,11 +28,15 @@ const testEnv: Record<string, unknown> = {
   PAYMENT_MIN_RECHARGE_CENTS: '50',
 };
 
+// CI 无本地 PostgreSQL，无 DATABASE_URL 时整组跳过（与仓库其他集成测试一致）。
+const hasDb = !!process.env.DATABASE_URL;
+
 let db: ReturnType<typeof createDb>;
 let store: SettingsStore;
 let invalidator: SettingsInvalidator & { calls: Array<{ key: string; version: number }> };
 
 beforeAll(() => {
+  if (!hasDb) return;
   db = createDb('postgresql://enova:enova@localhost:5432/enova');
   invalidator = {
     calls: [],
@@ -44,11 +48,12 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
+  if (!hasDb) return;
   await db.delete(settingsHistory);
   await db.delete(settings);
 });
 
-describe('SettingsStore integration (real PG)', () => {
+describe.skipIf(!hasDb)('SettingsStore integration (real PG)', () => {
   describe('CAS update + history in same transaction', () => {
     it('creates first version with history', async () => {
       invalidator.calls = [];

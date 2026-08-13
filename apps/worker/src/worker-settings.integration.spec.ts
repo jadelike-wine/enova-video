@@ -12,6 +12,9 @@ import type { WorkerLogger } from './logger.js';
 const PG_URL = 'postgresql://enova:enova@localhost:5432/enova';
 const REDIS_URL = 'redis://localhost:6379';
 
+// CI 无本地 PostgreSQL/Redis，无 DATABASE_URL 时整组跳过（与仓库其他集成测试一致）。
+const hasLocalServices = !!process.env.DATABASE_URL;
+
 let db1: ReturnType<typeof createDb>;
 let db2: ReturnType<typeof createDb>;
 let redis1: IORedis;
@@ -35,6 +38,7 @@ function createSilentLogger(): WorkerLogger & { calls: any[] } {
 }
 
 beforeAll(async () => {
+  if (!hasLocalServices) return;
   db1 = createDb(PG_URL);
   db2 = createDb(PG_URL);
   redis1 = new IORedis(REDIS_URL);
@@ -64,6 +68,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (!hasLocalServices) return;
   await settings1?.close();
   await settings2?.close();
   await redis1?.quit();
@@ -89,7 +94,7 @@ async function pollUntil(
   throw new Error(`pollUntil timed out after ${timeoutMs}ms`);
 }
 
-describe('WorkerSettings Redis integration (real PG + Redis)', () => {
+describe.skipIf(!hasLocalServices)('WorkerSettings Redis integration (real PG + Redis)', () => {
   describe('Redis pub/sub cache invalidation', () => {
     it('WorkerSettings reloads DB value after receiving invalidation', async () => {
       // 1. Write initial value to DB

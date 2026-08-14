@@ -4,6 +4,8 @@
 
 EnovaMotion（灵动创影）是一个 AI Creator SaaS，面向 Agnes AI 提供对话、图片生成和视频生成能力。
 
+开始处理产品功能或用户流程前，先阅读 [docs/README.md](./docs/README.md) 和 [docs/product-reference.md](./docs/product-reference.md)。前者是 Codex/Agent 的文档入口，后者记录当前已实现产品能力、领域模型、状态机和“已实现/预留/部分实现”边界；它们不替代具体功能的设计文档。
+
 当前仓库为**单一新架构（monorepo）**：`apps/api`、`apps/worker`、`apps/web` 和 `packages/*`。技术栈是 Node.js 20+、TypeScript、NestJS/Fastify、Drizzle、PostgreSQL、Redis/BullMQ 和 Next.js 15。旧架构的 `backend`（FastAPI + SQLite）与 `frontend` 目录已删除，不再存在。
 
 所有新业务能力与现有功能修复均默认在新架构内完成。

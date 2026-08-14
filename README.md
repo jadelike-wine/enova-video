@@ -28,6 +28,8 @@
   <strong>生图 · 生视频 · 一个界面全搞定</strong><br/>
 </p>
 
+> 面向 Codex/Agent 的产品与工程文档入口：[`docs/README.md`](docs/README.md)；产品事实参考：[`docs/product-reference.md`](docs/product-reference.md)。
+
 ## 界面预览
 
 <table cellpadding="6">

@@ -3,20 +3,13 @@ import { NextIntlClientProvider } from 'next-intl'
 import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server'
 import { notFound } from 'next/navigation'
 import { AntdRegistry } from '@ant-design/nextjs-registry'
-import { ConfigProvider } from 'antd'
-import zhCn from 'antd/locale/zh_CN'
-import enUs from 'antd/locale/en_US'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import 'dayjs/locale/en'
-import { getSiteUrl } from '../../lib/seo'
-import { BRAND } from '../../lib/brand'
-import { locales, type Locale } from '../../i18n.config'
-
-// 获取 Ant Design locale 对象
-function getAntdLocale(locale: string) {
-  return locale === 'en' ? enUs : zhCn
-}
+import { getSiteUrl } from '@/lib/seo'
+import { BRAND } from '@/lib/brand'
+import { locales, type Locale } from '@/i18n.config'
+import AntdProvider from '@/components/AntdProvider'
 
 // 动态设置 dayjs locale
 function initDayjsLocale(locale: string) {
@@ -89,12 +82,11 @@ export default async function LocaleLayout({
   initDayjsLocale(locale)
 
   const messages = await getMessages()
-  const antdLocale = getAntdLocale(locale)
 
   return (
     <NextIntlClientProvider locale={locale} messages={messages}>
       <AntdRegistry>
-        <ConfigProvider locale={antdLocale}>{children}</ConfigProvider>
+        <AntdProvider locale={locale}>{children}</AntdProvider>
       </AntdRegistry>
     </NextIntlClientProvider>
   )

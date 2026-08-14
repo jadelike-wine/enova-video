@@ -8,12 +8,17 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ## Unreleased
 
+---
+
+## [1.5.0] — 2026-08-14
+
 ### Added
-- i18n support via `next-intl` with locale-based routing across application and marketing components (v1.4.0+).
+- i18n support via `next-intl` with locale-based routing across application and marketing components.
+- Architecture Decision Records (ADR 0000–0009) plus docs for reading order, plans, performance experiments, and product-language frameworks.
 
 ### Changed
-- Admin users view migrated to Ant Design `Table` and `Modal` components.
-- Image lightbox replaced with Ant Design `Image` preview.
+- Web UI migrated to Ant Design v6: app, auth, media and admin views use antd components with a shared `AntdProvider` (theme + locale) wrapper; admin users view uses antd `Table`/`Modal`, and the image lightbox is replaced by antd `Image` preview.
+- AppShell is mounted once as a shared layout for all app routes, so the sidebar and session state persist across navigation instead of remounting per page.
 
 ---
 

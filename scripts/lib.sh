@@ -17,6 +17,24 @@ VERSION_ENV_FILE="$DEPLOY_DIR/version.env"
 LOCK_FILE="$DEPLOY_DIR/update.lock"
 BACKUP_DIR="$ROOT_DIR/backups"
 PROD_COMPOSE="$ROOT_DIR/docker-compose.prod.yml"
+UPDATE_COMPOSE="$ROOT_DIR/docker-compose.update.yml"
+
+# 读取 .env 中的布尔开关（兼容带引号的 true），为 true 时返回 0
+dotenv_bool() {
+  local key="$1"
+  [ -f "$ROOT_DIR/.env" ] || return 1
+  grep -qE "^${key}=[\"']?true[\"']?[[:space:]]*$" "$ROOT_DIR/.env"
+}
+
+# ---- 更新/回滚用的 compose 文件组合（up / precheck 共用）----
+# 启用后台一键更新（UPDATE_ENABLED=true，环境变量或 .env）时必须带上
+# docker-compose.update.yml：否则 compose up 重建 api 容器会丢失
+# /var/run/docker.sock 与 /host/repo 挂载，下一次后台更新会因连不上
+# Docker daemon 而失败（见 docs/OPS.md 7.3）。
+COMPOSE_UP_FILES=(-f "$PROD_COMPOSE")
+if { [ "${UPDATE_ENABLED:-}" = "true" ] || dotenv_bool UPDATE_ENABLED; } && [ -f "$UPDATE_COMPOSE" ]; then
+  COMPOSE_UP_FILES+=(-f "$UPDATE_COMPOSE")
+fi
 
 # 镜像仓库前缀（GHCR）
 IMAGE_BASE="ghcr.io/jadelike-wine/enova-video"
@@ -295,7 +313,7 @@ wait_healthy() {
 # =============================================================================
 precheck() {
   if ! command -v docker >/dev/null 2>&1; then error "precheck docker_missing error_code=UPDATE_PRECHECK_FAILED"; return 1; fi
-  if ! docker compose -f "$PROD_COMPOSE" config -q; then error "precheck compose_invalid error_code=UPDATE_PRECHECK_FAILED"; return 1; fi
+  if ! docker compose "${COMPOSE_UP_FILES[@]}" config -q; then error "precheck compose_invalid error_code=UPDATE_PRECHECK_FAILED"; return 1; fi
   info "precheck=ok"
   return 0
 }
@@ -378,8 +396,8 @@ except Exception:
   # 切换回 previous 版本
   write_app_version "$prev"
   export APP_VERSION="$prev"
-  info "rollback switching=start version=$prev"
-  docker compose -f "$PROD_COMPOSE" up -d --no-build \
+  info "rollback switching=start version=$prev compose_files=${COMPOSE_UP_FILES[*]}"
+  docker compose "${COMPOSE_UP_FILES[@]}" up -d --no-build \
     || { critical "rollback_failed error_code=UPDATE_ROLLBACK_FAILED compose_up_failed version=$prev"; return 1; }
 
   if wait_healthy; then

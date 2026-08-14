@@ -180,8 +180,8 @@ fi
 # ---- 切换版本并启动（禁止 down -v / prune）----
 write_app_version "$TARGET"
 export APP_VERSION="$TARGET"
-info "update switching=start version=$TARGET"
-docker compose -f "$PROD_COMPOSE" up -d --no-build
+info "update switching=start version=$TARGET compose_files=${COMPOSE_UP_FILES[*]}"
+docker compose "${COMPOSE_UP_FILES[@]}" up -d --no-build
 info "update compose_up=completed version=$TARGET"
 
 # ---- 全链路健康检查 ----

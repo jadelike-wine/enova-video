@@ -63,7 +63,7 @@ export function Card({ title, children, action }: { title?: string; children: Re
   )
 }
 
-export function PageHeader({ title, ...rest }: { title: string; [k: string]: unknown }) {
+export function PageHeader({ title }: { title: string }) {
   return (
     <div className="p-5 border-b border-gray-200">
       <h2 className="text-xl font-bold text-gray-900">{title}</h2>

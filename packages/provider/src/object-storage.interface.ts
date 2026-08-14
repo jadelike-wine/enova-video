@@ -23,6 +23,10 @@ export interface ObjectStorage {
   /** 从临时文件流式上传（无需整体载入内存），适合大视频。 */
   uploadFile(filePath: string, input?: StorageUploadInput): Promise<StorageUploadResult | null>;
   getDisplayUrl(key: string): Promise<string>;
+  /** P0-3: 删除对象（用于资源清理）。不存在时静默成功。 */
+  deleteObject(key: string): Promise<void>;
+  /** P0-3: 检查对象是否存在。 */
+  objectExists(key: string): Promise<boolean>;
 }
 
 /** 兼容性入口：根据配置返回当前 ObjectStorage 实例。由 DI 提供。 */

@@ -12,9 +12,10 @@ import { GenerationPipeline, type GenerationPipelineConfig, type PipelineResourc
 import { processGenerationPayload } from './processors/generation.processor.js';
 import { WorkerSettings } from './worker-settings.js';
 import { WorkerResources } from './worker-resources.js';
+import { ResourceCleanupService } from './resource-cleanup.service.js';
 
 async function main(): Promise<void> {
-  const env = loadEnv();
+  const env = loadEnv(process.env, { service: 'worker' });
   const logger = new WorkerLogger('enova-worker');
 
   const db: Database = createDb(env.DATABASE_URL);
@@ -175,6 +176,17 @@ async function main(): Promise<void> {
     }
   });
 
+  // ---- P0-3: Resource Cleanup (periodic, distributed lock) ----
+  // Use a storage getter so cleanup always uses the latest storage instance
+  // after admin updates S3 configuration via System Settings.
+  const cleanupService = new ResourceCleanupService({
+    db,
+    storage: () => resources.storage,
+    redis: connection,
+    logger,
+  });
+  cleanupService.start();
+
   logger.info('worker started', {
     queue: QUEUES.GENERATION,
     concurrency: workerConcurrency,
@@ -183,6 +195,7 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info('worker shutting down', { signal });
+    cleanupService.stop();
     await worker.close();
     await queue.close();
     await settings.close();

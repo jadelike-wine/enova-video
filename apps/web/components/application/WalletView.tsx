@@ -329,6 +329,28 @@ export default function WalletView() {
             </div>
           )}
         </section>
+
+        {/* 客服联系方式 — 退款/订单问题 */}
+        <section className="glass-card">
+          <h3 className="text-sm font-bold text-gray-900 mb-2">退款与订单问题</h3>
+          <div className="space-y-2 text-xs text-gray-500">
+            <p>
+              退款需联系客服人工处理，系统不会自动退款。
+            </p>
+            <p>
+              请提供订单号和付款账号信息，客服将在 1-3 个工作日内处理。
+            </p>
+            <p>
+              联系邮箱：
+              <a
+                href={`mailto:${process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@example.com'}`}
+                className="text-[#7C3AED] underline decoration-[#7C3AED]/40 hover:text-[#6D28D9] ml-1"
+              >
+                {process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@example.com'}
+              </a>
+            </p>
+          </div>
+        </section>
       </div>
     </div>
   )

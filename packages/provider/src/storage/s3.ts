@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { ObjectStorage, StorageUploadInput, StorageUploadResult } from '../object-storage.interface.js';
 import { downloadToTempFile, cleanupTempFile, type UrlGuardOptions } from './downloader.js';
@@ -120,6 +120,43 @@ export class S3ObjectStorage implements ObjectStorage {
     const publicUrl = this.publicUrl(key);
     if (publicUrl) return publicUrl;
     return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.cfg.bucket, Key: key }), { expiresIn: 3600 });
+  }
+
+  /** P0-3: Delete an object. Succeeds if the object doesn't exist (NotFound).
+   *  Other errors (permissions, network, auth) are re-thrown. */
+  async deleteObject(key: string): Promise<void> {
+    try {
+      await this.client.send(
+        new DeleteObjectCommand({ Bucket: this.cfg.bucket, Key: key }),
+      );
+    } catch (err) {
+      // S3 DeleteObject is idempotent: NotFound means the object is already gone.
+      // All other errors (AccessDenied, NetworkError, InvalidBucket, etc.) must propagate.
+      const name = (err as Error).name ?? '';
+      const code = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode ?? 0;
+      if (name === 'NotFound' || name === 'NoSuchKey' || code === 404) {
+        return; // Object already deleted — safe to proceed.
+      }
+      throw err;
+    }
+  }
+
+  /** P0-3: Check if an object exists. Returns false only for NotFound.
+   *  Other errors propagate so callers don't assume the object is absent. */
+  async objectExists(key: string): Promise<boolean> {
+    try {
+      await this.client.send(
+        new HeadObjectCommand({ Bucket: this.cfg.bucket, Key: key }),
+      );
+      return true;
+    } catch (err) {
+      const name = (err as Error).name ?? '';
+      const code = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode ?? 0;
+      if (name === 'NotFound' || name === 'NoSuchKey' || code === 404) {
+        return false;
+      }
+      throw err;
+    }
   }
 
   private publicUrl(key: string): string {

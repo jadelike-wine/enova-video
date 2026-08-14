@@ -21,4 +21,12 @@ export class NoneObjectStorage implements ObjectStorage {
   async getDisplayUrl(_key: string): Promise<string> {
     return '';
   }
+
+  async deleteObject(_key: string): Promise<void> {
+    // No-op for none storage.
+  }
+
+  async objectExists(_key: string): Promise<boolean> {
+    return false;
+  }
 }

@@ -19,7 +19,6 @@ import { PermissionGuard } from '../../common/guards/permission.guard.js';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator.js';
 import { CurrentUser, type AuthUser } from '../../common/decorators/current-user.decorator.js';
 import { AdminAuditService } from '../admin.audit.service.js';
-import { SensitiveActionService } from '../../common/services/sensitive-action.service.js';
 import { SystemUpdateService } from './system-update.service.js';
 import { RollbackVersionDto, UpdateVersionDto } from './system-update.dto.js';
 import type { OperationView, RollbackVersionView, UpdateInfoView } from './types.js';
@@ -31,7 +30,6 @@ export class SystemUpdateController {
   constructor(
     @Inject(SystemUpdateService) private readonly service: SystemUpdateService,
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
-    @Inject(SensitiveActionService) private readonly sensitiveAction: SensitiveActionService,
   ) {}
 
   @Get('status')
@@ -65,17 +63,6 @@ export class SystemUpdateController {
     @Body() dto?: UpdateVersionDto,
   ): Promise<OperationView> {
     const operationId = this.buildOperationId('update', user.userId, idempotencyKey);
-    // P1.5: Sensitive action gate (step-up + audit) before triggering a system update.
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.SETTINGS_WRITE,
-      target: `system_update:${operationId}`,
-      reason: `System update to ${dto?.version ?? 'latest'}`,
-      before: { operationId, targetVersion: dto?.version },
-      requestId: req.id,
-      stepUpPassword,
-    });
     const op = await this.service.startUpdate(operationId, dto?.version);
     await this.audit.record({
       actorUserId: user.userId,
@@ -99,17 +86,6 @@ export class SystemUpdateController {
     @Body() dto?: RollbackVersionDto,
   ): Promise<OperationView> {
     const operationId = this.buildOperationId('rollback', user.userId, idempotencyKey);
-    // P1.5: Sensitive action gate (step-up + audit) before triggering a system rollback.
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.SETTINGS_WRITE,
-      target: `system_rollback:${operationId}`,
-      reason: `System rollback to ${dto?.version ?? 'previous'}`,
-      before: { operationId, targetVersion: dto?.version },
-      requestId: req.id,
-      stepUpPassword,
-    });
     const op = await this.service.startRollback(operationId, dto?.version);
     await this.audit.record({
       actorUserId: user.userId,

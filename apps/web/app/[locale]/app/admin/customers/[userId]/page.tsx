@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { getTranslations } from 'next-intl/server'
 import AdminCustomer360View from '@/components/application/admin/AdminCustomer360View'
 import { appMetadata } from '@/lib/seo'
-import AppShell from '../../../AppShell'
 
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
   const { locale } = await params
@@ -12,9 +11,5 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
 
 export default async function AdminCustomer360Page({ params }: { params: Promise<{ userId: string }> }) {
   const { userId } = await params
-  return (
-    <AppShell>
-      <AdminCustomer360View userId={userId} />
-    </AppShell>
-  )
+  return <AdminCustomer360View userId={userId} />
 }

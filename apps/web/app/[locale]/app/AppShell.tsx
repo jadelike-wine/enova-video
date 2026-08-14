@@ -199,10 +199,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   )
 }
 
-// 注意：此组件不能作为 app/app 下的嵌套 layout.tsx 使用。
-// Next.js 15.5.x 存在 bug：当 app/app/layout.tsx 存在时，根 layout 引入的
-// 全局 CSS 会被静默丢弃（构建成功但 .next/static/css 为空，页面无样式）。
-// 因此这里用客户端组件包裹各个页面，而不是作为 layout 挂载。
+// 此组件现在由 app/[locale]/app/layout.tsx 挂载为共享 Layout。
+// 路由切换时 Layout 保持 mounted，Sidebar 不会卸载，避免白屏。
+// SessionProvider 也随之持久化，不会因路由切换重新请求 /auth/me。
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>

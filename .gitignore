@@ -19,3 +19,6 @@ deep-research-reports/
 backups/
 *.db-wal
 *.db-shm
+
+# Claude Code 本地权限配置（个人本地文件，不入库；共享策略说明见 .claude/README.md）
+.claude/settings.local.json

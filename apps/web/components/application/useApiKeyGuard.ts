@@ -22,12 +22,12 @@ export const NO_STORAGE_TITLE = '无需配置'
 export const NO_STORAGE_MESSAGE = '对象存储已由平台统一托管，无需额外配置。'
 
 /** 兼容旧导出：新架构任何模式都无需前置存储配置。 */
-export function imageModeNeedsQiniu(_mode: string): boolean {
+export function imageModeNeedsQiniu(): boolean {
   return false
 }
 
 /** 兼容旧导出：新架构任何模式都无需前置存储配置。 */
-export function videoModeNeedsQiniu(_mode: string): boolean {
+export function videoModeNeedsQiniu(): boolean {
   return false
 }
 

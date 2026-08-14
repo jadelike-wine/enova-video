@@ -392,9 +392,11 @@ export const uploadApi = {
   },
 }
 
-export default {
+const api = {
   authApi,
   generationApi,
   billingApi,
   paymentApi,
 }
+
+export default api

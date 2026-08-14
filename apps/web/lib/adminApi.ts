@@ -339,7 +339,7 @@ export const adminAuditApi = {
     json<AdminAuditView[]>(`/audit-logs?limit=${params.limit ?? 100}&offset=${params.offset ?? 0}`),
 }
 
-export default {
+const adminApi = {
   adminStatsApi,
   adminUsersApi,
   adminCustomersApi,
@@ -347,3 +347,5 @@ export default {
   adminGenerationsApi,
   adminAuditApi,
 }
+
+export default adminApi

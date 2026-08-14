@@ -40,8 +40,12 @@ export class DeployExecutor {
       '-v', `${repo}:${repo}`,
       '-e', `GITHUB_REPOSITORY=${this.env.UPDATE_GITHUB_REPOSITORY}`,
       '-e', 'AUTO_CONFIRM=1',
-      // 健康检查依赖 FRONTEND_URL；未配置时由脚本默认。
-      ...(this.env.NODE_ENV === 'production' ? ['-e', 'FRONTEND_URL=http://localhost:3000'] : []),
+      // 健康检查依赖 FRONTEND_URL；deploy-tool 容器在独立网络中运行，
+      // localhost 指向自身，需通过 host.docker.internal 访问宿主机上的 web 服务。
+      ...(this.env.NODE_ENV === 'production' ? [
+        '--add-host', 'host.docker.internal:host-gateway',
+        '-e', 'FRONTEND_URL=http://host.docker.internal:3000',
+      ] : []),
       this.env.UPDATE_DEPLOY_TOOL_IMAGE,
       '-lc',
       `cd ${repo} && bash ${scriptRel}${args.length ? ' ' + args.join(' ') : ''}`,

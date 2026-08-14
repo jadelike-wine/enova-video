@@ -16,7 +16,7 @@ export default function MarketingHeader() {
         </Link>
 
         <div className="flex items-center gap-2">
-          <Link href="/app/chat" className="btn-primary text-sm px-5">
+          <Link href="/app/images" className="btn-primary text-sm px-5">
             开始使用
           </Link>
         </div>

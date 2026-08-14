@@ -141,7 +141,7 @@ export default function WalletView() {
           <h2 className="text-2xl font-bold bg-gradient-to-r from-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
             钱包
           </h2>
-          <p className="text-sm text-gray-500 mt-1">充值 Credits，用于对话与图片/视频生成</p>
+          <p className="text-sm text-gray-500 mt-1">充值 Credits，用于图片/视频生成</p>
         </div>
         <Link href="/app/settings" className="btn-secondary text-sm">
           账户设置

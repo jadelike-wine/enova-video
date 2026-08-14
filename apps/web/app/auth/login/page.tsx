@@ -74,7 +74,7 @@ export default function LoginPage() {
     setBusy(true)
     try {
       await authApi.login(email, password, turnstile.enabled ? turnstileToken : undefined, agreement.revision)
-      router.replace('/app/chat')
+      router.replace('/app/images')
       router.refresh()
     } catch (err) {
       setError(formatErrorMessage(err) || '登录失败')

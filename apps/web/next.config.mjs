@@ -8,8 +8,9 @@ const nextConfig = {
   reactStrictMode: true,
   async redirects() {
     return [
-      { source: '/chat', destination: '/app/chat', permanent: true },
-      { source: '/chat/:id', destination: '/app/chat/:id', permanent: true },
+      // Chat 功能已下线：旧的 /chat 链接统一导流到图片生成，避免 404
+      { source: '/chat', destination: '/app/images', permanent: true },
+      { source: '/chat/:id', destination: '/app/images', permanent: true },
       { source: '/images', destination: '/app/images', permanent: true },
       { source: '/videos', destination: '/app/videos', permanent: true },
       { source: '/settings', destination: '/app/settings', permanent: true },

@@ -54,7 +54,7 @@ export default function SetupPage() {
     setBusy(true)
     try {
       await setupApi.init(email, password)
-      router.replace('/app/chat')
+      router.replace('/app/images')
       router.refresh()
     } catch (err) {
       setError(formatErrorMessage(err) || '创建管理员失败')

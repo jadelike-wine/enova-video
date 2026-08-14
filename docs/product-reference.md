@@ -2,7 +2,7 @@
 
 > 本文档是 Codex/Agent 了解 EnovaMotion（灵动创影）产品的稳定入口。内容按当前新架构仓库核对，记录“现在是什么”和“当前代码支持什么”，不替代具体需求的 PRD。
 
-**核对时间：** 2026-08-13  
+**核对时间：** 2026-08-14  
 **产品名称：** 灵动创影（EnovaMotion）  
 **产品类型：** 面向 AI 创作者的多模态创作 SaaS  
 **当前核心产出：** AI 图片与 AI 视频  
@@ -10,7 +10,7 @@
 
 ## 1. 一句话定位
 
-灵动创影把文本对话、图片生成和视频生成放在同一个 Web 工作区中，用户以 Credits 作为统一使用额度，生成结果保存在任务历史和媒体资产中；管理员负责 Provider、凭证、价格、支付、用户和系统运维。
+灵动创影把图片生成和视频生成放在同一个 Web 工作区中，用户以 Credits 作为统一使用额度，生成结果保存在任务历史和媒体资产中；管理员负责 Provider、凭证、价格、支付、用户和系统运维。
 
 产品对外品牌使用“灵动创影 / EnovaMotion”。底层 Provider、模型 API ID 和凭证属于平台实现细节，不应在普通用户界面或产品文案中直接暴露。
 
@@ -20,14 +20,14 @@
 
 | 用户 | 目标 | 主要入口 |
 | --- | --- | --- |
-| 普通创作者 | 用自然语言或参考图快速生成图片、短视频，并查看历史结果 | `/app/chat`、`/app/images`、`/app/videos` |
-| 工作区成员 | 在被授权的 Workspace 内使用会话、生成任务和 Credits | Workspace-scoped API 与应用页面 |
+| 普通创作者 | 用自然语言或参考图快速生成图片、短视频，并查看历史结果 | `/app/images`、`/app/videos` |
+| 工作区成员 | 在被授权的 Workspace 内使用生成任务和 Credits | Workspace-scoped API 与应用页面 |
 | 管理员/运营人员 | 管理用户、Provider、凭证、价格、订单、系统设置和运行状态 | `/app/admin/*` |
 
 ### 核心使用场景
 
 1. 用户注册或登录后进入个人 Workspace。
-2. 用户在对话页进行文本交互，或直接进入图片/视频创作页。
+2. 用户进入图片/视频创作页开始创作。
 3. 用户提交生成参数；平台校验权限和余额，估算并预留 Credits，然后异步执行任务。
 4. Worker 调用已配置 Provider，必要时轮询视频任务，下载结果并写入媒体资产。
 5. 成功任务结算实际 Credits；失败或取消任务释放预留 Credits。
@@ -48,14 +48,12 @@
 
 实现依据：[`apps/api/src/auth`](../apps/api/src/auth)、[`apps/api/src/setup`](../apps/api/src/setup)、[`packages/db/src/schema.ts`](../packages/db/src/schema.ts)、[`apps/web/app/auth`](../apps/web/app/auth)。
 
-### 3.2 文本对话
+### 3.2 文本对话（已下线）
 
-- 支持创建、重命名、删除会话。
-- 支持查看会话消息并以流式方式发送消息。
-- 会话、消息和模型信息按 Workspace 归属保存。
-- 当前产品首页和主宣传语聚焦图片/视频创作；对话页仍是应用内可用能力，不能因为首页未突出就当作已删除。
-
-实现依据：[`apps/web/app/app/chat`](../apps/web/app/app/chat)、[`apps/web/components/application/ChatView.tsx`](../apps/web/components/application/ChatView.tsx)、[`apps/api/src/conversations`](../apps/api/src/conversations)、[`packages/provider/src/ai-provider.interface.ts`](../packages/provider/src/ai-provider.interface.ts)。
+- 2026-08-14 起，文本对话能力已从产品中整体移除：`/app/chat` 页面、`ChatView` 组件、`/api/v1/conversations` API 以及导航/营销入口均已删除。
+- 登录、注册和初始化向导的默认跳转改为 `/app/images`；旧的 `/chat` 链接会 308 重定向到 `/app/images`。
+- 数据库中 `conversations` / `messages` 表仍保留历史数据，但不再有任何读写入口；不要基于这两张表规划新功能。
+- 如需恢复该能力，应从 git 历史（2026-08-14 之前）找回前后端实现并重新评审产品定位。
 
 ### 3.3 图片生成
 
@@ -142,7 +140,7 @@ GenerationJob ── PricingRule / PriceQuote ── Worker attempt
 | --- | --- | --- |
 | User | 登录身份和账户 | 不等于 Workspace；用户可通过成员关系进入工作区 |
 | Workspace | 资源与计费隔离单元 | 会话、任务、资产、钱包和订单必须带 Workspace 归属 |
-| Conversation | 文本对话容器 | 消息只能在所属 Workspace 内访问 |
+| Conversation | 文本对话容器（已下线，仅存历史数据） | 消息只能在所属 Workspace 内访问 |
 | GenerationJob | 图片/视频统一任务 | 状态、输入、输出、额度和错误均以任务为中心 |
 | Asset | 可预览/下载的图片、视频或上传文件 | 关联任务但允许任务被删除后保留引用关系为空 |
 | Wallet | Workspace 的 Credits 账户 | 可用余额与预留余额分开，避免并发超卖 |
@@ -195,7 +193,7 @@ PENDING → QUEUED → RUNNING → SUCCEEDED
 | 注册/登录/会话 | `/auth/*`、设置页 | 已实现 | HttpOnly Cookie；含会话管理和密码流程 |
 | 登录条款与公开法律文档 | `/auth/*`、`/legal/[slug]`、管理员系统配置 | 已实现 | 后端强制校验当前 revision；按用户记录同意历史；条款关闭时不影响原有登录流程 |
 | Personal Workspace | 登录初始化 | 已实现 | 注册后自动创建并隔离资源 |
-| 文本对话 | `/app/chat` | 已实现 | 会话、消息、流式发送和历史管理 |
+| 文本对话 | （无） | 已移除 | 2026-08-14 下线；旧 `/chat` 链接重定向到 `/app/images`，仅保留历史数据表 |
 | 图片生成 | `/app/images` | 已实现 | 文生图、单图编辑、多图合成 |
 | 视频生成 | `/app/videos` | 已实现 | 文/图生视频、多图视频、关键帧、异步轮询 |
 | GenerationJob 历史 | 图片/视频页、API | 已实现 | 统一状态机和取消接口 |
@@ -240,7 +238,7 @@ Worker（apps/worker）
 | 目录 | 产品职责 |
 | --- | --- |
 | `apps/web` | 用户创作、钱包、设置和管理员页面 |
-| `apps/api` | 鉴权、会话、对话、生成任务、计费、支付和后台 API |
+| `apps/api` | 鉴权、登录会话、生成任务、计费、支付和后台 API |
 | `apps/worker` | 异步生成执行、轮询、媒体处理和最终计费状态 |
 | `packages/contracts` | API/Worker/SDK 共用的状态、错误码、队列 payload |
 | `packages/db` | PostgreSQL schema、Drizzle client 和 migration |

@@ -49,26 +49,6 @@ export interface TurnstileConfig {
   siteKey: string
 }
 
-export interface Conversation {
-  id: string
-  title: string
-  createdAt: string
-  updatedAt: string
-  messageCount: number
-}
-
-export interface Message {
-  id: string
-  conversationId: string
-  role: string
-  content: string
-  provider?: string | null
-  model?: string | null
-  inputTokens: number
-  outputTokens: number
-  createdAt: string
-}
-
 export type GenerationType = 'IMAGE' | 'VIDEO'
 export type GenerationStatus =
   | 'PENDING'
@@ -228,26 +208,6 @@ export const setupApi = {
   status: () => json<SetupStatus>('/setup/status'),
   init: (email: string, password: string) =>
     json<AuthResult>('/setup/init', { method: 'POST', body: JSON.stringify({ email, password }) }),
-}
-
-// ---------------------------------------------------------------------------
-// 会话
-// ---------------------------------------------------------------------------
-
-export const conversationApi = {
-  list: (limit = 50) => json<Conversation[]>(`/conversations?limit=${limit}`),
-  create: (title?: string) =>
-    json<Conversation>('/conversations', { method: 'POST', body: JSON.stringify({ title }) }),
-  get: (id: string) => json<Conversation>(`/conversations/${id}`),
-  rename: (id: string, title: string) =>
-    json<Conversation>(`/conversations/${id}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
-  remove: (id: string) => json<{ ok: true }>(`/conversations/${id}`, { method: 'DELETE' }),
-  listMessages: (id: string) => json<Message[]>(`/conversations/${id}/messages`),
-  appendMessages: (id: string, messages: { role: string; content: string; provider?: string; model?: string }[]) =>
-    json<Message[]>(`/conversations/${id}/messages/batch`, {
-      method: 'POST',
-      body: JSON.stringify({ messages }),
-    }),
 }
 
 // ---------------------------------------------------------------------------
@@ -432,89 +392,9 @@ export const uploadApi = {
   },
 }
 
-// ---------------------------------------------------------------------------
-// 对话流式生成（SSE）
-// ---------------------------------------------------------------------------
-
-export type StreamChunkHandler = (content: string) => void
-export type StreamDoneHandler = (parsed: Record<string, unknown>) => void
-export type StreamErrorHandler = (message: string) => void
-
-export interface ChatPayload {
-  content: string
-  model?: string
-  provider?: string
-  [k: string]: unknown
-}
-
-export function sendMessageStream(
-  conversationId: string,
-  data: ChatPayload,
-  onChunk: StreamChunkHandler,
-  onDone: StreamDoneHandler,
-  onError: StreamErrorHandler,
-): void {
-  fetch(`${BASE}/conversations/${conversationId}/messages/stream`, {
-    method: 'POST',
-    headers: addRequestIdHeader({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(data),
-  })
-    .then(async (resp) => {
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => undefined)
-        onError((err as { error?: { message?: string } })?.error?.message || '请求失败')
-        return
-      }
-      const reader = resp.body?.getReader()
-      if (!reader) {
-        onError('响应流不可用')
-        return
-      }
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let finished = false
-
-      const processLine = (line: string) => {
-        if (!line.startsWith('data: ')) return
-        try {
-          const parsed = JSON.parse(line.slice(6))
-          if (parsed.type === 'content') onChunk(parsed.content)
-          else if (parsed.type === 'done') {
-            finished = true
-            onDone(parsed)
-          } else if (parsed.type === 'error') {
-            finished = true
-            onError(parsed.message || '请求失败')
-          }
-        } catch {
-          /* ignore malformed lines */
-        }
-      }
-
-      const read = async (): Promise<void> => {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
-          for (const line of lines) processLine(line)
-        }
-        buffer += decoder.decode()
-        for (const line of buffer.split('\n')) processLine(line)
-        if (!finished) onError('模型未返回完整响应，请检查后端服务或网络连接')
-      }
-
-      read().catch(onError)
-    })
-    .catch(onError)
-}
-
 export default {
   authApi,
-  conversationApi,
   generationApi,
   billingApi,
   paymentApi,
-  sendMessageStream,
 }

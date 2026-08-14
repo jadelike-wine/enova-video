@@ -80,6 +80,48 @@ export const envSchema = z.object({
   /** 回滚版本列表最多暴露当前版本之前的 N 个稳定版本。 */
   UPDATE_MAX_ROLLBACK_VERSIONS: z.coerce.number().int().min(1).max(10).default(3),
 
+  // ---- P0: 邮件 (SMTP) ----
+  /** SMTP 服务器主机。生产环境必填（否则邮件功能不可用）。 */
+  SMTP_HOST: z.string().optional().default(''),
+  /** SMTP 服务器端口。 */
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  /** 是否使用 TLS 直连（465=true, 587=false 用 STARTTLS）。 */
+  SMTP_SECURE: envBool(false),
+  /** SMTP 认证用户名。 */
+  SMTP_USER: z.string().optional().default(''),
+  /** SMTP 认证密码（从 Secret 注入，严禁写入日志）。 */
+  SMTP_PASSWORD: z.string().optional().default(''),
+  /** 发件人显示名称。 */
+  SMTP_FROM_NAME: z.string().default('EnovaMotion'),
+  /** 发件人邮箱地址。 */
+  SMTP_FROM_EMAIL: z.string().optional().default(''),
+
+  // ---- P0: 前端 URL（邮件链接/CORS）----
+  /** 密码重置页面 URL（前端）。 */
+  APP_PASSWORD_RESET_URL: z.string().default('http://localhost:3000/auth/reset-password'),
+  /** 邮箱验证页面 URL（前端）。 */
+  APP_EMAIL_VERIFY_URL: z.string().default('http://localhost:3000/auth/verify-email'),
+  /** 应用名称（邮件品牌/显示）。 */
+  APP_NAME: z.string().default('EnovaMotion'),
+  /** 站点对外访问的完整 URL（CORS 允许列表 + cookie secure 判断）。 */
+  APP_SITE_URL: z.string().default('http://localhost:3000'),
+
+  // ---- P0: 客服邮箱 ----
+  /** 客服邮箱（用户退款/订单问题联系）。生产环境必填。 */
+  SUPPORT_EMAIL: z.string().optional().default('support@example.com'),
+
+  // ---- P0: CORS / 安全 ----
+  /** CORS 允许的源列表（逗号分隔）。生产必填。 */
+  CORS_ALLOWED_ORIGINS: z.string().default('http://localhost:3000'),
+  /** Swagger 文档是否启用（生产默认 false）。 */
+  SWAGGER_ENABLED: envBool(false),
+
+  // ---- P0: 限流 ----
+  /** 限流是否启用（默认 true）。关闭仅用于测试。 */
+  RATE_LIMIT_ENABLED: envBool(true),
+  /** 限流 Redis key 前缀。 */
+  RATE_LIMIT_PREFIX: z.string().default('enova:rl'),
+
   // ============================================================
   // Legacy fallback 配置（已迁移到 System Settings）
   // 首次启动自动迁移到 DB；之后仅作为 fallback。
@@ -171,7 +213,24 @@ export type Env = z.infer<typeof envSchema>;
 
 const DEV_DEFAULTS = new Set(['dev-master-key-not-for-production']);
 
-export function loadEnv(env: NodeJS.ProcessEnv = process.env): Env {
+/** 服务类型：决定生产环境下执行哪些配置校验。 */
+export type ServiceType = 'api' | 'worker';
+
+/**
+ * 加载并校验环境变量。
+ *
+ * @param env - 环境变量对象（默认 process.env）
+ * @param opts.service - 服务类型：'api' 校验全部生产配置；'worker' 只校验它实际需要的配置。
+ *
+ * 配置职责边界：
+ *   - API 需要：支付、邮件、CORS、站点 URL、存储、凭证、数据库、Redis。
+ *   - Worker 需要：凭证、存储、数据库、Redis、Provider 配置。不需要邮件/CORS/支付/SMTP。
+ */
+export function loadEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  opts: { service?: ServiceType } = {},
+): Env {
+  const service = opts.service ?? 'api';
   const parsed = envSchema.safeParse(env);
   if (!parsed.success) {
     const issues = parsed.error.issues
@@ -181,10 +240,91 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): Env {
   }
   const data = parsed.data;
   if (data.NODE_ENV === 'production') {
+    // ---- 共享校验（API + Worker 都需要）----
     const leaked: string[] = [];
     if (DEV_DEFAULTS.has(data.CREDENTIAL_MASTER_KEY)) leaked.push('CREDENTIAL_MASTER_KEY');
     if (leaked.length > 0) {
       throw new Error(`Production requires real secrets, found dev defaults for: ${leaked.join(', ')}`);
+    }
+    // P0: 生产环境禁止使用 none 存储模式（API 和 Worker 都需要 S3）
+    if (data.STORAGE_PROVIDER === 'none') {
+      throw new Error('Production must not use STORAGE_PROVIDER=none. Set STORAGE_PROVIDER=s3 with valid bucket credentials.');
+    }
+    // P0: 生产环境 S3 必须配置 region 和 bucket
+    if (data.STORAGE_PROVIDER === 's3') {
+      if (!data.S3_REGION || !data.S3_BUCKET) {
+        throw new Error('Production with STORAGE_PROVIDER=s3 requires S3_REGION and S3_BUCKET.');
+      }
+    }
+    // P0: 数据库和 Redis 不允许默认弱密码
+    if (data.DATABASE_URL.includes('enova:enova@')) {
+      throw new Error('Production must not use default database credentials (enova:enova).');
+    }
+
+    // ---- API 专属校验 ----
+    if (service === 'api') {
+      // P0: 生产环境禁止使用 sandbox 支付模式
+      if (data.PAYMENT_MODE === 'sandbox') {
+        throw new Error('Production must not use PAYMENT_MODE=sandbox. Set PAYMENT_MODE=alipay or PAYMENT_MODE=wechat.');
+      }
+      // P0: 生产环境禁止使用 localhost 支付回调
+      if (data.PAYMENT_RETURN_BASE_URL.includes('localhost') || data.PAYMENT_NOTIFY_URL.includes('localhost')) {
+        throw new Error('Production must not use localhost in PAYMENT_RETURN_BASE_URL or PAYMENT_NOTIFY_URL.');
+      }
+      // P0: 支付回调 URL 必须使用 HTTPS
+      if (!data.PAYMENT_RETURN_BASE_URL.startsWith('https://')) {
+        throw new Error('Production requires PAYMENT_RETURN_BASE_URL to use HTTPS.');
+      }
+      if (!data.PAYMENT_NOTIFY_URL.startsWith('https://')) {
+        throw new Error('Production requires PAYMENT_NOTIFY_URL to use HTTPS.');
+      }
+      // P0: 支付渠道凭证必须完整
+      if (data.PAYMENT_MODE === 'alipay') {
+        if (!data.ALIPAY_APP_ID || !data.ALIPAY_PRIVATE_KEY || !data.ALIPAY_PUBLIC_KEY) {
+          throw new Error('Production with PAYMENT_MODE=alipay requires ALIPAY_APP_ID, ALIPAY_PRIVATE_KEY, and ALIPAY_PUBLIC_KEY.');
+        }
+      }
+      if (data.PAYMENT_MODE === 'wechat') {
+        if (!data.WECHAT_APP_ID || !data.WECHAT_MCH_ID || !data.WECHAT_API_V3_KEY || !data.WECHAT_PRIVATE_KEY) {
+          throw new Error('Production with PAYMENT_MODE=wechat requires WECHAT_APP_ID, WECHAT_MCH_ID, WECHAT_API_V3_KEY, and WECHAT_PRIVATE_KEY.');
+        }
+      }
+      // P0: 生产环境必须配置 SMTP 邮件
+      if (!data.SMTP_HOST || !data.SMTP_USER || !data.SMTP_PASSWORD || !data.SMTP_FROM_EMAIL) {
+        throw new Error('Production requires SMTP_HOST, SMTP_USER, SMTP_PASSWORD, and SMTP_FROM_EMAIL for email delivery.');
+      }
+      // P0: CORS 必须配置非空合法来源
+      if (!data.CORS_ALLOWED_ORIGINS || !data.CORS_ALLOWED_ORIGINS.includes('://')) {
+        throw new Error('Production requires CORS_ALLOWED_ORIGINS with valid origin(s) (e.g. https://app.example.com).');
+      }
+      // P0: 站点 URL 必须使用 HTTPS
+      if (!data.APP_SITE_URL.startsWith('https://')) {
+        throw new Error('Production requires APP_SITE_URL to use HTTPS.');
+      }
+      // P0: 密码重置和邮箱验证 URL 必须使用 HTTPS
+      if (!data.APP_PASSWORD_RESET_URL.startsWith('https://')) {
+        throw new Error('Production requires APP_PASSWORD_RESET_URL to use HTTPS.');
+      }
+      if (!data.APP_EMAIL_VERIFY_URL.startsWith('https://')) {
+        throw new Error('Production requires APP_EMAIL_VERIFY_URL to use HTTPS.');
+      }
+      // P0: CORS 必须使用 HTTPS origin
+      if (!data.CORS_ALLOWED_ORIGINS.includes('https://')) {
+        throw new Error('Production requires CORS_ALLOWED_ORIGINS to use HTTPS origin(s).');
+      }
+      // P0: 客服邮箱必须配置
+      if (!data.SUPPORT_EMAIL || data.SUPPORT_EMAIL === 'support@example.com') {
+        throw new Error('Production requires SUPPORT_EMAIL to be set to a real support email address.');
+      }
+      // P0: Redis 必须有认证（不允许无密码连接）
+      if (data.REDIS_URL.includes('@') === false || data.REDIS_URL.match(/:\w+@/) === null) {
+        throw new Error('Production requires Redis URL with authentication (password). Example: redis://:password@host:6379');
+      }
+      // P0: Turnstile 应在生产环境启用（如果未启用，需明确记录原因）
+      if (!data.TURNSTILE_ENABLED) {
+        // 不强制报错，但记录警告——某些内网部署可能不需要
+        // 管理员需在文档中明确记录为什么关闭
+      }
     }
   }
   return data;

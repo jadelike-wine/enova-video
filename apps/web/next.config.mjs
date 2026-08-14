@@ -1,3 +1,7 @@
+import createNextIntlPlugin from 'next-intl/plugin'
+
+const withNextIntl = createNextIntlPlugin('./i18n.ts')
+
 // 新架构：前端通过 Next rewrite 把 /api/* 代理到 NestJS API（app 服务自身提供 /api/v1/*）。
 // 浏览器只看到 /api/*（同源），Session Cookie（enova_session）随请求自动携带。
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3001'
@@ -34,4 +38,4 @@ const nextConfig = {
   },
 }
 
-export default nextConfig
+export default withNextIntl(nextConfig)

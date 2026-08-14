@@ -105,7 +105,7 @@ export async function buildMetadata({
 export async function appMetadata(title: string, path: string): Promise<Metadata> {
   return buildMetadata({
     title,
-    description: '灵动创影 应用页面',
+    description: 'EnovaMotion App',
     path,
     robots: { index: false, follow: false },
   })

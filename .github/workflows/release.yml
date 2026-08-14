@@ -24,6 +24,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # VERSION 文件必须与 tag 一致（发版前需先 bump VERSION），否则尽早失败。
+      - name: Verify VERSION matches tag
+        run: |
+          EXPECTED="${GITHUB_REF_NAME#v}"
+          ACTUAL="$(tr -d '[:space:]' < VERSION)"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::VERSION file ($ACTUAL) does not match tag $GITHUB_REF_NAME. Bump VERSION before tagging."
+            exit 1
+          fi
+          echo "VERSION matches tag: $ACTUAL"
+
       - uses: pnpm/action-setup@v6
         with:
           version: 10.27.0

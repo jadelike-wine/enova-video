@@ -100,7 +100,12 @@ jobs:
           script: |
             set -e
             cd "$DEPLOY_PATH"
-            APP_VERSION=$(cat VERSION)
+            # 以 update.sh 刚写入的 .deploy/version.env 为准（实际部署版本）；
+            # VERSION 文件仅作首次部署（version.env 不存在）时的兜底。
+            APP_VERSION=$(grep -E '^APP_VERSION=' .deploy/version.env 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '[:space:]')
+            if [ -z "$APP_VERSION" ]; then
+              APP_VERSION=$(cat VERSION)
+            fi
             echo "Pulling deploy-tool: ${APP_VERSION}"
             docker pull "ghcr.io/jadelike-wine/enova-video-deploy-tool:${APP_VERSION}"
             echo "Restarting API with update override"

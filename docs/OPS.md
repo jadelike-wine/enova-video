@@ -53,8 +53,8 @@ docker images
 
 # 部署目录与版本状态
 cd /home/ubuntu/enova-video
-cat VERSION                    # 版本标记
-cat .deploy/version.env        # 当前 APP_VERSION（compose 实际使用）
+cat VERSION                    # 仓库版本标记（发版打 tag 前先 bump；release.yml 会校验与 tag 一致）
+cat .deploy/version.env        # 本机当前运行版本（compose 实际使用，update.sh 写入）
 cat .deploy/state.json         # 上次部署状态
 cat .deploy/history.json       # 部署历史
 ls -t .deploy/logs/ | head      # 最近部署/回滚日志

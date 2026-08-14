@@ -8,6 +8,10 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ## Unreleased
 
+### Fixed
+- Update/rollback scripts keep the admin one-click update mounts (`/var/run/docker.sock`, `/host/repo`) when recreating the API container with `UPDATE_ENABLED=true`, so subsequent updates from the admin UI no longer fail with "no such file or directory".
+- Deploy workflow pulls the `deploy-tool` image for the actually deployed version (`.deploy/version.env`) instead of the repo `VERSION` file; `VERSION` is bumped to 1.5.0 and the release workflow now fails early when `VERSION` does not match the release tag.
+
 ---
 
 ## [1.5.0] — 2026-08-14

@@ -4,17 +4,22 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { authApi, setupApi, turnstileApi, type TurnstileConfig } from '../../../lib/api'
-import { BRAND } from '../../../lib/brand'
-import { formatErrorMessage } from '../../../lib/errorMessage'
-import TurnstileWidget, { type TurnstileHandle } from '../../../components/auth/TurnstileWidget'
-import LoginAgreementGate, { type LoginAgreementGateState } from '../../../components/auth/LoginAgreementGate'
+import { Alert, Button, Form, Input } from 'antd'
+import { authApi, setupApi, turnstileApi, type TurnstileConfig } from '@/lib/api'
+import { BRAND } from '@/lib/brand'
+import { formatErrorMessage } from '@/lib/errorMessage'
+import TurnstileWidget, { type TurnstileHandle } from '@/components/auth/TurnstileWidget'
+import LoginAgreementGate, { type LoginAgreementGateState } from '@/components/auth/LoginAgreementGate'
+
+interface LoginFormValues {
+  email: string
+  password: string
+}
 
 export default function LoginPage() {
   const t = useTranslations('auth')
   const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [form] = Form.useForm<LoginFormValues>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [turnstile, setTurnstile] = useState<TurnstileConfig>({ enabled: false, siteKey: '' })
@@ -62,9 +67,7 @@ export default function LoginPage() {
     }
   }, [router])
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
+  const handleSubmit = async (values: LoginFormValues) => {
     if (!agreement.ready || (agreement.enabled && !agreement.accepted)) {
       setError(t('agreeFirst'))
       return
@@ -74,8 +77,9 @@ export default function LoginPage() {
       return
     }
     setBusy(true)
+    setError('')
     try {
-      await authApi.login(email, password, turnstile.enabled ? turnstileToken : undefined, agreement.revision)
+      await authApi.login(values.email, values.password, turnstile.enabled ? turnstileToken : undefined, agreement.revision)
       router.replace('/app/images')
       router.refresh()
     } catch (err) {
@@ -97,51 +101,65 @@ export default function LoginPage() {
         <p className="text-sm text-gray-500 mt-1">{t('loginSubtitle')}</p>
       </div>
 
-      <form onSubmit={submit} className="space-y-4">
-        <div>
-          <label className="block text-sm text-gray-700 mb-1.5">{t('email')}</label>
-          <input
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleSubmit}
+        autoComplete="on"
+      >
+        <Form.Item
+          name="email"
+          label={t('email')}
+          rules={[{ required: true, message: t('email') }]}
+        >
+          <Input
             type="email"
-            required
             autoComplete="email"
-            className="input-field"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
           />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-700 mb-1.5">{t('password')}</label>
-          <input
-            type="password"
-            required
+        </Form.Item>
+        <Form.Item
+          name="password"
+          label={t('password')}
+          rules={[{ required: true, message: t('password') }]}
+        >
+          <Input.Password
             autoComplete="current-password"
-            className="input-field"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
           />
-        </div>
+        </Form.Item>
 
         {turnstile.enabled && turnstile.siteKey && (
-          <div>
+          <Form.Item>
             <TurnstileWidget
               ref={turnstileRef}
               siteKey={turnstile.siteKey}
               onVerify={setTurnstileToken}
               onExpire={() => setTurnstileToken('')}
             />
-          </div>
+          </Form.Item>
         )}
 
         <LoginAgreementGate onStateChange={handleAgreementStateChange} />
 
-        {error && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</p>}
+        {error && (
+          <div className="mb-4">
+            <Alert message={error} type="error" showIcon />
+          </div>
+        )}
 
-        <button type="submit" disabled={busy || !agreement.ready || (agreement.enabled && !agreement.accepted)} className="btn-primary w-full">
-          {busy ? t('loggingIn') : t('login')}
-        </button>
-      </form>
+        <Form.Item>
+          <Button
+            type="primary"
+            htmlType="submit"
+            block
+            loading={busy}
+            disabled={!agreement.ready || (agreement.enabled && !agreement.accepted)}
+          >
+            {busy ? t('loggingIn') : t('login')}
+          </Button>
+        </Form.Item>
+      </Form>
 
       <p className="mt-6 text-center text-sm text-gray-500">
         {t('noAccount')}{' '}

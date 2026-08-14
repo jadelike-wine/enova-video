@@ -4,9 +4,10 @@ import Link from 'next/link'
 import { useCallback, useEffect, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { DialogProvider } from '../../components/application/DialogProvider'
-import { SessionProvider, useSession } from '../../lib/auth'
-import { BRAND } from '../../lib/brand'
+import { Button } from 'antd'
+import { DialogProvider } from '@/components/application/DialogProvider'
+import { SessionProvider, useSession } from '@/lib/auth'
+import { BRAND } from '@/lib/brand'
 
 // 模块级变量：持久化侧边栏滚动位置。
 // AppShell 在每个页面组件内独立渲染，路由切换会重新挂载整个 ShellInner，
@@ -178,9 +179,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             <div className="min-w-0">
               <p className="text-sm text-gray-700 truncate">{user.email}</p>
             </div>
-            <button onClick={() => void logout()} className="btn-ghost text-xs" title={t('appShell.logoutTitle')}>
+            <Button type="text" size="small" danger onClick={() => void logout()} title={t('appShell.logoutTitle')}>
               {t('appShell.logout')}
-            </button>
+            </Button>
           </div>
           <p className="text-xs text-gray-400 text-center">
             © {new Date().getFullYear()} {BRAND.nameZh} · {BRAND.name}

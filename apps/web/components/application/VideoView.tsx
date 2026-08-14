@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Image as AntdImage } from 'antd'
+import { Alert, Button, Image as AntdImage, Form, Input, InputNumber, Select, Tag } from 'antd'
 import { useTranslations } from 'next-intl'
 import {
   generationApi,
@@ -43,13 +43,12 @@ interface VideoTask extends TaskItem {
   created_at?: string
 }
 
-interface VideoForm {
+interface VideoFormValues {
   model: string
   mode: string
   prompt: string
   negative_prompt: string
-  width: number
-  height: number
+  resolution: string
   num_frames: number
   frame_rate: number
   seed: number | null
@@ -67,19 +66,19 @@ function statusLabel(t: (k: string) => string, status: string): string {
   return map[status] || status
 }
 
-function statusBadgeClass(status: string): string {
+function statusBadgeColor(status: string): 'processing' | 'success' | 'error' | 'default' {
   switch (status) {
     case 'PENDING':
     case 'QUEUED':
     case 'RUNNING':
-      return 'badge-progress'
+      return 'processing'
     case 'SUCCEEDED':
-      return 'badge-completed'
+      return 'success'
     case 'FAILED':
     case 'CANCELED':
-      return 'badge-failed'
+      return 'error'
     default:
-      return 'badge'
+      return 'default'
   }
 }
 
@@ -87,14 +86,14 @@ function modeLabel(mode?: string): string {
   return VIDEO_MODES.find((m) => m.id === mode)?.name || mode || '—'
 }
 
-function modeTagClass(mode?: string): string {
+function modeTagColor(mode?: string): string {
   const map: Record<string, string> = {
-    text2video: 'bg-cyan-400/15 text-cyan-600 border-cyan-400/25',
-    img2video: 'bg-violet-400/15 text-violet-600 border-violet-400/25',
-    multi_img: 'bg-orange-400/15 text-orange-600 border-orange-400/25',
-    keyframes: 'bg-pink-400/15 text-pink-600 border-pink-400/25',
+    text2video: 'cyan',
+    img2video: 'purple',
+    multi_img: 'orange',
+    keyframes: 'pink',
   }
-  return map[mode || ''] || 'bg-gray-100 text-gray-600 border-gray-200'
+  return map[mode || ''] || 'default'
 }
 
 /** 将后端 Generation 归一化为视图所需的 VideoTask。 */
@@ -150,28 +149,24 @@ function formatTaskMeta(task: VideoTask): string {
   return parts.join(' · ')
 }
 
+function getInitialResolutionId(): string {
+  const match = VIDEO_RESOLUTION_PRESETS.find((p) => p.width === 1280 && p.height === 720)
+  return match?.id || '720p-h'
+}
+
 export default function VideoView() {
   const t = useTranslations('video')
   const tc = useTranslations()
   const { alert } = useDialog()
   const { hasActiveKey, keyStatusLoading, refreshKeyStatus, requireApiKey } = useApiKeyGuard()
 
-  const [form, setForm] = useState<VideoForm>({
-    model: DEFAULT_VIDEO_MODEL,
-    mode: 'text2video',
-    prompt: '',
-    negative_prompt: '',
-    width: 1280,
-    height: 720,
-    num_frames: 121,
-    frame_rate: 24,
-    seed: null,
-  })
+  const [form] = Form.useForm<VideoFormValues>()
   const [inputImages, setInputImages] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<string | number | null>(null)
   const [error, setError] = useState('')
+  const [currentMode, setCurrentMode] = useState('text2video')
 
   const { history, historyLoading, resetHistory, setHistory } = usePaginatedTaskHistory(
     useCallback(async () => {
@@ -202,13 +197,6 @@ export default function VideoView() {
     (history.find((t) => t.id === selectedTaskId) as VideoTask | undefined) || null
 
   const activeTasks = history.filter((t) => ACTIVE_STATUSES.includes(t.status))
-
-  const selectedResolutionId = (() => {
-    const match = VIDEO_RESOLUTION_PRESETS.find(
-      (p) => p.width === form.width && p.height === form.height,
-    )
-    return match?.id || '720p-h'
-  })()
 
   const resolutionGroups = [
     { label: t('landscape'), items: VIDEO_RESOLUTION_PRESETS.filter((p) => p.group === 'landscape') },
@@ -311,24 +299,20 @@ export default function VideoView() {
     setInputImages((prev) => prev.filter((_, idx) => idx !== i))
   }
 
-  const selectMode = (modeId: string) => {
-    setForm((prev) => ({ ...prev, mode: modeId }))
+  const handleModeChange = (modeId: string) => {
+    setCurrentMode(modeId)
   }
 
-  const applyPreset = (preset: { numFrames: number; frameRate: number }) => {
-    setForm((prev) => ({ ...prev, num_frames: preset.numFrames, frame_rate: preset.frameRate }))
-  }
-
-  const generate = useCallback(async () => {
-    if (!form.prompt.trim()) {
+  const generate = useCallback(async (values: VideoFormValues) => {
+    if (!values.prompt.trim()) {
       setError(t('promptRequired'))
       return
     }
-    if (form.mode === 'img2video' && !inputImages.length) {
+    if (values.mode === 'img2video' && !inputImages.length) {
       setError(t('uploadImageRequired'))
       return
     }
-    if (['multi_img', 'keyframes'].includes(form.mode) && inputImages.length < 2) {
+    if (['multi_img', 'keyframes'].includes(values.mode) && inputImages.length < 2) {
       setError(t('atLeastTwoImages'))
       return
     }
@@ -337,25 +321,30 @@ export default function VideoView() {
     setError('')
     setSubmitting(true)
 
+    // Find resolution preset
+    const preset = VIDEO_RESOLUTION_PRESETS.find((p) => p.id === values.resolution)
+    const width = preset?.width ?? 1280
+    const height = preset?.height ?? 720
+
     const tempId = `temp-${Date.now()}`
     const optimisticInputImages =
-      form.mode === 'img2video' && inputImages.length
+      values.mode === 'img2video' && inputImages.length
         ? [inputImages[0]]
-        : ['multi_img', 'keyframes'].includes(form.mode) && inputImages.length
+        : ['multi_img', 'keyframes'].includes(values.mode) && inputImages.length
           ? [...inputImages]
           : undefined
 
     const optimisticTask: VideoTask = {
       id: tempId,
       status: 'PENDING',
-      prompt: form.prompt,
-      negative_prompt: form.negative_prompt || undefined,
-      mode: form.mode,
-      width: form.width,
-      height: form.height,
-      num_frames: form.num_frames,
-      frame_rate: form.frame_rate,
-      seed: form.seed,
+      prompt: values.prompt,
+      negative_prompt: values.negative_prompt || undefined,
+      mode: values.mode,
+      width,
+      height,
+      num_frames: values.num_frames,
+      frame_rate: values.frame_rate,
+      seed: values.seed,
       input_images: optimisticInputImages,
       _optimistic: true,
     }
@@ -364,26 +353,26 @@ export default function VideoView() {
 
     try {
       const input: Record<string, unknown> = {
-        model: form.model,
-        prompt: form.prompt,
-        mode: form.mode,
-        width: form.width,
-        height: form.height,
-        numFrames: form.num_frames,
-        frameRate: form.frame_rate,
+        model: values.model,
+        prompt: values.prompt,
+        mode: values.mode,
+        width,
+        height,
+        numFrames: values.num_frames,
+        frameRate: values.frame_rate,
       }
-      if (form.negative_prompt) input.negativePrompt = form.negative_prompt
-      if (form.seed != null) input.seed = form.seed
-      if (form.mode === 'img2video' && inputImages.length) {
+      if (values.negative_prompt) input.negativePrompt = values.negative_prompt
+      if (values.seed != null) input.seed = values.seed
+      if (values.mode === 'img2video' && inputImages.length) {
         input.image = inputImages[0]
-      } else if (['multi_img', 'keyframes'].includes(form.mode) && inputImages.length) {
+      } else if (['multi_img', 'keyframes'].includes(values.mode) && inputImages.length) {
         input.images = inputImages
       }
 
       const payload: CreateGenerationPayload = {
         type: 'VIDEO',
         provider: 'agnes',
-        model: form.model,
+        model: values.model,
         input,
       }
       const gen = await generationApi.create(payload)
@@ -404,7 +393,6 @@ export default function VideoView() {
       setSubmitting(false)
     }
   }, [
-    form,
     inputImages,
     requireApiKey,
     setHistory,
@@ -418,17 +406,23 @@ export default function VideoView() {
 
   const fillFormFromTask = (task: VideoTask) => {
     if (!task) return
-    setForm({
+    const resolutionId = (() => {
+      const match = VIDEO_RESOLUTION_PRESETS.find(
+        (p) => p.width === task.width && p.height === task.height,
+      )
+      return match?.id || '720p-h'
+    })()
+    form.setFieldsValue({
       model: task.model || DEFAULT_VIDEO_MODEL,
       mode: task.mode || 'text2video',
       prompt: task.prompt || '',
       negative_prompt: task.negative_prompt || '',
-      width: task.width ?? 1280,
-      height: task.height ?? 720,
+      resolution: resolutionId,
       num_frames: task.num_frames ?? 121,
       frame_rate: task.frame_rate ?? 24,
       seed: (task.seed ?? null) as number | null,
     })
+    setCurrentMode(task.mode || 'text2video')
     setInputImages([...inputImagesOf(task)])
     setError('')
     formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -463,7 +457,7 @@ export default function VideoView() {
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-bold text-gray-900">{t('taskList')}</h3>
             {activeTasks.length > 0 && (
-              <span className="badge-progress">{activeTasks.length} {t('inProgress')}</span>
+              <Tag color="processing">{activeTasks.length} {t('inProgress')}</Tag>
             )}
           </div>
           <p className="text-xs text-gray-400">{t('autoPolling')}</p>
@@ -489,7 +483,9 @@ export default function VideoView() {
                       <span className="text-xs text-gray-400 font-mono">
                         #{task._optimistic ? '...' : String(task.id).slice(0, 8)}
                       </span>
-                      <span className={statusBadgeClass(task.status)}>{statusLabel(tc, task.status)}</span>
+                      <Tag color={statusBadgeColor(task.status)} className="!m-0">
+                        {statusLabel(tc, task.status)}
+                      </Tag>
                     </div>
                     <p className="text-sm text-gray-800 truncate font-medium">{task.prompt}</p>
                     {task.negative_prompt && (
@@ -499,13 +495,9 @@ export default function VideoView() {
                     )}
                     <p className="text-[11px] text-gray-500 mt-1 font-mono">{formatTaskMeta(task)}</p>
                     <div className="mt-1">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${modeTagClass(
-                          task.mode,
-                        )}`}
-                      >
+                      <Tag color={modeTagColor(task.mode)} className="!m-0 !text-[10px]">
                         {modeLabel(task.mode)}
-                      </span>
+                      </Tag>
                     </div>
 
                     {inputImagesOf(task).length > 0 && (
@@ -571,221 +563,147 @@ export default function VideoView() {
             </div>
 
             {!keyStatusLoading && !hasActiveKey && (
-              <div className="glass-card border border-amber-400/30 bg-amber-400/10 py-3 px-4">
-                <p className="text-sm text-amber-600">
-                  {t('insufficientBalance')}{' '}
-                  <Link href="/app/wallet" className="text-cyan-600 hover:underline">
-                    {tc('common.wallet')}
-                  </Link>
-                  {t('rechargeHint')}
-                </p>
-              </div>
+              <Alert
+                type="warning"
+                showIcon
+                message={
+                  <span>
+                    {t('insufficientBalance')}{' '}
+                    <Link href="/app/wallet" className="text-cyan-600 hover:underline">
+                      {tc('common.wallet')}
+                    </Link>
+                    {t('rechargeHint')}
+                  </span>
+                }
+              />
             )}
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               {/* Form */}
-              <div ref={formCardRef} className="glass-card space-y-4">
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('generationMode')}</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {VIDEO_MODES.map((m) => (
-                      <button
-                        key={m.id}
-                        onClick={() => selectMode(m.id)}
-                        className={`px-3 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 border ${
-                          form.mode === m.id
-                            ? 'border-fuchsia-400/50 bg-gradient-to-r from-fuchsia-500/25 to-cyan-400/15 text-white'
-                            : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        {m.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <div ref={formCardRef} className="glass-card">
+                <Form
+                  form={form}
+                  layout="vertical"
+                  onFinish={generate}
+                  initialValues={{
+                    model: DEFAULT_VIDEO_MODEL,
+                    mode: 'text2video',
+                    prompt: '',
+                    negative_prompt: '',
+                    resolution: getInitialResolutionId(),
+                    num_frames: 121,
+                    frame_rate: 24,
+                    seed: null,
+                  }}
+                >
+                  <Form.Item label={t('generationMode')} name="mode">
+                    <Select
+                      onChange={(val) => handleModeChange(val as string)}
+                      options={VIDEO_MODES.map((m) => ({ value: m.id, label: m.name }))}
+                    />
+                  </Form.Item>
 
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('model')}</label>
-                  <select
-                    value={form.model}
-                    onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))}
-                    className="select-field text-sm w-full"
-                  >
-                    {VIDEO_MODELS.map((m) => (
-                      <option key={m.apiId} value={m.apiId}>
-                        {m.name}
-                        {m.deprecated ? ` (${t('deprecated')})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  <Form.Item label={t('model')} name="model">
+                    <Select
+                      options={VIDEO_MODELS.map((m) => ({
+                        value: m.apiId,
+                        label: m.deprecated ? `${m.name} (${t('deprecated')})` : m.name,
+                      }))}
+                    />
+                  </Form.Item>
 
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('prompt')}</label>
-                  <textarea
-                    value={form.prompt}
-                    onChange={(e) => setForm((prev) => ({ ...prev, prompt: e.target.value }))}
-                    rows={3}
-                    className="input-field text-sm"
-                    placeholder={t('promptPlaceholder')}
-                  />
-                </div>
+                  <Form.Item label={t('prompt')} name="prompt">
+                    <Input.TextArea rows={3} placeholder={t('promptPlaceholder')} />
+                  </Form.Item>
 
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">
-                    {t('negativePrompt')}
-                  </label>
-                  <input
-                    value={form.negative_prompt}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, negative_prompt: e.target.value }))
-                    }
-                    className="input-field text-sm"
-                    placeholder={t('negativePromptPlaceholder')}
-                  />
-                </div>
+                  <Form.Item label={t('negativePrompt')} name="negative_prompt">
+                    <Input placeholder={t('negativePromptPlaceholder')} />
+                  </Form.Item>
 
-                {form.mode !== 'text2video' && (
-                  <div>
-                    <label className="text-sm text-gray-600 mb-2 block font-medium">
-                      {form.mode === 'img2video' ? t('inputImage') : t('referenceImages')}
-                    </label>
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {inputImages.map((url, i) => (
-                        <div key={i} className="relative group">
-                          <AntdImage
-                            src={url}
-                            alt={t('referenceImagesLabel')}
-                            width={80}
-                            height={80}
-                            preview={false}
-                            className="object-cover rounded-2xl border border-gray-200"
-                          />
-                          <button
-                            onClick={() => removeImage(i)}
-                            className="absolute -top-1 -right-1 w-6 h-6 bg-rose-500 rounded-full text-xs opacity-0 group-hover:opacity-100 shadow-lg"
-                          >
-                            ✕
-                          </button>
-                        </div>
+                  {currentMode !== 'text2video' && (
+                    <Form.Item label={currentMode === 'img2video' ? t('inputImage') : t('referenceImages')}>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {inputImages.map((url, i) => (
+                          <div key={i} className="relative group">
+                            <AntdImage
+                              src={url}
+                              alt={t('referenceImagesLabel')}
+                              width={80}
+                              height={80}
+                              preview={false}
+                              className="object-cover rounded-2xl border border-gray-200"
+                            />
+                            <button
+                              onClick={() => removeImage(i)}
+                              className="absolute -top-1 -right-1 w-6 h-6 bg-rose-500 rounded-full text-xs opacity-0 group-hover:opacity-100 shadow-lg"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <Button loading={uploading} onClick={() => {
+                        const input = document.createElement('input')
+                        input.type = 'file'
+                        input.accept = 'image/*'
+                        input.multiple = true
+                        input.onchange = (e) => void handleUpload(e as unknown as React.ChangeEvent<HTMLInputElement>)
+                        input.click()
+                      }}>
+                        {uploading ? t('uploading') : t('uploadImages')}
+                      </Button>
+                    </Form.Item>
+                  )}
+
+                  <Form.Item label={t('resolution')} name="resolution">
+                    <Select
+                      options={resolutionGroups.flatMap((g) =>
+                        g.items.map((p) => ({
+                          value: p.id,
+                          label: `${g.label} - ${p.label}`,
+                        })),
+                      )}
+                    />
+                  </Form.Item>
+
+                  <Form.Item label={t('duration')}>
+                    <div className="flex flex-wrap gap-2">
+                      {VIDEO_FRAME_PRESETS.map((p) => (
+                        <Button
+                          key={p.label}
+                          size="small"
+                          type={form.getFieldValue('num_frames') === p.numFrames ? 'primary' : 'default'}
+                          onClick={() => {
+                            form.setFieldsValue({ num_frames: p.numFrames, frame_rate: p.frameRate })
+                          }}
+                        >
+                          {p.label}
+                        </Button>
                       ))}
                     </div>
-                    <label className="btn-secondary inline-flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        className="hidden"
-                        onChange={handleUpload}
-                      />
-                      {uploading ? t('uploading') : t('uploadImages')}
-                    </label>
+                  </Form.Item>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Form.Item label={t('frames')} name="num_frames">
+                      <InputNumber min={1} className="w-full" />
+                    </Form.Item>
+                    <Form.Item label={t('frameRate')} name="frame_rate">
+                      <InputNumber min={1} className="w-full" />
+                    </Form.Item>
                   </div>
-                )}
 
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('resolution')}</label>
-                  <select
-                    value={selectedResolutionId}
-                    onChange={(e) => {
-                      const preset = VIDEO_RESOLUTION_PRESETS.find((p) => p.id === e.target.value)
-                      if (preset) {
-                        setForm((prev) => ({
-                          ...prev,
-                          width: preset.width,
-                          height: preset.height,
-                        }))
-                      }
-                    }}
-                    className="select-field text-sm w-full"
-                  >
-                    {resolutionGroups.map((g) => (
-                      <optgroup key={g.label} label={g.label}>
-                        {g.items.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
+                  <Form.Item label={t('seed')} name="seed">
+                    <InputNumber className="w-full" placeholder={t('seedPlaceholder')} />
+                  </Form.Item>
 
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('duration')}</label>
-                  <div className="flex flex-wrap gap-2">
-                    {VIDEO_FRAME_PRESETS.map((p) => (
-                      <button
-                        key={p.label}
-                        onClick={() => applyPreset(p)}
-                        className={`px-4 py-1.5 rounded-full text-xs border transition-all duration-200 ${
-                          form.num_frames === p.numFrames
-                            ? 'border-fuchsia-400/50 text-fuchsia-600 bg-fuchsia-500/20'
-                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                        }`}
-                      >
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                  {error && <Alert type="error" message={error} showIcon className="mb-4" />}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm text-gray-600 mb-2 block">{t('frames')}</label>
-                    <input
-                      value={form.num_frames}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          num_frames: Number(e.target.value),
-                        }))
-                      }
-                      type="number"
-                      className="input-field text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-gray-600 mb-2 block">{t('frameRate')}</label>
-                    <input
-                      value={form.frame_rate}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          frame_rate: Number(e.target.value),
-                        }))
-                      }
-                      type="number"
-                      className="input-field text-sm"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block">{t('seed')}</label>
-                  <input
-                    value={form.seed ?? ''}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        seed: e.target.value === '' ? null : Number(e.target.value),
-                      }))
-                    }
-                    type="number"
-                    className="input-field text-sm"
-                    placeholder={t('seedPlaceholder')}
-                  />
-                </div>
-
-                {error && (
-                  <p className="text-rose-600 text-sm glass px-4 py-2 rounded-2xl border border-rose-400/30">
-                    {error}
-                  </p>
-                )}
-
-                <button onClick={generate} disabled={submitting} className="btn-primary w-full py-3 text-base">
-                  {submitting ? t('submitting') : t('startGenerate')}
-                </button>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" block size="large" loading={submitting}>
+                      {submitting ? t('submitting') : t('startGenerate')}
+                    </Button>
+                  </Form.Item>
+                </Form>
               </div>
 
               {/* Preview */}
@@ -796,9 +714,9 @@ export default function VideoView() {
                       <span className="font-bold text-gray-900">
                         {selectedTask._optimistic ? t('newTask') : `${t('taskPrefix')} #${String(selectedTask.id).slice(0, 8)}`}
                       </span>
-                      <span className={statusBadgeClass(selectedTask.status)}>
+                      <Tag color={statusBadgeColor(selectedTask.status)}>
                         {statusLabel(tc, selectedTask.status)}
-                      </span>
+                      </Tag>
                     </div>
 
                     {ACTIVE_STATUSES.includes(selectedTask.status) && (
@@ -868,24 +786,20 @@ export default function VideoView() {
                     ) : null}
 
                     {selectedTask.status === 'FAILED' || selectedTask.status === 'CANCELED' ? (
-                      <div className="glass px-4 py-3 rounded-2xl border border-rose-400/30 mt-2">
-                        <p className="text-rose-600 text-sm whitespace-pre-wrap break-words">
-                          {statusLabel(tc, selectedTask.status)}
-                          {taskErrorMessage(selectedTask) ? `：${taskErrorMessage(selectedTask)}` : ''}
-                        </p>
-                      </div>
+                      <Alert
+                        type="error"
+                        className="mt-2"
+                        message={`${statusLabel(tc, selectedTask.status)}${taskErrorMessage(selectedTask) ? `：${taskErrorMessage(selectedTask)}` : ''}`}
+                      />
                     ) : null}
 
                     <div className="mt-4 space-y-3">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-xs text-gray-500 font-medium">{t('params')}</p>
                         {!selectedTask._optimistic && (
-                          <button
-                            onClick={() => fillFormFromTask(selectedTask)}
-                            className="btn-secondary text-xs px-3 py-1.5"
-                          >
+                          <Button size="small" onClick={() => fillFormFromTask(selectedTask)}>
                             {t('fillForm')}
-                          </button>
+                          </Button>
                         )}
                       </div>
                       <div className="glass px-4 py-3 rounded-2xl border border-gray-200 space-y-2 text-sm">

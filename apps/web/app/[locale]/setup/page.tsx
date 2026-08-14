@@ -3,9 +3,16 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { setupApi } from '../../lib/api'
-import { BRAND } from '../../lib/brand'
-import { formatErrorMessage } from '../../lib/errorMessage'
+import { Alert, Button, Form, Input } from 'antd'
+import { setupApi } from '@/lib/api'
+import { BRAND } from '@/lib/brand'
+import { formatErrorMessage } from '@/lib/errorMessage'
+
+interface SetupFormValues {
+  email: string
+  password: string
+  confirm: string
+}
 
 /**
  * 首启 Setup 向导：当系统尚无管理员账号时，引导访问者创建首个管理员。
@@ -14,10 +21,8 @@ import { formatErrorMessage } from '../../lib/errorMessage'
 export default function SetupPage() {
   const t = useTranslations('setup')
   const router = useRouter()
+  const [form] = Form.useForm<SetupFormValues>()
   const [checking, setChecking] = useState(true)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -42,20 +47,11 @@ export default function SetupPage() {
     }
   }, [router])
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    if (password.length < 8) {
-      setError(t('passwordTooShort'))
-      return
-    }
-    if (password !== confirm) {
-      setError(t('passwordMismatch'))
-      return
-    }
+  const handleSubmit = async (values: SetupFormValues) => {
     setBusy(true)
+    setError('')
     try {
-      await setupApi.init(email, password)
+      await setupApi.init(values.email, values.password)
       router.replace('/app/images')
       router.refresh()
     } catch (err) {
@@ -83,50 +79,75 @@ export default function SetupPage() {
         <p className="text-sm text-gray-500 mt-1">{t('subtitle')}</p>
       </div>
 
-      <form onSubmit={submit} className="space-y-4">
-        <div>
-          <label className="block text-sm text-gray-700 mb-1.5">{t('adminEmail')}</label>
-          <input
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleSubmit}
+        autoComplete="on"
+      >
+        <Form.Item
+          name="email"
+          label={t('adminEmail')}
+          rules={[{ required: true, message: t('adminEmail') }]}
+        >
+          <Input
             type="email"
-            required
             autoComplete="email"
-            className="input-field"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
             placeholder="admin@example.com"
           />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-700 mb-1.5">{t('adminPassword')}</label>
-          <input
-            type="password"
-            required
+        </Form.Item>
+        <Form.Item
+          name="password"
+          label={t('adminPassword')}
+          rules={[
+            { required: true, message: t('adminPassword') },
+            { min: 8, message: t('passwordTooShort') },
+          ]}
+        >
+          <Input.Password
             autoComplete="new-password"
-            className="input-field"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
             placeholder={t('passwordMinLength')}
           />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-700 mb-1.5">{t('confirmPassword')}</label>
-          <input
-            type="password"
-            required
+        </Form.Item>
+        <Form.Item
+          name="confirm"
+          label={t('confirmPassword')}
+          dependencies={['password']}
+          rules={[
+            { required: true, message: t('confirmPassword') },
+            ({ getFieldValue }) => ({
+              validator(_, value) {
+                if (!value || getFieldValue('password') === value) {
+                  return Promise.resolve()
+                }
+                return Promise.reject(new Error(t('passwordMismatch')))
+              },
+            }),
+          ]}
+        >
+          <Input.Password
             autoComplete="new-password"
-            className="input-field"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
             placeholder={t('passwordPlaceholder')}
           />
-        </div>
+        </Form.Item>
 
-        {error && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</p>}
+        {error && (
+          <div className="mb-4">
+            <Alert message={error} type="error" showIcon />
+          </div>
+        )}
 
-        <button type="submit" disabled={busy} className="btn-primary w-full">
-          {busy ? t('creating') : t('create')}
-        </button>
-      </form>
+        <Form.Item>
+          <Button
+            type="primary"
+            htmlType="submit"
+            block
+            loading={busy}
+          >
+            {busy ? t('creating') : t('create')}
+          </Button>
+        </Form.Item>
+      </Form>
     </div>
   )
 }

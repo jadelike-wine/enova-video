@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Image as AntdImage } from 'antd'
+import { Alert, Button, Image as AntdImage, Form, Input, Select, Tag } from 'antd'
 import { useTranslations } from 'next-intl'
 import {
   generationApi,
@@ -36,6 +36,13 @@ interface InputImage {
   preview: string
 }
 
+interface ImageFormValues {
+  model: string
+  mode: string
+  prompt: string
+  size: string
+}
+
 function statusLabel(t: (k: string) => string, status: string): string {
   const map: Record<string, string> = {
     PENDING: t('status.PENDING'),
@@ -48,19 +55,19 @@ function statusLabel(t: (k: string) => string, status: string): string {
   return map[status] || status
 }
 
-function statusBadgeClass(status: string): string {
+function statusBadgeColor(status: string): 'processing' | 'success' | 'error' | 'default' {
   switch (status) {
     case 'PENDING':
     case 'QUEUED':
     case 'RUNNING':
-      return 'badge-progress'
+      return 'processing'
     case 'SUCCEEDED':
-      return 'badge-completed'
+      return 'success'
     case 'FAILED':
     case 'CANCELED':
-      return 'badge-failed'
+      return 'error'
     default:
-      return 'badge'
+      return 'default'
   }
 }
 
@@ -68,13 +75,13 @@ function modeLabel(mode?: string): string {
   return IMAGE_MODES.find((m) => m.id === mode)?.name || mode || '—'
 }
 
-function modeTagClass(mode?: string): string {
+function modeTagColor(mode?: string): string {
   const map: Record<string, string> = {
-    text2img: 'bg-pink-400/15 text-pink-600 border-pink-400/25',
-    img2img: 'bg-violet-400/15 text-violet-600 border-violet-400/25',
-    multi_img: 'bg-orange-400/15 text-orange-600 border-orange-400/25',
+    text2img: 'pink',
+    img2img: 'purple',
+    multi_img: 'orange',
   }
-  return map[mode || ''] || 'bg-gray-100 text-gray-600 border-gray-200'
+  return map[mode || ''] || 'default'
 }
 
 function formatSizeLabel(t: ReturnType<typeof useTranslations<'image'>>, size: string): string {
@@ -122,17 +129,13 @@ export default function ImageView() {
   const { alert } = useDialog()
   const { hasActiveKey, keyStatusLoading, refreshKeyStatus, requireApiKey } = useApiKeyGuard()
 
-  const [form, setForm] = useState<Record<string, string>>({
-    model: DEFAULT_IMAGE_MODEL,
-    mode: 'text2img',
-    prompt: '',
-    size: '1024x768',
-  })
+  const [form] = Form.useForm<ImageFormValues>()
   const [inputImages, setInputImages] = useState<InputImage[]>([])
   const [generating, setGenerating] = useState(false)
   const [generateStep, setGenerateStep] = useState('')
   const [selectedTaskId, setSelectedTaskId] = useState<string | number | null>(null)
   const [error, setError] = useState('')
+  const [currentMode, setCurrentMode] = useState('text2img')
 
   const { history, historyLoading, resetHistory, setHistory } = usePaginatedTaskHistory(
     useCallback(async () => {
@@ -151,8 +154,8 @@ export default function ImageView() {
     if (item?.preview?.startsWith('blob:')) URL.revokeObjectURL(item.preview)
   }
 
-  const selectMode = (modeId: string) => {
-    setForm((prev) => ({ ...prev, mode: modeId }))
+  const handleModeChange = (modeId: string) => {
+    setCurrentMode(modeId)
     if (modeId === 'img2img' && inputImages.length > 1) {
       inputImages.slice(1).forEach(revokePreview)
       setInputImages([inputImages[0]])
@@ -162,7 +165,7 @@ export default function ImageView() {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
-    if (form.mode === 'img2img') {
+    if (currentMode === 'img2img') {
       if (inputImages[0]) revokePreview(inputImages[0])
       setInputImages([{ file: files[0], preview: URL.createObjectURL(files[0]) }])
     } else {
@@ -200,33 +203,33 @@ export default function ImageView() {
     return urls
   }
 
-  const generate = useCallback(async () => {
-    if (!form.prompt.trim()) {
+  const generate = useCallback(async (values: ImageFormValues) => {
+    if (!values.prompt.trim()) {
       setError(t('promptRequired'))
       return
     }
-    if (form.mode === 'img2img' && !inputImages.length) {
+    if (values.mode === 'img2img' && !inputImages.length) {
       setError(t('referenceRequired'))
       return
     }
-    if (form.mode === 'multi_img' && !inputImages.length) {
+    if (values.mode === 'multi_img' && !inputImages.length) {
       setError(t('inputImagesRequired'))
       return
     }
     if (!(await requireApiKey())) return
 
     setGenerating(true)
-    setGenerateStep(form.mode === 'text2img' ? 'generating' : 'uploading')
+    setGenerateStep(values.mode === 'text2img' ? 'generating' : 'uploading')
     setError('')
 
     const tempId = `temp-${Date.now()}`
     const optimisticTask: ImageTask = {
       id: tempId,
       status: 'RUNNING',
-      prompt: form.prompt,
-      mode: form.mode,
-      size: form.size,
-      model: form.model,
+      prompt: values.prompt,
+      mode: values.mode,
+      size: values.size,
+      model: values.model,
       _optimistic: true,
     }
     setHistory((prev) => [optimisticTask, ...prev])
@@ -234,7 +237,7 @@ export default function ImageView() {
 
     try {
       let images: string[] | undefined
-      if (form.mode !== 'text2img' && inputImages.length) {
+      if (values.mode !== 'text2img' && inputImages.length) {
         setGenerateStep('uploading')
         images = await uploadLocalFiles(inputImages)
       }
@@ -242,11 +245,11 @@ export default function ImageView() {
       const payload: CreateGenerationPayload = {
         type: 'IMAGE',
         provider: 'agnes',
-        model: form.model,
+        model: values.model,
         input: {
-          prompt: form.prompt,
-          mode: form.mode,
-          size: form.size,
+          prompt: values.prompt,
+          mode: values.mode,
+          size: values.size,
           ...(images ? { images } : {}),
         },
       }
@@ -267,18 +270,19 @@ export default function ImageView() {
       setGenerating(false)
       setGenerateStep('')
     }
-  }, [form, inputImages, requireApiKey, alert, setHistory])
+  }, [inputImages, requireApiKey, alert, setHistory])
 
   const selectTask = (task: TaskItem) => setSelectedTaskId(task.id)
 
   const fillFormFromTask = (task: ImageTask) => {
     if (!task || task._optimistic) return
-    setForm({
+    form.setFieldsValue({
       model: task.model || DEFAULT_IMAGE_MODEL,
       mode: task.mode || 'text2img',
       prompt: task.prompt || '',
       size: task.size || '1024x768',
     })
+    setCurrentMode(task.mode || 'text2img')
     inputImages.forEach(revokePreview)
     setInputImages(inputImagesOf(task).map((url) => ({ preview: url })))
     setError('')
@@ -315,7 +319,7 @@ export default function ImageView() {
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-bold text-gray-900">{t('history')}</h3>
-            {generating && <span className="badge-progress">{t('generating')}</span>}
+            {generating && <Tag color="processing">{t('generating')}</Tag>}
           </div>
           <p className="text-xs text-gray-400">{t('clickToPreview')}</p>
         </div>
@@ -358,17 +362,15 @@ export default function ImageView() {
                       <span className="text-xs text-gray-400 font-mono">
                         #{task._optimistic ? '...' : String(task.id).slice(0, 8)}
                       </span>
-                      <span className={statusBadgeClass(task.status)}>{statusLabel(tc, task.status)}</span>
+                      <Tag color={statusBadgeColor(task.status)} className="!m-0">
+                        {statusLabel(tc, task.status)}
+                      </Tag>
                     </div>
                     <p className="text-sm text-gray-800 truncate font-medium mt-1">{task.prompt}</p>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${modeTagClass(
-                          task.mode,
-                        )}`}
-                      >
+                      <Tag color={modeTagColor(task.mode)} className="!m-0 !text-[10px]">
                         {modeLabel(task.mode)}
-                      </span>
+                      </Tag>
                       <span className="text-xs text-gray-400">{formatSizeLabel(t, task.size || '')}</span>
                     </div>
                     {task.status === 'FAILED' && (
@@ -402,137 +404,116 @@ export default function ImageView() {
             </div>
 
             {!keyStatusLoading && !hasActiveKey && (
-              <div className="glass-card border border-amber-400/30 bg-amber-400/10 py-3 px-4">
-                <p className="text-sm text-amber-600">
-                  {t('insufficientBalance')}{' '}
-                  <Link href="/app/wallet" className="text-cyan-600 hover:underline">
-                    {tc('common.wallet')}
-                  </Link>
-                  {t('rechargeHint')}
-                </p>
-              </div>
+              <Alert
+                type="warning"
+                showIcon
+                message={
+                  <span>
+                    {t('insufficientBalance')}{' '}
+                    <Link href="/app/wallet" className="text-cyan-600 hover:underline">
+                      {tc('common.wallet')}
+                    </Link>
+                    {t('rechargeHint')}
+                  </span>
+                }
+              />
             )}
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               {/* Form */}
-              <div ref={formCardRef} className="glass-card space-y-4">
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('generationMode')}</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {IMAGE_MODES.map((m) => (
-                      <button
-                        key={m.id}
-                        onClick={() => selectMode(m.id)}
-                        className={`px-3 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 border ${
-                          form.mode === m.id
-                            ? 'border-fuchsia-400/50 bg-gradient-to-r from-fuchsia-500/25 to-pink-400/15 text-white'
-                            : 'border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        {m.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <div ref={formCardRef} className="glass-card">
+                <Form
+                  form={form}
+                  layout="vertical"
+                  onFinish={generate}
+                  initialValues={{
+                    model: DEFAULT_IMAGE_MODEL,
+                    mode: 'text2img',
+                    prompt: '',
+                    size: '1024x768',
+                  }}
+                >
+                  <Form.Item label={t('generationMode')} name="mode">
+                    <Select
+                      onChange={(val) => handleModeChange(val as string)}
+                      options={IMAGE_MODES.map((m) => ({ value: m.id, label: m.name }))}
+                    />
+                  </Form.Item>
 
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('model')}</label>
-                  <select
-                    value={form.model}
-                    onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))}
-                    className="select-field text-sm"
-                  >
-                    {IMAGE_MODELS.map((m) => (
-                      <option key={m.apiId} value={m.apiId}>
-                        {m.name}
-                        {m.deprecated ? ` (${t('deprecated')})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  <Form.Item label={t('model')} name="model">
+                    <Select
+                      options={IMAGE_MODELS.map((m) => ({
+                        value: m.apiId,
+                        label: m.deprecated ? `${m.name} (${t('deprecated')})` : m.name,
+                      }))}
+                    />
+                  </Form.Item>
 
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('size')}</label>
-                  <select
-                    value={form.size}
-                    onChange={(e) => setForm((prev) => ({ ...prev, size: e.target.value }))}
-                    className="select-field text-sm"
-                  >
-                    {IMAGE_SIZES.map((s) => (
-                      <option key={s} value={s}>
-                        {formatSizeLabel(t, s)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  <Form.Item label={t('size')} name="size">
+                    <Select
+                      options={IMAGE_SIZES.map((s) => ({
+                        value: s,
+                        label: formatSizeLabel(t, s),
+                      }))}
+                    />
+                  </Form.Item>
 
-                <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('prompt')}</label>
-                  <textarea
-                    value={form.prompt}
-                    onChange={(e) => setForm((prev) => ({ ...prev, prompt: e.target.value }))}
-                    rows={3}
-                    className="input-field text-sm"
-                    placeholder={t('promptPlaceholder')}
-                  />
-                </div>
+                  <Form.Item label={t('prompt')} name="prompt">
+                    <Input.TextArea rows={3} placeholder={t('promptPlaceholder')} />
+                  </Form.Item>
 
-                {form.mode !== 'text2img' && (
-                  <div>
-                    <label className="text-sm text-gray-600 mb-2 block font-medium">
-                      {form.mode === 'img2img' ? t('referenceImage') : t('inputImages')}
-                    </label>
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {inputImages.map((item, i) => (
-                        <div key={i} className="relative group">
-                          <AntdImage
-                            src={item.preview}
-                            alt={t('referenceImage')}
-                            width={80}
-                            height={80}
-                            preview={false}
-                            className="object-cover rounded-2xl border border-gray-200"
-                          />
-                          <button
-                            onClick={() => removeInputImage(i)}
-                            className="absolute -top-1 -right-1 w-6 h-6 bg-rose-500 rounded-full text-xs opacity-0 group-hover:opacity-100 shadow-lg"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <label className="btn-secondary inline-flex items-center gap-2 text-sm cursor-pointer">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        multiple={form.mode === 'multi_img'}
-                        className="hidden"
-                        onChange={handleFileSelect}
-                      />
-                      {form.mode === 'img2img'
-                        ? inputImages.length
-                          ? t('changeReference')
-                          : t('selectReference')
-                        : t('selectImages')}
-                    </label>
-                  </div>
-                )}
+                  {currentMode !== 'text2img' && (
+                    <Form.Item label={currentMode === 'img2img' ? t('referenceImage') : t('inputImages')}>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {inputImages.map((item, i) => (
+                          <div key={i} className="relative group">
+                            <AntdImage
+                              src={item.preview}
+                              alt={t('referenceImage')}
+                              width={80}
+                              height={80}
+                              preview={false}
+                              className="object-cover rounded-2xl border border-gray-200"
+                            />
+                            <button
+                              onClick={() => removeInputImage(i)}
+                              className="absolute -top-1 -right-1 w-6 h-6 bg-rose-500 rounded-full text-xs opacity-0 group-hover:opacity-100 shadow-lg"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <Button onClick={() => fileInputRef.current?.click()}>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple={currentMode === 'multi_img'}
+                          className="hidden"
+                          onChange={handleFileSelect}
+                        />
+                        {currentMode === 'img2img'
+                          ? inputImages.length
+                            ? t('changeReference')
+                            : t('selectReference')
+                          : t('selectImages')}
+                      </Button>
+                    </Form.Item>
+                  )}
 
-                {error && (
-                  <p className="text-rose-600 text-sm glass px-4 py-2 rounded-2xl border border-rose-400/30">
-                    {error}
-                  </p>
-                )}
+                  {error && <Alert type="error" message={error} showIcon className="mb-4" />}
 
-                <button onClick={generate} disabled={generating} className="btn-primary w-full py-3 text-base">
-                  {generateStep === 'uploading'
-                    ? t('generatingWithUpload')
-                    : generating
-                      ? t('generatingNow')
-                      : t('startGenerate')}
-                </button>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" block size="large" loading={generating}>
+                      {generateStep === 'uploading'
+                        ? t('generatingWithUpload')
+                        : generating
+                          ? t('generatingNow')
+                          : t('startGenerate')}
+                    </Button>
+                  </Form.Item>
+                </Form>
               </div>
 
               {/* Preview */}
@@ -543,9 +524,9 @@ export default function ImageView() {
                       <span className="font-bold text-gray-900">
                         {selectedTask._optimistic ? t('newTask') : `${t('taskPrefix')} #${String(selectedTask.id).slice(0, 8)}`}
                       </span>
-                      <span className={statusBadgeClass(selectedTask.status)}>
+                      <Tag color={statusBadgeColor(selectedTask.status)}>
                         {statusLabel(tc, selectedTask.status)}
-                      </span>
+                      </Tag>
                     </div>
 
                     {ACTIVE_STATUSES.includes(selectedTask.status) && (
@@ -572,24 +553,20 @@ export default function ImageView() {
                     )}
 
                     {selectedTask.status === 'FAILED' || selectedTask.status === 'CANCELED' ? (
-                      <div className="glass px-4 py-3 rounded-2xl border border-rose-400/30">
-                        <p className="text-rose-600 text-sm whitespace-pre-wrap break-words">
-                          {statusLabel(tc, selectedTask.status)}
-                          {taskErrorMessage(selectedTask) ? `：${taskErrorMessage(selectedTask)}` : ''}
-                        </p>
-                      </div>
+                      <Alert
+                        type="error"
+                        className="mt-2"
+                        message={`${statusLabel(tc, selectedTask.status)}${taskErrorMessage(selectedTask) ? `：${taskErrorMessage(selectedTask)}` : ''}`}
+                      />
                     ) : null}
 
                     <div className="mt-4 space-y-3">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-xs text-gray-500 font-medium">{t('params')}</p>
                         {!selectedTask._optimistic && (
-                          <button
-                            onClick={() => fillFormFromTask(selectedTask)}
-                            className="btn-secondary text-xs px-3 py-1.5"
-                          >
+                          <Button size="small" onClick={() => fillFormFromTask(selectedTask)}>
                             {t('fillForm')}
-                          </button>
+                          </Button>
                         )}
                       </div>
                       <div className="glass px-4 py-3 rounded-2xl border border-gray-200 space-y-2 text-sm">

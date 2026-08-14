@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { Button } from 'antd'
 import { useTranslations } from 'next-intl'
 import { useSession } from '../../lib/auth'
 import { BRAND } from '../../lib/brand'
@@ -65,8 +66,8 @@ export default function SettingsView() {
         <section className="glass-card">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-gray-900">{t('balanceOverview')}</h3>
-            <Link href="/app/wallet" className="btn-secondary text-sm">
-              {t('goToWallet')}
+            <Link href="/app/wallet">
+              <Button size="small">{t('goToWallet')}</Button>
             </Link>
           </div>
           <div className="grid gap-4 md:grid-cols-3">
@@ -117,9 +118,9 @@ export default function SettingsView() {
         <section className="glass-card">
           <h3 className="text-lg font-bold text-gray-900 mb-2">{t('loginStatus')}</h3>
           <p className="text-sm text-gray-500 mb-4">{t('logoutHint')}</p>
-          <button onClick={() => void logout()} className="btn-ghost text-rose-600 hover:text-rose-700">
+          <Button danger onClick={() => void logout()}>
             {t('logout')}
-          </button>
+          </Button>
         </section>
       </div>
     </div>

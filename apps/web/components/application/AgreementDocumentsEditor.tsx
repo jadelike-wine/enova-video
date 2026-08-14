@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Button, Empty, Input } from 'antd'
 
 export interface AgreementDocumentDraft {
   slug: string
@@ -36,7 +37,7 @@ export function parseAgreementDocuments(value: string): AgreementDocumentDraft[]
 
 /**
  * 将文档 JSON 规范化为统一序列化格式（字段顺序固定）。
- * 用于初始化 draft，保证“内容未变 → 字符串未变 → 不产生脏标记”。
+ * 用于初始化 draft，保证"内容未变 → 字符串未变 → 不产生脏标记"。
  */
 export function normalizeDocumentsJson(value: string): string {
   return JSON.stringify(parseAgreementDocuments(value))
@@ -57,29 +58,28 @@ export default function AgreementDocumentsEditor({ value, onChange }: AgreementD
   return (
     <div className="space-y-3">
       {documents.length === 0 && (
-        <div className="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-400">
-          暂无协议文档。添加后将展示在登录 / 注册页面，例如服务条款、隐私政策。
-        </div>
+        <Empty
+          description="暂无协议文档。添加后将展示在登录 / 注册页面，例如服务条款、隐私政策。"
+        />
       )}
 
       {documents.map((document, index) => (
         <div key={index} className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs font-semibold text-gray-500">文档 {index + 1}</span>
-            <button
-              type="button"
-              className="text-xs text-rose-500 transition-colors hover:text-rose-600"
+            <Button
+              size="small"
+              danger
               onClick={() => update(documents.filter((_, i) => i !== index))}
             >
               删除文档
-            </button>
+            </Button>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs text-gray-500">文档名称</label>
-              <input
-                className="input-field"
+              <Input
                 value={document.title}
                 placeholder="例如：服务条款"
                 onChange={(event) =>
@@ -89,8 +89,7 @@ export default function AgreementDocumentsEditor({ value, onChange }: AgreementD
             </div>
             <div>
               <label className="mb-1 block text-xs text-gray-500">路由标识</label>
-              <input
-                className="input-field"
+              <Input
                 value={document.slug}
                 placeholder="例如：terms"
                 onChange={(event) =>
@@ -105,10 +104,11 @@ export default function AgreementDocumentsEditor({ value, onChange }: AgreementD
 
           <div>
             <label className="mb-1 block text-xs text-gray-500">Markdown 内容</label>
-            <textarea
-              className="input-field min-h-40 font-mono text-xs leading-relaxed"
+            <Input.TextArea
+              className="min-h-40 font-mono text-xs leading-relaxed"
               value={document.contentMd}
               placeholder="输入 Markdown 格式的条款内容"
+              autoSize={{ minRows: 6 }}
               onChange={(event) =>
                 update(documents.map((item, i) => (i === index ? { ...item, contentMd: event.target.value } : item)))
               }
@@ -117,13 +117,11 @@ export default function AgreementDocumentsEditor({ value, onChange }: AgreementD
         </div>
       ))}
 
-      <button
-        type="button"
-        className="btn-secondary text-sm"
+      <Button
         onClick={() => update([...documents, { slug: `document-${documents.length + 1}`, title: '', contentMd: '' }])}
       >
         添加文档
-      </button>
+      </Button>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { Button, Card as AntdCard, Empty, Skeleton, Tag } from 'antd'
 import { type ReactNode } from 'react'
 
 /** 日期格式化（本地时区 YYYY-MM-DD HH:mm）。 */
@@ -24,44 +25,42 @@ export function fmtMicrousd(usd: number | null | undefined): string {
   return `$${(usd / 1_000_000).toFixed(4)}`
 }
 
-const STATUS_STYLE: Record<string, string> = {
-  ACTIVE: 'badge-completed',
-  DISABLED: 'badge-failed',
-  SUSPENDED: 'badge-failed',
-  PENDING: 'badge-queued',
-  QUEUED: 'badge-queued',
-  RUNNING: 'badge-progress',
-  RESERVED: 'badge-progress',
-  SUCCEEDED: 'badge-completed',
-  CAPTURED: 'badge-completed',
-  RELEASED: 'badge-queued',
-  FAILED: 'badge-failed',
-  CANCELED: 'badge-failed',
-  REFUNDED: 'badge-failed',
-  DISPATCHED: 'badge-completed',
-  SUPERSEDED: 'badge-failed',
-  ACTIVE_OVERDUE: 'badge-failed',
+const STATUS_TAG_COLOR: Record<string, string> = {
+  ACTIVE: 'success',
+  DISABLED: 'error',
+  SUSPENDED: 'error',
+  PENDING: 'processing',
+  QUEUED: 'processing',
+  RUNNING: 'processing',
+  RESERVED: 'processing',
+  SUCCEEDED: 'success',
+  CAPTURED: 'success',
+  RELEASED: 'processing',
+  FAILED: 'error',
+  CANCELED: 'error',
+  REFUNDED: 'error',
+  DISPATCHED: 'success',
+  SUPERSEDED: 'error',
+  ACTIVE_OVERDUE: 'error',
 }
 
 export function StatusBadge({ status }: { status: string | null | undefined }) {
   const s = status ?? '—'
-  const cls = STATUS_STYLE[s.toUpperCase()] || 'badge'
-  return <span className={`badge ${cls}`}>{s}</span>
+  const color = STATUS_TAG_COLOR[s.toUpperCase()] || 'default'
+  return <Tag color={color}>{s}</Tag>
 }
 
-export function Card({ title, children, action }: { title?: string; children: ReactNode; action?: ReactNode }) {
+/** 兼容包装：使用 antd Card 组件。 */
+export function CardWrapper({ title, children, action }: { title?: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="glass rounded-2xl p-5">
-      {(title || action) && (
-        <div className="flex items-center justify-between mb-3">
-          {title && <h3 className="font-bold text-gray-900">{title}</h3>}
-          {action}
-        </div>
-      )}
+    <AntdCard title={title} extra={action} className="!rounded-2xl">
       {children}
-    </div>
+    </AntdCard>
   )
 }
+
+// Keep old name for backward compat
+export const Card = CardWrapper
 
 export function PageHeader({ title }: { title: string }) {
   return (
@@ -71,38 +70,13 @@ export function PageHeader({ title }: { title: string }) {
   )
 }
 
-/** 表格容器：统一横向滚动 + 玻璃样式。 */
-export function DataTable({
-  headers,
-  children,
-}: {
-  headers: string[]
-  children: ReactNode
-}) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-gray-500 text-xs uppercase tracking-wide">
-            {headers.map((h, i) => (
-              <th key={i} className="px-3 py-2 font-medium whitespace-nowrap">
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">{children}</tbody>
-      </table>
-    </div>
-  )
-}
-
+/** 表格容器：保留兼容性，但内部使用 antd Card 包裹 */
 export function EmptyState({ text }: { text: string }) {
-  return <div className="py-10 text-center text-gray-400 text-sm">{text}</div>
+  return <Empty description={text} />
 }
 
 export function Loading({ text = '加载中…' }: { text?: string }) {
-  return <div className="py-10 text-center text-gray-500 text-sm animate-pulse">{text}</div>
+  return <Skeleton active paragraph={{ rows: 3 }} />
 }
 
 export function AdminLink({ href, children }: { href: string; children: ReactNode }) {
@@ -115,10 +89,12 @@ export function AdminLink({ href, children }: { href: string; children: ReactNod
 
 export function BackLink({ href, label }: { href: string; label: string }) {
   return (
-    <Link href={href} className="text-xs text-gray-500 hover:text-gray-900">
-      ← {label}
+    <Link href={href}>
+      <Button type="link" size="small" className="!px-0 !text-gray-500 hover:!text-gray-900">
+        ← {label}
+      </Button>
     </Link>
   )
 }
 
-export { Link }
+export { Link, Button }

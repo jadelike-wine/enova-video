@@ -1,7 +1,9 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { Button, Checkbox, Input, InputNumber, Modal, Segmented, Select, Skeleton, Switch, Tabs, Tag } from 'antd'
 import {
   settingsApi,
   type SettingView,
@@ -235,22 +237,11 @@ function ToggleSwitch({
   ariaLabel?: string
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
+    <Switch
+      checked={checked}
+      onChange={onChange}
       aria-label={ariaLabel}
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors duration-200 ${
-        checked ? 'bg-[#7C3AED]' : 'bg-gray-200'
-      }`}
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${
-          checked ? 'translate-x-6' : 'translate-x-1'
-        }`}
-      />
-    </button>
+    />
   )
 }
 
@@ -271,14 +262,15 @@ function SaveButton({
 }) {
   const label = saving ? '保存中…' : saved ? '已保存' : dirty ? '保存修改' : '无需保存'
   return (
-    <button
-      type="button"
-      className="btn-primary text-sm"
-      disabled={saving || !dirty}
+    <Button
+      type="primary"
+      size="small"
+      loading={saving}
+      disabled={!dirty}
       onClick={onClick}
     >
       {label}
-    </button>
+    </Button>
   )
 }
 
@@ -325,30 +317,36 @@ function SettingRow({
     }
     if (setting.valueType === 'enum' && setting.options) {
       return (
-        <select
+        <Select
           value={draft}
-          onChange={(e) => onDraftChange(e.target.value)}
-          className="input-field w-full"
+          onChange={(val) => onDraftChange(val as string)}
+          className="w-full"
           aria-label={setting.label}
-        >
-          {setting.options.map((opt) => (
-            <option key={opt} value={opt}>
-              {enumLabel(opt)}
-            </option>
-          ))}
-        </select>
+          options={setting.options.map((opt) => ({ value: opt, label: enumLabel(opt) }))}
+        />
+      )
+    }
+    if (setting.valueType === 'number') {
+      return (
+        <InputNumber
+          value={draft}
+          onChange={(val) => onDraftChange(String(val ?? ''))}
+          className="w-full"
+          aria-label={setting.label}
+          placeholder={setting.isSecret && setting.configured ? '••••••（留空保持不变）' : ''}
+          min={setting.min !== undefined ? String(setting.min) : undefined}
+          max={setting.max !== undefined ? String(setting.max) : undefined}
+        />
       )
     }
     return (
-      <input
+      <Input
         value={draft}
         onChange={(e) => onDraftChange(e.target.value)}
-        type={setting.valueType === 'number' ? 'number' : setting.isSecret ? 'password' : 'text'}
-        className="input-field w-full"
+        type={setting.isSecret ? 'password' : 'text'}
+        className="w-full"
         aria-label={setting.label}
         placeholder={setting.isSecret && setting.configured ? '••••••（留空保持不变）' : ''}
-        {...(setting.valueType === 'number' && setting.min !== undefined ? { min: setting.min } : {})}
-        {...(setting.valueType === 'number' && setting.max !== undefined ? { max: setting.max } : {})}
       />
     )
   })()
@@ -388,19 +386,19 @@ function SettingRow({
         {control}
         <div className="flex flex-wrap items-center justify-end gap-2">
           {setting.isSecret && setting.configured && (
-            <button
-              type="button"
-              className="btn-secondary text-sm text-red-600"
+            <Button
+              size="small"
+              danger
               disabled={saving}
               onClick={onClearSecret}
               title="清除 Secret"
             >
               清除
-            </button>
+            </Button>
           )}
-          <button type="button" className="btn-secondary text-sm" onClick={onShowHistory} title="查看该配置的变更历史">
+          <Button size="small" onClick={onShowHistory} title="查看该配置的变更历史">
             查看历史
-          </button>
+          </Button>
           <SaveButton dirty={dirty} saving={saving} saved={saved} onClick={onSave} />
         </div>
       </div>
@@ -433,8 +431,6 @@ function AdminSettingsInner() {
   const urlTab = searchParams?.get('tab') ?? null
   const [activeTab, setActiveTab] = useState<SettingsTabKey>(() => (isTabKey(urlTab) ? urlTab : 'general'))
 
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const tabButtonRefs = useRef<Map<SettingsTabKey, HTMLButtonElement>>(new Map())
   const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   useEffect(() => {
@@ -501,7 +497,6 @@ function AdminSettingsInner() {
     (key: SettingsTabKey) => {
       setActiveTab(key)
       replaceTabUrl(key)
-      scrollRef.current?.scrollTo({ top: 0 })
     },
     [replaceTabUrl],
   )
@@ -547,34 +542,6 @@ function AdminSettingsInner() {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false })
     }
   }, [visibleTabs, activeTab, searchParams, router, pathname])
-
-  const activeTabDef = visibleTabs.find((t) => t.key === activeTab) ?? null
-
-  const handleTabKeydown = useCallback(
-    (event: React.KeyboardEvent<HTMLButtonElement>, key: SettingsTabKey) => {
-      const order = visibleTabs.map((t) => t.key)
-      if (order.length === 0) return
-      const index = order.indexOf(key)
-      let nextKey: SettingsTabKey | undefined
-      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-        nextKey = order[(index + 1) % order.length]
-      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-        nextKey = order[(index - 1 + order.length) % order.length]
-      } else if (event.key === 'Home') {
-        nextKey = order[0]
-      } else if (event.key === 'End') {
-        nextKey = order[order.length - 1]
-      } else {
-        return
-      }
-      event.preventDefault()
-      const target = nextKey
-      if (!target) return
-      selectTab(target)
-      window.requestAnimationFrame(() => tabButtonRefs.current.get(target)?.focus())
-    },
-    [visibleTabs, selectTab],
-  )
 
   // ---- 脏标记 ----
 
@@ -819,24 +786,18 @@ function AdminSettingsInner() {
           <div className="flex flex-wrap items-center gap-2">
             {isStorageTab && (
               <>
-                <span
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
-                    storageConfigured
-                      ? 'border-emerald-100 bg-emerald-50 text-emerald-600'
-                      : 'border-amber-100 bg-amber-50 text-amber-600'
-                  }`}
-                >
+                <Tag color={storageConfigured ? 'success' : 'warning'}>
                   {storageProvider === 'none' ? '未启用对象存储' : storageConfigured ? '对象存储已配置' : '请配置对象存储'}
-                </span>
+                </Tag>
                 {storageProvider !== 'none' && (
-                  <button
-                    type="button"
-                    className="btn-secondary text-sm disabled:opacity-50"
-                    disabled={saving['storage:test'] || !storageConfigured}
+                  <Button
+                    size="small"
+                    loading={saving['storage:test']}
+                    disabled={!storageConfigured}
                     onClick={() => void handleStorageTest()}
                   >
-                    {saving['storage:test'] ? '测试中…' : '测试存储'}
-                  </button>
+                    测试存储
+                  </Button>
                 )}
               </>
             )}
@@ -895,13 +856,14 @@ function AdminSettingsInner() {
     const useDateInput = updatedAt === '' || DATE_PATTERN.test(updatedAt)
 
     const historyLink = (key: string, label: string) => (
-      <button
-        type="button"
-        className="text-xs text-gray-400 underline-offset-2 transition-colors hover:text-gray-600 hover:underline"
+      <Button
+        type="link"
+        size="small"
+        className="!px-0 !text-xs !text-gray-400 hover:!text-gray-600"
         onClick={() => void loadHistory(key, label)}
       >
         查看历史
-      </button>
+      </Button>
     )
 
     const findByKey = (key: string) => items.find((s) => s.key === key)
@@ -939,20 +901,15 @@ function AdminSettingsInner() {
                 <span className="text-sm font-medium text-gray-900">条款展示形式</span>
                 {findByKey('general.loginAgreementMode') && historyLink('general.loginAgreementMode', '条款展示形式')}
               </div>
-              <div className="mt-2 grid max-w-sm grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1">
-                {(['modal', 'checkbox'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    aria-pressed={mode === m}
-                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-                      mode === m ? 'bg-white text-[#6D28D9] shadow-sm' : 'text-gray-500 hover:text-gray-800'
-                    }`}
-                    onClick={() => setDrafts((p) => ({ ...p, ['general.loginAgreementMode']: m }))}
-                  >
-                    {m === 'modal' ? '弹窗' : '复选框'}
-                  </button>
-                ))}
+              <div className="mt-2">
+                <Segmented
+                  value={mode}
+                  onChange={(val) => setDrafts((p) => ({ ...p, ['general.loginAgreementMode']: val as string }))}
+                  options={[
+                    { value: 'modal', label: '弹窗' },
+                    { value: 'checkbox', label: '复选框' },
+                  ]}
+                />
               </div>
               <p className="mt-2 text-xs leading-relaxed text-gray-500">
                 {mode === 'checkbox'
@@ -967,17 +924,16 @@ function AdminSettingsInner() {
                 {findByKey('general.loginAgreementUpdatedAt') && historyLink('general.loginAgreementUpdatedAt', '条款更新日期')}
               </div>
               {useDateInput ? (
-                <input
+                <Input
                   type="date"
-                  className="input-field mt-2 w-full"
+                  className="mt-2 w-full"
                   value={updatedAt}
                   onChange={(e) => setDrafts((p) => ({ ...p, ['general.loginAgreementUpdatedAt']: e.target.value }))}
                   aria-label="条款更新日期"
                 />
               ) : (
-                <input
-                  type="text"
-                  className="input-field mt-2 w-full"
+                <Input
+                  className="mt-2 w-full"
                   value={updatedAt}
                   placeholder="YYYY-MM-DD"
                   onChange={(e) => setDrafts((p) => ({ ...p, ['general.loginAgreementUpdatedAt']: e.target.value }))}
@@ -1030,34 +986,27 @@ function AdminSettingsInner() {
           <p className="mt-1 text-sm text-gray-500">动态配置保存后立即生效；未修改的项使用环境变量或默认值。</p>
         </div>
         <div className="flex flex-shrink-0 items-center gap-4">
-          <label
-            className="hidden cursor-pointer select-none items-center gap-1.5 text-xs text-gray-400 sm:flex"
-            title="调试用：在每个配置项下方显示内部配置 key"
+          <Checkbox
+            checked={showKeys}
+            onChange={(e) => setShowKeys(e.target.checked)}
+            className="hidden text-xs text-gray-400 sm:flex"
           >
-            <input
-              type="checkbox"
-              className="h-3.5 w-3.5 rounded border-gray-300 accent-[#7C3AED]"
-              checked={showKeys}
-              onChange={(e) => setShowKeys(e.target.checked)}
-            />
             显示配置 key
-          </label>
-          <button type="button" className="btn-secondary text-sm" onClick={() => void load()} disabled={loading}>
+          </Checkbox>
+          <Button size="small" onClick={() => void load()} disabled={loading}>
             刷新
-          </button>
+          </Button>
         </div>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-[#FAFAFB]">
+      <div className="flex-1 overflow-y-auto bg-[#FAFAFB]">
         <div className="mx-auto max-w-5xl px-4 pb-16 sm:px-8">
-          {loading && <div className="py-24 text-center text-gray-400">加载中…</div>}
+          {loading && <Skeleton active paragraph={{ rows: 6 }} className="py-12" />}
 
           {!loading && loadFailed && settings.length === 0 && (
             <div className="py-24 text-center">
               <p className="text-gray-500">配置加载失败</p>
-              <button type="button" className="btn-secondary mt-4 text-sm" onClick={() => void load()}>
-                重试
-              </button>
+              <Button className="mt-4" size="small" onClick={() => void load()}>重试</Button>
             </div>
           )}
 
@@ -1067,118 +1016,67 @@ function AdminSettingsInner() {
 
           {!loading && visibleTabs.length > 0 && (
             <>
-              {/* 顶部 Tab：sticky 固定在设置内容顶部，支持横向滚动与键盘切换 */}
-              <div className="sticky top-0 z-20 -mx-1 bg-[#FAFAFB]/95 px-1 pb-3 pt-4 backdrop-blur">
-                <div className="rounded-2xl border border-gray-200 bg-white/95 p-1.5 shadow-sm">
-                  <nav role="tablist" aria-label="系统配置分类" className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    <div className="flex min-w-max items-center gap-1">
-                      {visibleTabs.map((tab) => {
-                        const active = tab.key === activeTab
-                        const dirty = hasDirtyKeys(itemsForTab(tab, settings).map((s) => s.key))
-                        return (
-                          <button
-                            key={tab.key}
-                            ref={(el) => {
-                              if (el) tabButtonRefs.current.set(tab.key, el)
-                              else tabButtonRefs.current.delete(tab.key)
-                            }}
-                            id={`settings-tab-${tab.key}`}
-                            type="button"
-                            role="tab"
-                            aria-selected={active}
-                            aria-controls={`settings-panel-${tab.key}`}
-                            tabIndex={active ? 0 : -1}
-                            onClick={() => selectTab(tab.key)}
-                            onKeyDown={(e) => handleTabKeydown(e, tab.key)}
-                            className={`relative flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-xl px-4 text-sm font-medium outline-none transition-colors duration-150 ${
-                              active
-                                ? 'bg-primary-50 text-primary-700'
-                                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800'
-                            } focus-visible:ring-2 focus-visible:ring-primary-500/40`}
-                          >
-                            {tab.label}
-                            {dirty && (
-                              <span
-                                className="ml-1.5 h-1.5 w-1.5 rounded-full bg-amber-400"
-                                aria-hidden="true"
-                                title="有未保存的修改"
-                              />
-                            )}
-                            {active && (
-                              <span
-                                className="absolute inset-x-3 bottom-1 h-0.5 rounded-full bg-gradient-to-r from-[#7C3AED] to-[#06B6D4]"
-                                aria-hidden="true"
-                              />
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </nav>
-                </div>
-              </div>
-
-              {activeTabDef && (
-                <div
-                  role="tabpanel"
-                  id={`settings-panel-${activeTabDef.key}`}
-                  aria-labelledby={`settings-tab-${activeTabDef.key}`}
-                >
-                  {renderTabContent(activeTabDef)}
-                </div>
-              )}
+              <Tabs
+                activeKey={activeTab}
+                onChange={(key) => {
+                  if (isTabKey(key)) selectTab(key)
+                }}
+                type="card"
+                className="settings-tabs"
+                items={visibleTabs.map((tab) => ({
+                  key: tab.key,
+                  label: (
+                    <span className="flex items-center gap-1.5">
+                      {tab.label}
+                      {hasDirtyKeys(itemsForTab(tab, settings).map((s) => s.key)) && (
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
+                      )}
+                    </span>
+                  ),
+                  children: renderTabContent(tab),
+                }))}
+              />
             </>
           )}
         </div>
       </div>
 
-      {/* 变更历史弹层 */}
-      {historyFor && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => setHistoryFor(null)}
-        >
-          <div
-            className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="text-lg font-bold text-gray-900">变更历史：{historyFor.label}</h3>
-                {showKeys && (
-                  <code className="mt-1 inline-block font-mono text-[10px] text-gray-400">{historyFor.key}</code>
-                )}
+      <Modal
+        open={!!historyFor}
+        title={`变更历史：${historyFor?.label ?? ''}`}
+        onCancel={() => setHistoryFor(null)}
+        footer={[
+          <Button key="close" onClick={() => setHistoryFor(null)}>关闭</Button>
+        ]}
+        width={640}
+      >
+        {historyFor && showKeys && (
+          <code className="mb-2 inline-block font-mono text-[10px] text-gray-400">{historyFor.key}</code>
+        )}
+        {historyLoading ? (
+          <Skeleton active />
+        ) : history.length === 0 ? (
+          <div className="py-8 text-center text-gray-400">暂无变更记录</div>
+        ) : (
+          <div className="max-h-[60vh] overflow-y-auto space-y-2">
+            {history.map((h) => (
+              <div key={h.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-800">v{h.version}</span>
+                  <span className="text-[10px] text-gray-400">{new Date(h.createdAt).toLocaleString()}</span>
+                </div>
+                <div className="mt-1 text-xs text-gray-500">
+                  {h.reason && <span>原因：{h.reason}</span>}
+                  {h.updatedBy && <span> 操作者：{h.updatedBy}</span>}
+                </div>
+                <div className="mt-0.5 font-mono text-xs text-gray-400">
+                  {h.before ? '[REDACTED]' : '(空)'} → {h.after ? '[REDACTED]' : '(空)'}
+                </div>
               </div>
-              <button type="button" className="btn-secondary text-sm" onClick={() => setHistoryFor(null)}>
-                关闭
-              </button>
-            </div>
-            {historyLoading ? (
-              <div className="py-8 text-center text-gray-400">加载中…</div>
-            ) : history.length === 0 ? (
-              <div className="py-8 text-center text-gray-400">暂无变更记录</div>
-            ) : (
-              <div className="space-y-2">
-                {history.map((h) => (
-                  <div key={h.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="text-gray-800">v{h.version}</span>
-                      <span className="text-[10px] text-gray-400">{new Date(h.createdAt).toLocaleString()}</span>
-                    </div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      {h.reason && <span>原因：{h.reason}</span>}
-                      {h.updatedBy && <span> 操作者：{h.updatedBy}</span>}
-                    </div>
-                    <div className="mt-0.5 font-mono text-xs text-gray-400">
-                      {h.before ? '[REDACTED]' : '(空)'} → {h.after ? '[REDACTED]' : '(空)'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            ))}
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   )
 }

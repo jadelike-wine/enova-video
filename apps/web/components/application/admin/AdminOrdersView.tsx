@@ -1,10 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { Button, Card, Select, Skeleton, Table } from 'antd'
+import type { TableProps } from 'antd'
 import { adminOrdersApi, type AdminOrderView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { AdminLink, Card, DataTable, EmptyState, Loading, PageHeader, StatusBadge, fmtDate, fmtMoney } from './AdminUi'
+import { AdminLink, PageHeader, StatusBadge, fmtDate, fmtMoney } from './AdminUi'
 
 const PAGE_SIZE = 50
 const STATUS_OPTIONS = ['', 'PENDING', 'SUCCEEDED', 'FAILED']
@@ -39,57 +41,62 @@ export default function AdminOrdersView() {
     void load()
   }, [load])
 
+  const columns: TableProps<AdminOrderView>['columns'] = [
+    { title: '订单', dataIndex: 'id', key: 'id', render: (v: string) => <span className="text-gray-600">{v.slice(0, 8)}</span> },
+    { title: '用户', dataIndex: 'userId', key: 'userId', render: (v: string) => <span className="text-gray-600">{v.slice(0, 8)}</span> },
+    { title: '类型', dataIndex: 'orderType', key: 'orderType' },
+    { title: '金额', dataIndex: 'amountCents', key: 'amount', render: (_, r) => fmtMoney(r.amountCents, r.currency) },
+    { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <StatusBadge status={v} /> },
+    { title: '履约', dataIndex: 'fulfillmentStatus', key: 'fulfillment', render: (v: string) => <StatusBadge status={v} /> },
+    { title: 'Credits', dataIndex: 'credits', key: 'credits' },
+    { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', render: (v: string) => <span className="text-gray-500">{fmtDate(v)}</span> },
+    {
+      title: '操作',
+      key: 'action',
+      render: (_, r) => <AdminLink href={`/app/admin/orders/${r.id}`}>详情</AdminLink>,
+    },
+  ]
+
   return (
     <div className="h-full overflow-y-auto">
       <PageHeader title="订单管理" />
       <div className="p-5 space-y-4">
         <div className="flex items-center gap-2">
-          <select className="input-field" value={status} onChange={(e) => { setStatus(e.target.value); setOffset(0) }}>
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>{s ? `状态：${s}` : '全部状态'}</option>
-            ))}
-          </select>
-          <select className="input-field" value={orderType} onChange={(e) => { setOrderType(e.target.value); setOffset(0) }}>
-            {TYPE_OPTIONS.map((t) => (
-              <option key={t} value={t}>{t ? `类型：${t}` : '全部类型'}</option>
-            ))}
-          </select>
+          <Select
+            className="w-40"
+            value={status}
+            onChange={(v) => { setStatus(v); setOffset(0) }}
+            options={STATUS_OPTIONS.map((s) => ({ value: s, label: s ? `状态：${s}` : '全部状态' }))}
+          />
+          <Select
+            className="w-40"
+            value={orderType}
+            onChange={(v) => { setOrderType(v); setOffset(0) }}
+            options={TYPE_OPTIONS.map((t) => ({ value: t, label: t ? `类型：${t}` : '全部类型' }))}
+          />
         </div>
 
         <Card>
-          {loading ? (
-            <Loading />
-          ) : orders.length === 0 ? (
-            <EmptyState text="没有订单" />
-          ) : (
-            <DataTable
-              headers={['订单', '用户', '类型', '金额', '状态', '履约', 'Credits', '创建时间', '操作']}
-            >
-              {orders.map((o) => (
-                <tr key={o.id} className="hover:bg-gray-100">
-                  <td className="px-3 py-2 text-gray-600">{o.id.slice(0, 8)}</td>
-                  <td className="px-3 py-2 text-gray-600">{o.userId.slice(0, 8)}</td>
-                  <td className="px-3 py-2">{o.orderType}</td>
-                  <td className="px-3 py-2">{fmtMoney(o.amountCents, o.currency)}</td>
-                  <td className="px-3 py-2"><StatusBadge status={o.status} /></td>
-                  <td className="px-3 py-2"><StatusBadge status={o.fulfillmentStatus} /></td>
-                  <td className="px-3 py-2">{o.credits}</td>
-                  <td className="px-3 py-2 text-gray-500">{fmtDate(o.createdAt)}</td>
-                  <td className="px-3 py-2">
-                    <AdminLink href={`/app/admin/orders/${o.id}`}>详情</AdminLink>
-                  </td>
-                </tr>
-              ))}
-            </DataTable>
-          )}
+          <Skeleton loading={loading && orders.length === 0} active>
+            <Table<AdminOrderView>
+              rowKey="id"
+              columns={columns}
+              dataSource={orders}
+              loading={loading}
+              pagination={false}
+              size="middle"
+              scroll={{ x: 'max-content' }}
+              locale={{ emptyText: '没有订单' }}
+            />
+          </Skeleton>
           <div className="flex items-center justify-between pt-3">
-            <button className="btn-ghost text-xs" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
+            <Button size="small" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
               上一页
-            </button>
+            </Button>
             <span className="text-xs text-gray-400">offset {offset}</span>
-            <button className="btn-ghost text-xs" disabled={orders.length < PAGE_SIZE || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
+            <Button size="small" disabled={orders.length < PAGE_SIZE || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
               下一页
-            </button>
+            </Button>
           </div>
         </Card>
       </div>

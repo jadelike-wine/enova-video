@@ -1,10 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { App, Button, Card, Skeleton, Statistic } from 'antd'
 import { adminStatsApi, type AdminStatsView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { Card, Loading, PageHeader } from './AdminUi'
+import { PageHeader } from './AdminUi'
 
 export default function AdminDashboardView() {
   const { alert } = useDialog()
@@ -26,7 +27,11 @@ export default function AdminDashboardView() {
     void load()
   }, [load])
 
-  if (loading) return <Loading />
+  if (loading) return (
+    <div className="p-5">
+      <Skeleton active paragraph={{ rows: 8 }} />
+    </div>
+  )
 
   const statCards: Array<{ label: string; value: number; unit?: string }> = [
     { label: '用户', value: stats?.users ?? 0 },
@@ -45,11 +50,11 @@ export default function AdminDashboardView() {
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
           {statCards.map((c) => (
             <Card key={c.label}>
-              <p className="text-xs text-gray-500">{c.label}</p>
-              <p className="text-2xl font-extrabold mt-1 text-gray-900">
-                {c.value.toLocaleString()}
-                {c.unit && <span className="text-xs font-normal text-gray-500 ml-1">{c.unit}</span>}
-              </p>
+              <Statistic
+                title={c.label}
+                value={c.value}
+                suffix={c.unit}
+              />
             </Card>
           ))}
         </div>

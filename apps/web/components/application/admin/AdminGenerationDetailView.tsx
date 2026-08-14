@@ -1,10 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { Button, Card, Descriptions, Skeleton, Table, Tag } from 'antd'
+import type { TableProps } from 'antd'
 import { adminGenerationsApi, type AdminGenerationDetailView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { BackLink, Card, DataTable, EmptyState, Loading, StatusBadge, fmtDate, fmtMicrousd } from './AdminUi'
+import { BackLink, PageHeader, StatusBadge, fmtDate, fmtMicrousd } from './AdminUi'
 
 export default function AdminGenerationDetailView({ jobId }: { jobId: string }) {
   const { alert, confirm } = useDialog()
@@ -66,41 +68,69 @@ export default function AdminGenerationDetailView({ jobId }: { jobId: string }) 
     }
   }
 
-  if (loading) return <Loading />
-  if (!job) return <EmptyState text="任务不存在" />
+  if (loading) return (
+    <div className="p-5">
+      <Skeleton active paragraph={{ rows: 10 }} />
+    </div>
+  )
+  if (!job) return <div className="p-10 text-center text-gray-400">任务不存在</div>
+
+  type AttemptItem = AdminGenerationDetailView['attempts'][number]
+  type OutboxItem = AdminGenerationDetailView['outbox'][number]
+
+  const attemptColumns: TableProps<AttemptItem>['columns'] = [
+    { title: '#', dataIndex: 'attemptNo', key: 'attemptNo' },
+    { title: 'Provider', dataIndex: 'provider', key: 'provider', render: (v: string) => <span className="text-gray-600">{v}</span> },
+    { title: '模型', dataIndex: 'model', key: 'model', render: (v: string) => <span className="text-gray-600">{v}</span> },
+    { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <StatusBadge status={v} /> },
+    { title: 'Provider Job', dataIndex: 'providerJobId', key: 'providerJobId', render: (v?: string) => <span className="text-gray-600">{v ?? '—'}</span> },
+    { title: '估算', dataIndex: 'estimatedCostMicrousd', key: 'estimated', render: (v?: number) => fmtMicrousd(v) },
+    { title: '上报', dataIndex: 'reportedCostMicrousd', key: 'reported', render: (v?: number) => fmtMicrousd(v) },
+    { title: '开始', dataIndex: 'startedAt', key: 'startedAt', render: (v: string) => <span className="text-gray-500">{fmtDate(v)}</span> },
+    { title: '结束', dataIndex: 'endedAt', key: 'endedAt', render: (v: string) => <span className="text-gray-500">{fmtDate(v)}</span> },
+  ]
+
+  const outboxColumns: TableProps<OutboxItem>['columns'] = [
+    { title: '事件', dataIndex: 'eventType', key: 'eventType' },
+    { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <StatusBadge status={v} /> },
+    { title: '尝试', dataIndex: 'attempts', key: 'attempts' },
+    { title: '错误', dataIndex: 'lastError', key: 'lastError', render: (v?: string) => <span className="text-rose-600">{v ?? '—'}</span> },
+    { title: '投递时间', dataIndex: 'dispatchedAt', key: 'dispatchedAt', render: (v: string) => <span className="text-gray-500">{fmtDate(v)}</span> },
+    { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', render: (v: string) => <span className="text-gray-500">{fmtDate(v)}</span> },
+  ]
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-5 pb-2">
         <BackLink href="/app/admin/generations" label="返回任务列表" />
-        <h2 className="text-xl font-extrabold text-gray-900 mt-2">生成任务详情</h2>
+        <PageHeader title="生成任务详情" />
         <p className="text-sm text-gray-500">{job.id}</p>
       </div>
 
       <div className="p-5 space-y-5">
         <Card
           title="基本信息"
-          action={
+          extra={
             <div className="flex gap-2">
               {(job.status === 'QUEUED' || job.status === 'RUNNING') && (
                 <>
-                  <button className="btn-ghost text-xs" disabled={busy} onClick={() => void replay()}>重投</button>
-                  <button className="btn-danger text-xs" disabled={busy} onClick={() => void forceFail()}>强制失败</button>
+                  <Button size="small" disabled={busy} onClick={() => void replay()}>重投</Button>
+                  <Button size="small" danger disabled={busy} onClick={() => void forceFail()}>强制失败</Button>
                 </>
               )}
             </div>
           }
         >
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-            <div><p className="text-gray-500">类型</p><p className="font-bold text-gray-900">{job.type}</p></div>
-            <div><p className="text-gray-500">Provider</p><p className="font-bold text-gray-900">{job.provider ?? '—'}</p></div>
-            <div><p className="text-gray-500">模型</p><p className="font-bold text-gray-900">{job.model ?? '—'}</p></div>
-            <div><p className="text-gray-500">状态</p><p className="font-bold text-gray-900"><StatusBadge status={job.status} /></p></div>
-            <div><p className="text-gray-500">尝试次数</p><p className="font-bold text-gray-900">{job.attemptCount}</p></div>
-            <div><p className="text-gray-500">Provider Job</p><p className="font-bold text-gray-900">{job.providerJobId ?? '—'}</p></div>
-            <div><p className="text-gray-500">成本状态</p><p className="font-bold text-gray-900">{job.costStatus}</p></div>
-            <div><p className="text-gray-500">错误</p><p className="font-bold text-rose-600">{job.errorCode ?? '—'}</p></div>
-          </div>
+          <Descriptions column={{ xs: 1, sm: 2, lg: 4 }} size="small">
+            <Descriptions.Item label="类型">{job.type}</Descriptions.Item>
+            <Descriptions.Item label="Provider">{job.provider ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="模型">{job.model ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="状态"><StatusBadge status={job.status} /></Descriptions.Item>
+            <Descriptions.Item label="尝试次数">{job.attemptCount}</Descriptions.Item>
+            <Descriptions.Item label="Provider Job">{job.providerJobId ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="成本状态">{job.costStatus}</Descriptions.Item>
+            <Descriptions.Item label="错误"><span className="text-rose-600">{job.errorCode ?? '—'}</span></Descriptions.Item>
+          </Descriptions>
           {job.errorMessage && (
             <p className="mt-3 text-sm text-rose-600">{job.errorMessage}</p>
           )}
@@ -108,12 +138,12 @@ export default function AdminGenerationDetailView({ jobId }: { jobId: string }) 
 
         <Card title="报价（冻结）">
           {job.quote ? (
-            <div className="text-sm text-gray-700 space-y-1">
-              <p>Pricing Version：{job.quote.pricingVersionId.slice(0, 8)}</p>
-              <p>估算 Credits：{job.quote.estimatedCredits}</p>
-              <p>估算成本：{fmtMicrousd(job.quote.estimatedCostMicrousd)}</p>
-              <p>过期时间：{fmtDate(job.quote.expiresAt)}</p>
-            </div>
+            <Descriptions column={1} size="small">
+              <Descriptions.Item label="Pricing Version">{job.quote.pricingVersionId.slice(0, 8)}</Descriptions.Item>
+              <Descriptions.Item label="估算 Credits">{job.quote.estimatedCredits}</Descriptions.Item>
+              <Descriptions.Item label="估算成本">{fmtMicrousd(job.quote.estimatedCostMicrousd)}</Descriptions.Item>
+              <Descriptions.Item label="过期时间">{fmtDate(job.quote.expiresAt)}</Descriptions.Item>
+            </Descriptions>
           ) : (
             <p className="text-gray-400 text-sm">无冻结报价</p>
           )}
@@ -121,12 +151,12 @@ export default function AdminGenerationDetailView({ jobId }: { jobId: string }) 
 
         <Card title="Credit 预留 / 结算">
           {job.reservation ? (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-              <div><p className="text-gray-500">预留</p><p className="font-bold text-gray-900">{job.reservation.reservedCredits}</p></div>
-              <div><p className="text-gray-500">已结算</p><p className="font-bold text-cyan-600">{job.reservation.capturedCredits}</p></div>
-              <div><p className="text-gray-500">已释放</p><p className="font-bold text-gray-900">{job.reservation.releasedCredits}</p></div>
-              <div><p className="text-gray-500">状态</p><p className="font-bold text-gray-900"><StatusBadge status={job.reservation.status} /></p></div>
-            </div>
+            <Descriptions column={{ xs: 1, sm: 2, lg: 4 }} size="small">
+              <Descriptions.Item label="预留">{job.reservation.reservedCredits}</Descriptions.Item>
+              <Descriptions.Item label="已结算"><span className="text-cyan-600">{job.reservation.capturedCredits}</span></Descriptions.Item>
+              <Descriptions.Item label="已释放">{job.reservation.releasedCredits}</Descriptions.Item>
+              <Descriptions.Item label="状态"><StatusBadge status={job.reservation.status} /></Descriptions.Item>
+            </Descriptions>
           ) : (
             <p className="text-gray-400 text-sm">无预留记录</p>
           )}
@@ -134,51 +164,44 @@ export default function AdminGenerationDetailView({ jobId }: { jobId: string }) 
 
         <Card title="Attempts">
           {job.attempts.length === 0 ? (
-            <EmptyState text="无尝试记录" />
+            <div className="text-gray-400 text-sm">无尝试记录</div>
           ) : (
-            <DataTable headers={['#', 'Provider', '模型', '状态', 'Provider Job', '估算', '上报', '开始', '结束']}>
-              {job.attempts.map((a) => (
-                <tr key={a.id}>
-                  <td className="px-3 py-2">{a.attemptNo}</td>
-                  <td className="px-3 py-2 text-gray-600">{a.provider}</td>
-                  <td className="px-3 py-2 text-gray-600">{a.model}</td>
-                  <td className="px-3 py-2"><StatusBadge status={a.status} /></td>
-                  <td className="px-3 py-2 text-gray-600">{a.providerJobId ?? '—'}</td>
-                  <td className="px-3 py-2">{fmtMicrousd(a.estimatedCostMicrousd)}</td>
-                  <td className="px-3 py-2">{fmtMicrousd(a.reportedCostMicrousd)}</td>
-                  <td className="px-3 py-2 text-gray-500">{fmtDate(a.startedAt)}</td>
-                  <td className="px-3 py-2 text-gray-500">{fmtDate(a.endedAt)}</td>
-                </tr>
-              ))}
-            </DataTable>
+            <Table<AttemptItem>
+              rowKey="id"
+              columns={attemptColumns}
+              dataSource={job.attempts}
+              pagination={false}
+              size="small"
+              scroll={{ x: 'max-content' }}
+            />
           )}
         </Card>
 
         <Card title="Outbox 投递记录">
           {job.outbox.length === 0 ? (
-            <EmptyState text="无投递记录" />
+            <div className="text-gray-400 text-sm">无投递记录</div>
           ) : (
-            <DataTable headers={['事件', '状态', '尝试', '错误', '投递时间', '创建时间']}>
-              {job.outbox.map((o) => (
-                <tr key={o.id}>
-                  <td className="px-3 py-2">{o.eventType}</td>
-                  <td className="px-3 py-2"><StatusBadge status={o.status} /></td>
-                  <td className="px-3 py-2">{o.attempts}</td>
-                  <td className="px-3 py-2 text-rose-600">{o.lastError ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-500">{fmtDate(o.dispatchedAt)}</td>
-                  <td className="px-3 py-2 text-gray-500">{fmtDate(o.createdAt)}</td>
-                </tr>
-              ))}
-            </DataTable>
+            <Table<OutboxItem>
+              rowKey="id"
+              columns={outboxColumns}
+              dataSource={job.outbox}
+              pagination={false}
+              size="small"
+              scroll={{ x: 'max-content' }}
+            />
           )}
         </Card>
 
         <Card title="Usage Event">
           {job.usageEvent ? (
-            <div className="text-sm text-gray-700 space-y-1">
-              <p>估算：{fmtMicrousd(job.usageEvent.estimatedCostMicrousd)} · 上报：{fmtMicrousd(job.usageEvent.reportedCostMicrousd)} · 最终：{fmtMicrousd(job.usageEvent.finalCostMicrousd)}</p>
-              <p>成本状态：{job.usageEvent.costStatus} · 扣费 Credits：{job.usageEvent.creditsCharged}</p>
-            </div>
+            <Descriptions column={1} size="small">
+              <Descriptions.Item label="估算 / 上报 / 最终">
+                {fmtMicrousd(job.usageEvent.estimatedCostMicrousd)} · {fmtMicrousd(job.usageEvent.reportedCostMicrousd)} · {fmtMicrousd(job.usageEvent.finalCostMicrousd)}
+              </Descriptions.Item>
+              <Descriptions.Item label="成本状态 / 扣费 Credits">
+                {job.usageEvent.costStatus} · <span className="text-cyan-600">{job.usageEvent.creditsCharged}</span>
+              </Descriptions.Item>
+            </Descriptions>
           ) : (
             <p className="text-gray-400 text-sm">无用量事件</p>
           )}

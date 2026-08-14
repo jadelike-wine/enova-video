@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { App, Button, Input, Modal, Space, Table, Tag } from 'antd'
+import { App, Button, Form, Input, InputNumber, Modal, Select, Space, Table, Tag } from 'antd'
 import type { TableProps } from 'antd'
 import { adminUsersApi, type AdminUserView } from '../../../lib/adminApi'
 import { formatErrorMessage } from '../../../lib/errorMessage'
@@ -9,8 +9,14 @@ import { AdminLink, Card, PageHeader, fmtDate } from './AdminUi'
 
 const PAGE_SIZE = 50
 
+interface AdjustCreditsFormValues {
+  delta: number
+  reason?: string
+}
+
 export default function AdminUsersView() {
   const { message, modal } = App.useApp()
+  const [form] = Form.useForm<AdjustCreditsFormValues>()
   const [users, setUsers] = useState<AdminUserView[]>([])
   const [loading, setLoading] = useState(true)
   const [offset, setOffset] = useState(0)
@@ -20,8 +26,6 @@ export default function AdminUsersView() {
 
   // 调整 Credits 弹窗状态
   const [adjustTarget, setAdjustTarget] = useState<AdminUserView | null>(null)
-  const [adjustDelta, setAdjustDelta] = useState<string>('0')
-  const [adjustReason, setAdjustReason] = useState('')
   const [adjusting, setAdjusting] = useState(false)
 
   const load = useCallback(
@@ -79,20 +83,20 @@ export default function AdminUsersView() {
 
   const openAdjust = (u: AdminUserView) => {
     setAdjustTarget(u)
-    setAdjustDelta('0')
-    setAdjustReason('')
+    form.resetFields()
+    form.setFieldsValue({ delta: 0, reason: '' })
   }
 
-  const submitAdjust = async () => {
+  const submitAdjust = async (values: AdjustCreditsFormValues) => {
     if (!adjustTarget) return
-    const n = Number(adjustDelta)
+    const n = values.delta
     if (!Number.isInteger(n) || n === 0) {
       message.warning('请输入非零整数 Credits')
       return
     }
     setAdjusting(true)
     try {
-      await adminUsersApi.adjustCredits(adjustTarget.id, n, adjustReason || 'Admin credits adjustment')
+      await adminUsersApi.adjustCredits(adjustTarget.id, n, values.reason || 'Admin credits adjustment')
       setAdjustTarget(null)
       await load(offset)
       message.success(`已调整 ${n} Credits`)
@@ -153,7 +157,6 @@ export default function AdminUsersView() {
   ]
 
   return (
-    <App>
     <div className="h-full overflow-y-auto">
       <PageHeader title="用户管理" />
       <div className="p-5 space-y-4">
@@ -187,6 +190,7 @@ export default function AdminUsersView() {
             loading={loading}
             pagination={false}
             size="middle"
+            scroll={{ x: 'max-content' }}
             locale={{ emptyText: '没有匹配的用户' }}
           />
           <div className="flex items-center justify-between pt-4">
@@ -207,32 +211,42 @@ export default function AdminUsersView() {
         title={`调整 Credits — ${adjustTarget?.email ?? ''}`}
         open={!!adjustTarget}
         onCancel={() => setAdjustTarget(null)}
-        onOk={() => void submitAdjust()}
+        onOk={() => form.submit()}
         okText="确认调整"
         cancelText="取消"
         confirmLoading={adjusting}
+        destroyOnHidden
       >
-        <div className="space-y-3 pt-2">
-          <div>
-            <div className="mb-1 text-sm text-gray-500">调整数量（正数增加，负数扣减）</div>
-            <Input
-              type="number"
-              value={adjustDelta}
-              onChange={(e) => setAdjustDelta(e.target.value)}
-              placeholder="例：100 或 -50"
-            />
-          </div>
-          <div>
-            <div className="mb-1 text-sm text-gray-500">调整原因（将写入审计日志）</div>
-            <Input
-              value={adjustReason}
-              onChange={(e) => setAdjustReason(e.target.value)}
-              placeholder="请输入调整原因"
-            />
-          </div>
-        </div>
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={submitAdjust}
+          initialValues={{ delta: 0, reason: '' }}
+        >
+          <Form.Item
+            name="delta"
+            label="调整数量（正数增加，负数扣减）"
+            rules={[
+              { required: true, message: '请输入调整数量' },
+              {
+                validator: async (_, value) => {
+                  if (!Number.isInteger(value) || value === 0) {
+                    throw new Error('请输入非零整数 Credits')
+                  }
+                },
+              },
+            ]}
+          >
+            <InputNumber className="w-full" placeholder="例：100 或 -50" />
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label="调整原因（将写入审计日志）"
+          >
+            <Input placeholder="请输入调整原因" />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
-    </App>
   )
 }

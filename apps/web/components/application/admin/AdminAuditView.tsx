@@ -1,10 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { Button, Card, Skeleton, Table } from 'antd'
+import type { TableProps } from 'antd'
 import { adminAuditApi, type AdminAuditView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { Card, DataTable, EmptyState, Loading, PageHeader, fmtDate } from './AdminUi'
+import { PageHeader, fmtDate } from './AdminUi'
 
 const PAGE_SIZE = 50
 
@@ -29,39 +31,42 @@ export default function AdminAuditView() {
     void load()
   }, [load])
 
+  const columns: TableProps<AdminAuditView>['columns'] = [
+    { title: '时间', dataIndex: 'createdAt', key: 'createdAt', render: (v: string) => <span className="text-gray-500 whitespace-nowrap">{fmtDate(v)}</span> },
+    { title: '操作', dataIndex: 'action', key: 'action', render: (v: string) => <span className="text-gray-800">{v}</span> },
+    { title: '资源类型', dataIndex: 'resourceType', key: 'resourceType', render: (v: string) => <span className="text-gray-600">{v}</span> },
+    { title: '资源', dataIndex: 'resourceId', key: 'resourceId', render: (v?: string) => <span className="text-gray-500">{v?.slice(0, 8) ?? '—'}</span> },
+    { title: '操作者', dataIndex: 'actorUserId', key: 'actorUserId', render: (v?: string) => <span className="text-gray-600">{v?.slice(0, 8) ?? '—'}</span> },
+    { title: 'Before', dataIndex: 'before', key: 'before', ellipsis: true, render: (v: unknown) => <span className="text-gray-500">{v ? JSON.stringify(v) : '—'}</span> },
+    { title: 'After', dataIndex: 'after', key: 'after', ellipsis: true, render: (v: unknown) => <span className="text-gray-500">{v ? JSON.stringify(v) : '—'}</span> },
+    { title: 'IP', dataIndex: 'ip', key: 'ip', render: (v?: string) => <span className="text-gray-500">{v ?? '—'}</span> },
+  ]
+
   return (
     <div className="h-full overflow-y-auto">
       <PageHeader title="审计日志" />
       <div className="p-5">
         <Card>
-          {loading ? (
-            <Loading />
-          ) : logs.length === 0 ? (
-            <EmptyState text="暂无审计记录" />
-          ) : (
-            <DataTable headers={['时间', '操作', '资源类型', '资源', '操作者', 'Before', 'After', 'IP']}>
-              {logs.map((l) => (
-                <tr key={l.id} className="hover:bg-gray-100">
-                  <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{fmtDate(l.createdAt)}</td>
-                  <td className="px-3 py-2 text-gray-800">{l.action}</td>
-                  <td className="px-3 py-2 text-gray-600">{l.resourceType}</td>
-                  <td className="px-3 py-2 text-gray-500">{l.resourceId?.slice(0, 8) ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-600">{l.actorUserId?.slice(0, 8) ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-500 max-w-[200px] truncate">{l.before ? JSON.stringify(l.before) : '—'}</td>
-                  <td className="px-3 py-2 text-gray-500 max-w-[200px] truncate">{l.after ? JSON.stringify(l.after) : '—'}</td>
-                  <td className="px-3 py-2 text-gray-500">{l.ip ?? '—'}</td>
-                </tr>
-              ))}
-            </DataTable>
-          )}
+          <Skeleton loading={loading && logs.length === 0} active>
+            <Table<AdminAuditView>
+              rowKey="id"
+              columns={columns}
+              dataSource={logs}
+              loading={loading}
+              pagination={false}
+              size="middle"
+              scroll={{ x: 'max-content' }}
+              locale={{ emptyText: '暂无审计记录' }}
+            />
+          </Skeleton>
           <div className="flex items-center justify-between pt-3">
-            <button className="btn-ghost text-xs" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
+            <Button size="small" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
               上一页
-            </button>
+            </Button>
             <span className="text-xs text-gray-400">offset {offset}</span>
-            <button className="btn-ghost text-xs" disabled={logs.length < PAGE_SIZE || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
+            <Button size="small" disabled={logs.length < PAGE_SIZE || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
               下一页
-            </button>
+            </Button>
           </div>
         </Card>
       </div>

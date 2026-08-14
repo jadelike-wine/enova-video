@@ -1,10 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { Button, Card, Descriptions, Skeleton, Table } from 'antd'
+import type { TableProps } from 'antd'
 import { adminOrdersApi, type AdminOrderDetailView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { BackLink, Card, DataTable, EmptyState, Loading, StatusBadge, fmtDate, fmtMoney } from './AdminUi'
+import { BackLink, PageHeader, StatusBadge, fmtDate, fmtMoney } from './AdminUi'
 
 export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
   const { alert, confirm } = useDialog()
@@ -64,29 +66,42 @@ export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
     }
   }
 
-  if (loading) return <Loading />
-  if (!order) return <EmptyState text="订单不存在" />
+  if (loading) return (
+    <div className="p-5">
+      <Skeleton active paragraph={{ rows: 8 }} />
+    </div>
+  )
+  if (!order) return <div className="p-10 text-center text-gray-400">订单不存在</div>
+
+  type TxnItem = AdminOrderDetailView['paymentTransactions'][number]
+
+  const txnColumns: TableProps<TxnItem>['columns'] = [
+    { title: 'Provider', dataIndex: 'provider', key: 'provider' },
+    { title: 'Provider Ref', dataIndex: 'providerRef', key: 'providerRef', render: (v?: string) => <span className="text-gray-600">{v ?? '—'}</span> },
+    { title: '状态', dataIndex: 'status', key: 'status', render: (v: string) => <StatusBadge status={v} /> },
+    { title: '时间', key: 'time', render: () => <span className="text-gray-500">—</span> },
+  ]
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-5 pb-2">
         <BackLink href="/app/admin/orders" label="返回订单列表" />
-        <h2 className="text-xl font-extrabold text-gray-900 mt-2">订单详情</h2>
+        <PageHeader title="订单详情" />
         <p className="text-sm text-gray-500">{order.id}</p>
       </div>
 
       <div className="p-5 space-y-5">
         <Card title="基本信息">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-            <div><p className="text-gray-500">类型</p><p className="font-bold text-gray-900">{order.orderType}</p></div>
-            <div><p className="text-gray-500">金额</p><p className="font-bold text-gray-900">{fmtMoney(order.amountCents, order.currency)}</p></div>
-            <div><p className="text-gray-500">Credits</p><p className="font-bold text-gray-900">{order.credits}</p></div>
-            <div><p className="text-gray-500">状态</p><p className="font-bold text-gray-900"><StatusBadge status={order.status} /></p></div>
-            <div><p className="text-gray-500">履约</p><p className="font-bold text-gray-900"><StatusBadge status={order.fulfillmentStatus} /></p></div>
-            <div><p className="text-gray-500">用户</p><p className="font-bold text-gray-900">{order.userId.slice(0, 8)}</p></div>
-            <div><p className="text-gray-500">Workspace</p><p className="font-bold text-gray-900">{order.workspaceId.slice(0, 8)}</p></div>
-            <div><p className="text-gray-500">创建时间</p><p className="font-bold text-gray-900">{fmtDate(order.createdAt)}</p></div>
-          </div>
+          <Descriptions column={{ xs: 1, sm: 2, lg: 4 }} size="small">
+            <Descriptions.Item label="类型">{order.orderType}</Descriptions.Item>
+            <Descriptions.Item label="金额">{fmtMoney(order.amountCents, order.currency)}</Descriptions.Item>
+            <Descriptions.Item label="Credits">{order.credits}</Descriptions.Item>
+            <Descriptions.Item label="状态"><StatusBadge status={order.status} /></Descriptions.Item>
+            <Descriptions.Item label="履约"><StatusBadge status={order.fulfillmentStatus} /></Descriptions.Item>
+            <Descriptions.Item label="用户">{order.userId.slice(0, 8)}</Descriptions.Item>
+            <Descriptions.Item label="Workspace">{order.workspaceId.slice(0, 8)}</Descriptions.Item>
+            <Descriptions.Item label="创建时间">{fmtDate(order.createdAt)}</Descriptions.Item>
+          </Descriptions>
           {order.snapshotJson && (
             <pre className="mt-3 bg-gray-100 rounded-xl p-3 text-xs text-gray-800 overflow-x-auto">
               {JSON.stringify(order.snapshotJson, null, 2)}
@@ -96,46 +111,44 @@ export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
 
         <Card
           title="支付交易"
-          action={
+          extra={
             <div className="flex gap-2">
               {order.status === 'SUCCEEDED' && order.fulfillmentStatus !== 'SUCCEEDED' && (
-                <button className="btn-secondary text-xs" disabled={busy} onClick={() => void retryFulfillment()}>
+                <Button size="small" disabled={busy} onClick={() => void retryFulfillment()}>
                   重试履约
-                </button>
+                </Button>
               )}
               {order.status === 'PENDING' && (
-                <button className="btn-danger text-xs" disabled={busy} onClick={() => void closeOrder()}>
+                <Button size="small" danger disabled={busy} onClick={() => void closeOrder()}>
                   关闭订单
-                </button>
+                </Button>
               )}
             </div>
           }
         >
           {order.paymentTransactions.length === 0 ? (
-            <EmptyState text="无支付记录" />
+            <div className="text-gray-400 text-sm">无支付记录</div>
           ) : (
-            <DataTable headers={['Provider', 'Provider Ref', '状态', '时间']}>
-              {order.paymentTransactions.map((t) => (
-                <tr key={t.id}>
-                  <td className="px-3 py-2">{t.provider}</td>
-                  <td className="px-3 py-2 text-gray-600">{t.providerRef ?? '—'}</td>
-                  <td className="px-3 py-2"><StatusBadge status={t.status} /></td>
-                  <td className="px-3 py-2 text-gray-500">—</td>
-                </tr>
-              ))}
-            </DataTable>
+            <Table<TxnItem>
+              rowKey="id"
+              columns={txnColumns}
+              dataSource={order.paymentTransactions}
+              pagination={false}
+              size="small"
+              scroll={{ x: 'max-content' }}
+            />
           )}
         </Card>
 
         <Card title="履约信息">
           {order.fulfillment ? (
-            <div className="text-sm text-gray-700 space-y-1">
-              <p>状态：<StatusBadge status={order.fulfillment.status} /></p>
-              <p>订阅：{order.fulfillment.subscriptionId ?? '—'}</p>
-              <p>发放 Credits：{order.fulfillment.creditsGranted}</p>
-              <p>错误：{order.fulfillment.errorMessage ?? '—'}</p>
-              <p>完成时间：{fmtDate(order.fulfillment.completedAt)}</p>
-            </div>
+            <Descriptions column={1} size="small">
+              <Descriptions.Item label="状态"><StatusBadge status={order.fulfillment.status} /></Descriptions.Item>
+              <Descriptions.Item label="订阅">{order.fulfillment.subscriptionId ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="发放 Credits">{order.fulfillment.creditsGranted}</Descriptions.Item>
+              <Descriptions.Item label="错误">{order.fulfillment.errorMessage ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="完成时间">{fmtDate(order.fulfillment.completedAt)}</Descriptions.Item>
+            </Descriptions>
           ) : (
             <p className="text-gray-400 text-sm">无履约记录</p>
           )}
@@ -143,19 +156,22 @@ export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
 
         <Card title="钱包账本">
           {order.ledger.length === 0 ? (
-            <EmptyState text="无账本记录" />
+            <div className="text-gray-400 text-sm">无账本记录</div>
           ) : (
-            <DataTable headers={['类型', '金额', '余额', '描述', '时间']}>
-              {order.ledger.map((l) => (
-                <tr key={l.id}>
-                  <td className="px-3 py-2"><StatusBadge status={l.type} /></td>
-                  <td className="px-3 py-2">{l.amount}</td>
-                  <td className="px-3 py-2 text-gray-600">{l.balanceAfter}</td>
-                  <td className="px-3 py-2 text-gray-500">{l.description ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-500">{fmtDate(l.createdAt)}</td>
-                </tr>
-              ))}
-            </DataTable>
+            <Table
+              rowKey="id"
+              columns={[
+                { title: '类型', dataIndex: 'type', key: 'type', render: (v: string) => <StatusBadge status={v} /> },
+                { title: '金额', dataIndex: 'amount', key: 'amount' },
+                { title: '余额', dataIndex: 'balanceAfter', key: 'balanceAfter', render: (v: number) => <span className="text-gray-600">{v}</span> },
+                { title: '描述', dataIndex: 'description', key: 'description', render: (v?: string) => <span className="text-gray-500">{v ?? '—'}</span> },
+                { title: '时间', dataIndex: 'createdAt', key: 'createdAt', render: (v: string) => <span className="text-gray-500">{fmtDate(v)}</span> },
+              ]}
+              dataSource={order.ledger}
+              pagination={false}
+              size="small"
+              scroll={{ x: 'max-content' }}
+            />
           )}
         </Card>
       </div>

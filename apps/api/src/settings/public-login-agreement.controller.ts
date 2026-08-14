@@ -2,6 +2,7 @@ import { Controller, Get, Inject, Param } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { domainError, ERROR_CODES } from '@enova/contracts';
 import { LoginAgreementService } from './login-agreement.service.js';
+import { SettingsService } from './settings.service.js';
 
 class PublicLoginAgreementDocumentDto {
   @ApiProperty()
@@ -33,11 +34,17 @@ class LegalDocumentDto extends PublicLoginAgreementDocumentDto {
   contentMd!: string;
 }
 
+class PublicSiteConfigDto {
+  @ApiProperty({ example: 'https://example.com' })
+  siteUrl!: string;
+}
+
 @ApiTags('public')
 @Controller('api/v1/public')
 export class PublicLoginAgreementController {
   constructor(
     @Inject(LoginAgreementService) private readonly agreement: LoginAgreementService,
+    @Inject(SettingsService) private readonly settings: SettingsService,
   ) {}
 
   @Get('login-agreement')
@@ -53,5 +60,12 @@ export class PublicLoginAgreementController {
       throw domainError(ERROR_CODES.NOT_FOUND, 'Legal document not found', 404);
     }
     return this.agreement.getDocument(slug);
+  }
+
+  @Get('site-config')
+  @ApiOperation({ summary: '返回公开站点配置（站点 URL，无需登录）' })
+  async getSiteConfig(): Promise<PublicSiteConfigDto> {
+    const siteUrl = (await this.settings.getString('general.siteUrl'))?.trim() || 'http://localhost:3000';
+    return { siteUrl };
   }
 }

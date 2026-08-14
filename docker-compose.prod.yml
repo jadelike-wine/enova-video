@@ -244,7 +244,8 @@ services:
       # Next rewrite 把 /api/* 代理到 api 服务（运行时读取 BACKEND_URL）
       BACKEND_URL: http://api:3001
       TZ: Asia/Shanghai
-      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?NEXT_PUBLIC_SITE_URL is required}
+      # NEXT_PUBLIC_SITE_URL 仅作为构建时 fallback；运行时从管理员后台系统设置读取。
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://example.com}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
       interval: 10s

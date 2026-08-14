@@ -22,7 +22,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # BACKEND_URL 在 next.config.mjs 中用于 /api/* rewrite，构建期生效
-# NEXT_PUBLIC_SITE_URL 会在构建期内联进客户端 bundle（站点对外公开 URL，非密钥）
+# NEXT_PUBLIC_SITE_URL 仅作为构建时 fallback（SSG 场景）。运行时从管理员后台系统设置读取。
 ARG BACKEND_URL=http://backend:8000
 ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ENV BACKEND_URL=${BACKEND_URL} \

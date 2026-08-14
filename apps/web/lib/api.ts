@@ -200,9 +200,14 @@ export const authApi = {
   me: () => json<AuthResult>('/auth/me'),
 }
 
+export interface SiteConfig {
+  siteUrl: string
+}
+
 export const publicApi = {
   loginAgreement: () => json<LoginAgreementConfig>('/public/login-agreement'),
   legalDocument: (slug: string) => json<LegalDocument>(`/public/legal/${encodeURIComponent(slug)}`),
+  siteConfig: () => json<SiteConfig>('/public/site-config'),
 }
 
 export const turnstileApi = {

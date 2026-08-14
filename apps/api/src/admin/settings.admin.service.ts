@@ -193,6 +193,17 @@ export class SettingsAdminService {
         400,
       );
     }
+
+    // 站点 URL 生产环境必须 HTTPS 且不能是 localhost
+    if (key === 'general.siteUrl' && value) {
+      if (value.includes('localhost') || !value.startsWith('https://')) {
+        throw domainError(
+          ERROR_CODES.VALIDATION_ERROR,
+          'Production requires general.siteUrl to use HTTPS and not contain localhost.',
+          400,
+        );
+      }
+    }
   }
 
   private async validateLoginAgreementUpdate(key: string, value: string): Promise<void> {

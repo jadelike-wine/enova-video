@@ -565,6 +565,17 @@ export const SETTINGS: SettingDef[] = [
     envKey: 'LOGIN_AGREEMENT_DOCUMENTS',
     envDefault: '[]',
   },
+  // ---- 通用 / 站点 URL ----
+  {
+    key: 'general.siteUrl',
+    valueType: 'string',
+    group: 'general',
+    label: '站点 URL',
+    description:
+      '站点对外访问的完整 URL（含 https://），用于 SEO canonical / OpenGraph / sitemap / 邮件链接生成等。生产环境必须使用 HTTPS。',
+    envKey: 'NEXT_PUBLIC_SITE_URL',
+    envDefault: 'http://localhost:3000',
+  },
 ];
 
 export const SETTINGS_BY_KEY: ReadonlyMap<string, SettingDef> = new Map(

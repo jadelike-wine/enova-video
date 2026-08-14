@@ -1,10 +1,10 @@
 import type { MetadataRoute } from 'next'
-import { siteUrl } from '../lib/seo'
+import { getSiteUrl } from '../lib/seo'
 
 export const dynamic = 'force-dynamic'
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  const base = siteUrl()
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const base = await getSiteUrl()
   const now = new Date()
 
   const staticRoutes = [

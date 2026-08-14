@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import { appMetadata } from '../../lib/seo'
 
-export const metadata: Metadata = appMetadata('初始化', '/setup')
+export async function generateMetadata(): Promise<Metadata> {
+  return appMetadata('初始化', '/setup')
+}
 
 export default function SetupLayout({ children }: { children: React.ReactNode }) {
   return (

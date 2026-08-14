@@ -72,6 +72,7 @@ RUN pnpm --filter @enova/worker build
 
 FROM build-common AS build-web
 # 仅 Web 构建依赖这些公开配置，避免它们使 API / Worker 的缓存失效。
+# NEXT_PUBLIC_SITE_URL 仅作为构建时 fallback；运行时从管理员后台系统设置读取（general.siteUrl）。
 ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ARG BACKEND_URL=http://localhost:3001
 ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL} \

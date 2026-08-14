@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import { appMetadata } from '../../lib/seo'
 
-export const metadata: Metadata = appMetadata('认证', '/auth')
+export async function generateMetadata(): Promise<Metadata> {
+  return appMetadata('认证', '/auth')
+}
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (

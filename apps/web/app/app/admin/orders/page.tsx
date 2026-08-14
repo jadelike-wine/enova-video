@@ -3,7 +3,9 @@ import AdminOrdersView from '../../../../components/application/admin/AdminOrder
 import { appMetadata } from '../../../../lib/seo'
 import AppShell from '../../AppShell'
 
-export const metadata: Metadata = appMetadata('订单管理', '/app/admin/orders')
+export async function generateMetadata(): Promise<Metadata> {
+  return appMetadata('订单管理', '/app/admin/orders')
+}
 
 export default function AdminOrdersPage() {
   return (

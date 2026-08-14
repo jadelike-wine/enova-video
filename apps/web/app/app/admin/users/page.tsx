@@ -3,7 +3,9 @@ import AdminUsersView from '../../../../components/application/admin/AdminUsersV
 import { appMetadata } from '../../../../lib/seo'
 import AppShell from '../../AppShell'
 
-export const metadata: Metadata = appMetadata('用户管理', '/app/admin/users')
+export async function generateMetadata(): Promise<Metadata> {
+  return appMetadata('用户管理', '/app/admin/users')
+}
 
 export default function AdminUsersPage() {
   return (

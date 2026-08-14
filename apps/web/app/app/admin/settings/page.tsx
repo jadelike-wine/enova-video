@@ -3,7 +3,9 @@ import AdminSettingsView from '../../../../components/application/AdminSettingsV
 import { appMetadata } from '../../../../lib/seo'
 import AppShell from '../../AppShell'
 
-export const metadata: Metadata = appMetadata('系统配置', '/app/admin/settings')
+export async function generateMetadata(): Promise<Metadata> {
+  return appMetadata('系统配置', '/app/admin/settings')
+}
 
 export default function AdminSettingsPage() {
   return (

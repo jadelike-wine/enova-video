@@ -1,15 +1,17 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import MarketingLayout from '../components/marketing/MarketingLayout'
-import { buildMetadata, SITE_NAME, SITE_TAGLINE, absoluteUrl } from '../lib/seo'
+import { buildMetadata, SITE_NAME, SITE_TAGLINE, getSiteUrl } from '../lib/seo'
 import { BRAND } from '../lib/brand'
 
-export const metadata: Metadata = buildMetadata({
-  title: { absolute: `${SITE_NAME} – ${SITE_TAGLINE}` },
-  description:
-    '灵动创影（EnovaMotion）是一个 AI 智能创作平台，支持 AI 图片生成与 AI 视频生成。立即开始创作。',
-  path: '/',
-})
+export async function generateMetadata(): Promise<Metadata> {
+  return buildMetadata({
+    title: { absolute: `${SITE_NAME} – ${SITE_TAGLINE}` },
+    description:
+      '灵动创影（EnovaMotion）是一个 AI 智能创作平台，支持 AI 图片生成与 AI 视频生成。立即开始创作。',
+    path: '/',
+  })
+}
 
 const features = [
   {
@@ -28,7 +30,8 @@ const features = [
   },
 ]
 
-export default function HomePage() {
+export default async function HomePage() {
+  const baseUrl = await getSiteUrl()
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'WebApplication',
@@ -37,7 +40,7 @@ export default function HomePage() {
     operatingSystem: 'Web',
     description:
       '灵动创影（EnovaMotion）是一个 AI 智能创作平台，支持 AI 图片生成与 AI 视频生成。',
-    url: absoluteUrl('/'),
+    url: `${baseUrl}/`,
     inLanguage: 'zh-CN',
     featureList: ['AI 图片生成', 'AI 视频生成'],
   }

@@ -3,7 +3,9 @@ import AdminCustomer360View from '../../../../../components/application/admin/Ad
 import { appMetadata } from '../../../../../lib/seo'
 import AppShell from '../../../AppShell'
 
-export const metadata: Metadata = appMetadata('客户 360', '/app/admin/customers')
+export async function generateMetadata(): Promise<Metadata> {
+  return appMetadata('客户 360', '/app/admin/customers')
+}
 
 export default async function AdminCustomer360Page({ params }: { params: Promise<{ userId: string }> }) {
   const { userId } = await params

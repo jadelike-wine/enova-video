@@ -224,7 +224,7 @@ git tag v1.2.0 && git push origin v1.2.0   # 触发 release.yml 构建并推送 
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| `NEXT_PUBLIC_SITE_URL` | **生产必填** | 站点对外访问的完整域名，未设置会构建失败 |
+| `NEXT_PUBLIC_SITE_URL` | **可选** | 站点对外访问的完整域名，构建时 fallback；运行时从管理员后台系统设置读取 |
 | `DATABASE_URL` | **是** | PostgreSQL 连接串 |
 | `REDIS_URL` | **是** | Redis 连接串 |
 | `CREDENTIAL_MASTER_KEY` | **是** | AES-GCM 加密 Provider Secret 的 32 字节 Master Key（`openssl rand -hex 32`） |

@@ -3,7 +3,9 @@ import AdminDashboardView from '../../../../components/application/admin/AdminDa
 import { appMetadata } from '../../../../lib/seo'
 import AppShell from '../../AppShell'
 
-export const metadata: Metadata = appMetadata('运营概览', '/app/admin/dashboard')
+export async function generateMetadata(): Promise<Metadata> {
+  return appMetadata('运营概览', '/app/admin/dashboard')
+}
 
 export default function AdminDashboardPage() {
   return (

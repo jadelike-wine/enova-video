@@ -224,7 +224,7 @@ Production environment variables are injected via `.env` (see `.env.example`). K
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `NEXT_PUBLIC_SITE_URL` | **prod required** | Public domain; build fails if unset |
+| `NEXT_PUBLIC_SITE_URL` | **optional** | Public domain; build-time fallback. Runtime reads from admin System Settings |
 | `DATABASE_URL` | **yes** | PostgreSQL connection string |
 | `REDIS_URL` | **yes** | Redis connection string |
 | `CREDENTIAL_MASTER_KEY` | **yes** | 32-byte Master Key for AES-GCM encrypting provider secrets (`openssl rand -hex 32`) |

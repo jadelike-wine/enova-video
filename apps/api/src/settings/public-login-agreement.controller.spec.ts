@@ -13,7 +13,10 @@ describe('PublicLoginAgreementController', () => {
       }),
       getDocument: async (slug: string) => ({ slug, title: '服务条款', contentMd: '# 内容' }),
     };
-    const controller = new PublicLoginAgreementController(service as never);
+    const settingsService = {
+      getString: async () => 'https://example.com',
+    };
+    const controller = new PublicLoginAgreementController(service as never, settingsService as never);
 
     await expect(controller.getConfig()).resolves.toMatchObject({ enabled: true });
     await expect(controller.getLegalDocument('terms')).resolves.toEqual({
@@ -21,5 +24,31 @@ describe('PublicLoginAgreementController', () => {
       title: '服务条款',
       contentMd: '# 内容',
     });
+  });
+
+  it('returns site URL from settings', async () => {
+    const agreementService = {
+      getPublicConfig: async () => ({}),
+      getDocument: async () => ({}),
+    };
+    const settingsService = {
+      getString: async () => 'https://example.com',
+    };
+    const controller = new PublicLoginAgreementController(agreementService as never, settingsService as never);
+    const result = await controller.getSiteConfig();
+    expect(result.siteUrl).toBe('https://example.com');
+  });
+
+  it('falls back to localhost when site URL is not configured', async () => {
+    const agreementService = {
+      getPublicConfig: async () => ({}),
+      getDocument: async () => ({}),
+    };
+    const settingsService = {
+      getString: async () => null,
+    };
+    const controller = new PublicLoginAgreementController(agreementService as never, settingsService as never);
+    const result = await controller.getSiteConfig();
+    expect(result.siteUrl).toBe('http://localhost:3000');
   });
 });

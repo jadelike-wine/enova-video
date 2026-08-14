@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import type { HttpServer } from '@nestjs/common/interfaces/http/http-server.interface';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { DomainError, type ApiErrorBody } from '@enova/contracts';
 import { EnovaLogger } from '../logger/enova-logger.js';
@@ -13,10 +14,19 @@ import { EnovaLogger } from '../logger/enova-logger.js';
  * 全局异常过滤器：把 DomainError / 其他异常统一为
  * { "error": { "code", "message", "requestId", "details" } }。
  * 前端只依赖 error.code 分支，不再用字符串判断。
+ *
+ * 响应发送统一走 httpAdapter.reply()：NestJS 的 Fastify 适配器在
+ * middleware 抛错（如 RequestIdMiddleware 链路）时传入的是原生
+ * http.ServerResponse（无 .status/.code/.send），与常规路由错误的
+ * FastifyReply 不同。adapter 会正确包装/发送两种响应，
+ * 避免 `res.status is not a function` 导致进程崩溃。
  */
 @Catch()
 export class DomainExceptionFilter implements ExceptionFilter {
-  constructor(private readonly logger: EnovaLogger) {}
+  constructor(
+    private readonly logger: EnovaLogger,
+    private readonly httpAdapter?: HttpServer,
+  ) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -58,9 +68,37 @@ export class DomainExceptionFilter implements ExceptionFilter {
         statusCode: status,
       });
     } else {
-      this.logger.error('unhandled exception', { requestId }, exception);
+      // 尽量保留原始错误信息（不含堆栈），便于排查；message 为字符串时
+      // EnovaLogger.error 不会自动带上 error，这里显式传入错误对象。
+      const message = exception instanceof Error ? exception.message : String(exception);
+      this.logger.error(`unhandled exception: ${message}`, { requestId }, exception);
     }
 
-    void res.status(status).send(body);
+    const adapter = this.httpAdapter;
+    if (adapter) {
+      if (adapter.isHeadersSent(res)) {
+        adapter.end(res);
+      } else {
+        adapter.reply(res, body, status);
+      }
+      return;
+    }
+
+    // 兜底：无 adapter 时直接操作响应对象（FastifyReply 或原生 http 响应）。
+    const reply = res as FastifyReply & {
+      code?: (c: number) => { send: (b: unknown) => unknown };
+      statusCode?: number;
+      setHeader?: (k: string, v: string) => void;
+      end?: (b: string) => void;
+    };
+    if (typeof reply.code === 'function') {
+      void reply.code(status).send(body);
+    } else if (typeof (reply as { status?: (c: number) => unknown }).status === 'function') {
+      void (reply as unknown as { status: (c: number) => { send: (b: unknown) => unknown } }).status(status).send(body);
+    } else {
+      if (reply.statusCode !== undefined) reply.statusCode = status;
+      reply.setHeader?.('content-type', 'application/json');
+      reply.end?.(JSON.stringify(body));
+    }
   }
 }

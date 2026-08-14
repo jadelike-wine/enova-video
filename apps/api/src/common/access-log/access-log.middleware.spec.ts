@@ -35,4 +35,25 @@ describe('AccessLogMiddleware', () => {
 
     expect(logger.info).not.toHaveBeenCalled();
   });
+
+  it('handles native http response (no .raw) used in middleware chain', async () => {
+    let finish: (() => void) | undefined;
+    const logger = { info: vi.fn() };
+    const settings = { getAccessLog: vi.fn().mockResolvedValue(true) };
+    const middleware = new AccessLogMiddleware(settings as never, logger as never);
+    // Fastify 适配器在 middleware 中传入原生 http.ServerResponse（无 .raw），
+    // 本身即底层响应：.once 与 .statusCode 直接在 res 上。
+    const res = {
+      once: vi.fn((_event: string, handler: () => void) => { finish = handler; }),
+      statusCode: 404,
+    };
+
+    middleware.use({ method: 'POST', url: '/api/v1/auth/login', requestId: 'req-3' } as never, res as never, vi.fn());
+    finish?.();
+    await vi.waitFor(() => expect(logger.info).toHaveBeenCalled());
+
+    expect(logger.info).toHaveBeenCalledWith('http request completed', expect.objectContaining({
+      requestId: 'req-3', method: 'POST', path: '/api/v1/auth/login', statusCode: 404,
+    }));
+  });
 });

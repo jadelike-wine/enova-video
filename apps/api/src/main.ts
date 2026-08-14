@@ -24,7 +24,9 @@ async function bootstrap(): Promise<void> {
 
   const logger = app.get(EnovaLogger);
   app.useLogger(logger);
-  app.useGlobalFilters(new DomainExceptionFilter(logger));
+  // 传入 httpAdapter 供异常过滤器发送响应：兼容 FastifyReply 与
+  // middleware 抛错时传入的原生 http 响应（见 DomainExceptionFilter）。
+  app.useGlobalFilters(new DomainExceptionFilter(logger, app.getHttpAdapter()));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

@@ -87,7 +87,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
 
       return promise
     },
-    [modal, t],
+    [modal, t, resolve],
   )
 
   const confirm = useCallback(

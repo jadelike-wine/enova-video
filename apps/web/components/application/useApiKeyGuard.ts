@@ -59,7 +59,7 @@ export function useApiKeyGuard() {
       router.push('/app/wallet')
     }
     return false
-  }, [balance, confirm, router])
+  }, [balance, confirm, router, t])
 
   const requireStorageConfig = useCallback(async (): Promise<boolean> => true, [])
 

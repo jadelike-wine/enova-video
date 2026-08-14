@@ -270,7 +270,7 @@ export default function ImageView() {
       setGenerating(false)
       setGenerateStep('')
     }
-  }, [inputImages, requireApiKey, alert, setHistory])
+  }, [inputImages, requireApiKey, alert, setHistory, t])
 
   const selectTask = (task: TaskItem) => setSelectedTaskId(task.id)
 

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { getTranslations, setRequestLocale } from 'next-intl/server'
-import { BRAND } from '../../../lib/brand'
+import { BRAND } from '@/lib/brand'
 
 export async function generateMetadata({
   params,

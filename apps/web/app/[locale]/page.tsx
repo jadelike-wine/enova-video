@@ -1,7 +1,7 @@
 import { getTranslations, setRequestLocale } from 'next-intl/server'
 import Link from 'next/link'
-import { BRAND } from '../../lib/brand'
-import MarketingLayout from '../../components/marketing/MarketingLayout'
+import { BRAND } from '@/lib/brand'
+import MarketingLayout from '@/components/marketing/MarketingLayout'
 
 export async function generateMetadata() {
   const t = await getTranslations('metadata')

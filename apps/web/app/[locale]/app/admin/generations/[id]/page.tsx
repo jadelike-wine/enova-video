@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { getTranslations } from 'next-intl/server'
-import AdminGenerationDetailView from '../../../../../components/application/admin/AdminGenerationDetailView'
-import { appMetadata } from '../../../../../lib/seo'
+import AdminGenerationDetailView from '@/components/application/admin/AdminGenerationDetailView'
+import { appMetadata } from '@/lib/seo'
 import AppShell from '../../../AppShell'
 
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {

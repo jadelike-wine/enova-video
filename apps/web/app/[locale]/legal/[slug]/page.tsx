@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { marked } from 'marked'
 import DOMPurify from 'isomorphic-dompurify'
-import { publicApi, type LegalDocument } from '../../../lib/api'
+import { publicApi, type LegalDocument } from '@/lib/api'
 
 export default function LegalDocumentPage() {
   const t = useTranslations('legal')

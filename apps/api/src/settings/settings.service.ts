@@ -74,7 +74,6 @@ export class SettingsService implements OnApplicationBootstrap {
       const migrated = await this.store.migrateFromEnv();
       if (migrated.length > 0) {
         // 不记录具体值（可能含 Secret），只记录 key 和数量。
-        // eslint-disable-next-line no-console
         console.log(`[settings] migrated ${migrated.length} env vars to DB: ${migrated.join(', ')}`);
       }
     } catch {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { Image as AntdImage } from 'antd'
 import {
   generationApi,
   uploadApi,
@@ -506,11 +507,14 @@ export default function VideoView() {
                     {inputImagesOf(task).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {inputImagesOf(task).map((url, i) => (
-                          <img
+                          <AntdImage
                             key={i}
                             src={url}
                             alt={inputImagesOf(task).length > 1 ? `参考图 ${i + 1}` : '参考图'}
-                            className="w-10 h-10 object-cover rounded-lg border border-gray-200"
+                            width={40}
+                            height={40}
+                            preview={false}
+                            className="object-cover rounded-lg border border-gray-200"
                           />
                         ))}
                       </div>
@@ -645,10 +649,13 @@ export default function VideoView() {
                     <div className="flex flex-wrap gap-2 mb-2">
                       {inputImages.map((url, i) => (
                         <div key={i} className="relative group">
-                          <img
+                          <AntdImage
                             src={url}
                             alt="参考图"
-                            className="w-20 h-20 object-cover rounded-2xl border border-gray-200"
+                            width={80}
+                            height={80}
+                            preview={false}
+                            className="object-cover rounded-2xl border border-gray-200"
                           />
                           <button
                             onClick={() => removeImage(i)}
@@ -817,11 +824,14 @@ export default function VideoView() {
                             <p className="text-xs text-gray-500 mb-2 font-medium">参考图</p>
                             <div className="flex flex-wrap gap-2">
                               {inputImagesOf(selectedTask).map((url, i) => (
-                                <img
+                                <AntdImage
                                   key={i}
                                   src={url}
                                   alt="参考图"
-                                  className="w-20 h-20 object-cover rounded-xl border border-gray-200"
+                                  width={80}
+                                  height={80}
+                                  preview={{ mask: false }}
+                                  className="object-cover rounded-xl border border-gray-200"
                                 />
                               ))}
                             </div>
@@ -837,11 +847,14 @@ export default function VideoView() {
                             <p className="text-xs text-gray-500 mb-2 font-medium">参考图</p>
                             <div className="flex flex-wrap gap-2">
                               {inputImagesOf(selectedTask).map((url, i) => (
-                                <img
+                                <AntdImage
                                   key={i}
                                   src={url}
                                   alt="参考图"
-                                  className="w-20 h-20 object-cover rounded-xl border border-gray-200"
+                                  width={80}
+                                  height={80}
+                                  preview={{ mask: false }}
+                                  className="object-cover rounded-xl border border-gray-200"
                                 />
                               ))}
                             </div>

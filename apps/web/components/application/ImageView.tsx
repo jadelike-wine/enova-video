@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { Image as AntdImage } from 'antd'
 import {
   generationApi,
   uploadApi,
@@ -129,7 +130,6 @@ export default function ImageView() {
   const [generateStep, setGenerateStep] = useState('')
   const [selectedTaskId, setSelectedTaskId] = useState<string | number | null>(null)
   const [error, setError] = useState('')
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   const { history, historyLoading, resetHistory, setHistory } = usePaginatedTaskHistory(
     useCallback(async () => {
@@ -264,13 +264,7 @@ export default function ImageView() {
       setGenerating(false)
       setGenerateStep('')
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, inputImages, requireApiKey, alert, setHistory])
-
-  const openLightbox = (url: string) => {
-    if (url) setLightboxUrl(url)
-  }
-  const closeLightbox = () => setLightboxUrl(null)
 
   const selectTask = (task: TaskItem) => setSelectedTaskId(task.id)
 
@@ -340,14 +334,14 @@ export default function ImageView() {
                 <div className="flex gap-3">
                   <div className="w-16 h-16 rounded-xl flex-shrink-0 overflow-hidden bg-gray-50 border border-gray-200 flex items-center justify-center">
                     {displayUrl(task) ? (
-                      <img
+                      <AntdImage
                         src={displayUrl(task)}
                         alt={task.prompt || '生成的图片'}
-                        className="w-full h-full object-cover cursor-zoom-in hover:opacity-90 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openLightbox(displayUrl(task))
-                        }}
+                        width="100%"
+                        height="100%"
+                        className="object-cover cursor-zoom-in hover:opacity-90 transition-opacity"
+                        preview={{ mask: false }}
+                        onClick={(e) => e.stopPropagation()}
                       />
                     ) : ACTIVE_STATUSES.includes(task.status) ? (
                       <div className="w-6 h-6 border-2 border-fuchsia-400/30 border-t-fuchsia-400 rounded-full animate-spin" />
@@ -488,10 +482,13 @@ export default function ImageView() {
                     <div className="flex flex-wrap gap-2 mb-2">
                       {inputImages.map((item, i) => (
                         <div key={i} className="relative group">
-                          <img
+                          <AntdImage
                             src={item.preview}
                             alt="参考图"
-                            className="w-20 h-20 object-cover rounded-2xl border border-gray-200"
+                            width={80}
+                            height={80}
+                            preview={false}
+                            className="object-cover rounded-2xl border border-gray-200"
                           />
                           <button
                             onClick={() => removeInputImage(i)}
@@ -558,11 +555,12 @@ export default function ImageView() {
                     {!ACTIVE_STATUSES.includes(selectedTask.status) && displayUrl(selectedTask) && (
                       <div className="flex-1">
                         <p className="text-xs text-gray-500 mb-2 font-medium">生成结果</p>
-                        <img
+                        <AntdImage
                           src={displayUrl(selectedTask)}
                           alt={selectedTask.prompt || '生成的图片'}
-                          className="w-full rounded-2xl border border-gray-200 object-contain max-h-[360px] bg-gray-100 cursor-zoom-in hover:opacity-90 transition-opacity"
-                          onClick={() => openLightbox(displayUrl(selectedTask))}
+                          width="100%"
+                          className="rounded-2xl border border-gray-200 object-contain max-h-[360px] bg-gray-100 cursor-zoom-in hover:opacity-90 transition-opacity"
+                          preview={{ mask: false }}
                         />
                         <div className="mt-3 text-xs text-gray-500 flex flex-wrap gap-4">
                           <span>{formatSizeLabel(selectedTask.size || '')}</span>
@@ -626,22 +624,6 @@ export default function ImageView() {
           </div>
         </div>
       </div>
-
-      {/* Lightbox */}
-      {lightboxUrl && (
-        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 md:p-8" onClick={closeLightbox}>
-          <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" />
-          <button className="absolute top-4 right-4 w-10 h-10 rounded-full bg-gray-100 text-gray-800 hover:bg-gray-100 hover:text-gray-900 transition-colors z-10">
-            ✕
-          </button>
-          <img
-            src={lightboxUrl}
-            alt="预览"
-            className="relative max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      )}
     </div>
   )
 }

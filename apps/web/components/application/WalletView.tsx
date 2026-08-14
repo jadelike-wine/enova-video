@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { Image as AntdImage } from 'antd'
 import { billingApi, paymentApi, publicApi, type LedgerEntry, type RechargeResult } from '../../lib/api'
 import { useDialog } from './DialogProvider'
 import { useSession } from '../../lib/auth'
@@ -252,10 +253,13 @@ export default function WalletView() {
               {rechargeResult.qrCode && (
                 <div>
                   <p className="text-xs text-gray-400 mb-2">扫码支付：</p>
-                  <img
+                  <AntdImage
                     src={rechargeResult.qrCode}
                     alt="支付二维码"
-                    className="w-40 h-40 rounded-xl border border-gray-200 bg-white"
+                    width={160}
+                    height={160}
+                    preview={false}
+                    className="rounded-xl border border-gray-200 bg-white"
                   />
                 </div>
               )}

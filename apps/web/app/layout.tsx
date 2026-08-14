@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { AntdRegistry } from '@ant-design/nextjs-registry'
 import './globals.css'
 import { SITE_NAME, SITE_TAGLINE, getSiteUrl } from '../lib/seo'
 
@@ -41,7 +42,7 @@ export default function RootLayout({
       <body
         style={{ fontFamily: 'var(--font-inter), "PingFang SC", "Microsoft YaHei", system-ui, sans-serif' }}
       >
-        {children}
+        <AntdRegistry>{children}</AntdRegistry>
       </body>
     </html>
   )

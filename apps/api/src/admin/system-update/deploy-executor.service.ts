@@ -110,10 +110,18 @@ export class DeployExecutor {
       complete();
     });
 
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       if (flushTimer) {
         clearTimeout(flushTimer);
         flushTimer = undefined;
+      }
+      // code === null 表示进程被信号杀死（如 API 容器重启时 docker run 客户端被 SIGTERM），
+      // 此时 deploy-tool 容器仍在宿主机上独立运行，不应标记为失败。
+      if (code === null) {
+        output = (output + `\n[deploy-executor] docker run client killed by signal ${signal ?? 'unknown'}, deploy-tool container continues independently`).slice(-MAX_OUTPUT_CHARS);
+        flush(false);
+        complete();
+        return;
       }
       const status: OperationView['status'] = code === 0 ? 'success' : 'failed';
       void this.store
@@ -121,7 +129,7 @@ export class DeployExecutor {
           ...op,
           status,
           output,
-          exit_code: code ?? 1,
+          exit_code: code,
           finished_at: new Date().toISOString(),
         })
         .catch(() => undefined);

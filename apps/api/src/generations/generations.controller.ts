@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../common/guards/auth.guard.js';
+import { RateLimitGuard } from '../common/guards/rate-limit.guard.js';
+import { RateLimit } from '../common/guards/rate-limit.guard.js';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
 import { GenerationsService, type GenerationView } from './generations.service.js';
 import { CreateGenerationDto } from './dto/generation.dto.js';
@@ -22,6 +24,8 @@ export class GenerationsController {
   constructor(@Inject(GenerationsService) private readonly service: GenerationsService) {}
 
   @Post()
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ key: 'generation_create', limit: 20, windowSec: 60, by: 'user' })
   @ApiOperation({ summary: '创建生成任务：定价 → 预留 Credits → 入队 → 返回 jobId' })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateGenerationDto): Promise<GenerationView> {
     return this.service.create(

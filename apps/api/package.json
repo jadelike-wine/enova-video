@@ -32,6 +32,7 @@
     "drizzle-orm": "^0.36.4",
     "fastify": "^4.28.1",
     "ioredis": "^5.11.1",
+    "nodemailer": "^9.0.5",
     "pino": "^9.4.0",
     "pino-pretty": "^11.2.2",
     "reflect-metadata": "^0.2.2",
@@ -39,6 +40,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.16.0",
+    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.11.10",
     "eslint": "^9.13.0",
     "pg": "^8.13.1",

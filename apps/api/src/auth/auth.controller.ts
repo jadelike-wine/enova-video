@@ -17,6 +17,8 @@ import { SESSION_COOKIE, SESSION_TTL_SECONDS } from './session.service.js';
 import { TurnstileService, type TurnstileConfig } from './turnstile.service.js';
 import { ChangePasswordDto, ForgotPasswordDto, LoginDto, RegisterDto, ResetPasswordDto, VerifyEmailDto } from './dto/auth.dto.js';
 import { AuthGuard } from '../common/guards/auth.guard.js';
+import { RateLimitGuard } from '../common/guards/rate-limit.guard.js';
+import { RateLimit } from '../common/guards/rate-limit.guard.js';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
 import { parseCookie } from '../common/http/cookies.js';
 import type { EmailSender } from '../common/services/email-sender.interface.js';
@@ -31,6 +33,8 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ key: 'register', limit: 5, windowSec: 3600, by: 'ip' })
   @ApiOperation({ summary: '注册：创建 User + Personal Workspace + Welcome Credits + Session' })
   async register(
     @Body() dto: RegisterDto,
@@ -43,6 +47,8 @@ export class AuthController {
   }
 
   @Post('login')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ key: 'login', limit: 10, windowSec: 300, by: 'ip' })
   @ApiOperation({ summary: '登录' })
   async login(
     @Body() dto: LoginDto,
@@ -132,6 +138,8 @@ export class AuthController {
   // ---- P1.5: Password Reset ----
 
   @Post('password/forgot')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ key: 'password_forgot', limit: 3, windowSec: 3600, by: 'ip+email' })
   @ApiOperation({ summary: '发起密码重置（无论邮箱是否存在均返回 ok）' })
   async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ ok: true }> {
     const token = await this.auth.requestPasswordReset(dto.email);
@@ -158,7 +166,8 @@ export class AuthController {
   }
 
   @Post('email/resend-verification')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RateLimitGuard)
+  @RateLimit({ key: 'email_resend', limit: 3, windowSec: 3600, by: 'user' })
   @ApiOperation({ summary: '重发邮箱验证 token（需登录，有频率限制）' })
   async resendVerification(@CurrentUser() user: AuthUser): Promise<{ ok: true }> {
     // Rate limit: 1 per minute per user

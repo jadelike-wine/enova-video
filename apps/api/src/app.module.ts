@@ -12,6 +12,7 @@ import { PaymentModule } from './payment/payment.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { SetupModule } from './setup/setup.module.js';
 import { RequestIdMiddleware } from './common/request-id/request-id.middleware.js';
+import { RateLimitModule } from './common/guards/rate-limit.module.js';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { RequestIdMiddleware } from './common/request-id/request-id.middleware.j
     PaymentModule,
     SettingsModule,
     SetupModule,
+    RateLimitModule,
   ],
 })
 export class AppModule implements NestModule {

@@ -3,6 +3,8 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 import { PAYMENT_PROVIDERS, type PaymentProviderKey } from '@enova/payment';
 import { AuthGuard } from '../common/guards/auth.guard.js';
+import { RateLimitGuard } from '../common/guards/rate-limit.guard.js';
+import { RateLimit } from '../common/guards/rate-limit.guard.js';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
 import { PaymentService, type RechargeResult } from './payment.service.js';
 import { CreatePlanOrderDto, CreateRechargeDto } from './dto/payment.dto.js';
@@ -20,21 +22,24 @@ export class PaymentController {
   }
 
   @Post('plan/checkout')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RateLimitGuard)
+  @RateLimit({ key: 'payment_plan', limit: 5, windowSec: 60, by: 'user' })
   @ApiOperation({ summary: '购买 Plan（创建 PLAN 订单并返回支付参数）' })
   createPlanOrder(@CurrentUser() user: AuthUser, @Body() dto: CreatePlanOrderDto): Promise<RechargeResult> {
     return this.service.createPlanOrder(user, dto.planId, dto.couponCode);
   }
 
   @Post('recharge')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RateLimitGuard)
+  @RateLimit({ key: 'payment_recharge', limit: 5, windowSec: 60, by: 'user' })
   @ApiOperation({ summary: '创建充值订单并返回支付参数（payUrl/qrCode）' })
   createRecharge(@CurrentUser() user: AuthUser, @Body() dto: CreateRechargeDto): Promise<RechargeResult> {
     return this.service.createRecharge(user, dto.amountCents, dto.couponCode);
   }
 
   @Post('sandbox/:orderId/confirm')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard, RateLimitGuard)
+  @RateLimit({ key: 'payment_sandbox_confirm', limit: 10, windowSec: 60, by: 'user' })
   @ApiOperation({ summary: 'sandbox 模拟确认支付（仅演示模式）' })
   simulateConfirm(
     @CurrentUser() user: AuthUser,
@@ -44,6 +49,8 @@ export class PaymentController {
   }
 
   @Post('notify/:channel')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ key: 'payment_notify', limit: 100, windowSec: 60, by: 'ip' })
   @ApiOperation({ summary: '支付渠道异步通知回调（验签入账）' })
   async notify(
     @Param('channel', new ParseEnumPipe(PAYMENT_PROVIDERS)) channel: PaymentProviderKey,

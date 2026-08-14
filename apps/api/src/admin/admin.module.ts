@@ -27,6 +27,9 @@ import { GenerationsAdminController } from './generations.admin.controller.js';
 import { PricingAdminController } from './pricing.admin.controller.js';
 import { CustomersAdminController } from './customers.admin.controller.js';
 import { RbacAdminController } from './rbac.admin.controller.js';
+import { EmailAdminController } from './email.admin.controller.js';
+import { OpsMonitoringService } from './ops-monitoring.service.js';
+import { OpsMonitoringController } from './ops-monitoring.controller.js';
 import { SettingsAdminService } from './settings.admin.service.js';
 import { SystemUpdateController } from './system-update/system-update.controller.js';
 import { SystemUpdateService } from './system-update/system-update.service.js';
@@ -56,6 +59,8 @@ import { ENV } from '../config/config.module.js';
     AnalyticsAdminController,
     RbacAdminController,
     SystemUpdateController,
+    EmailAdminController,
+    OpsMonitoringController,
   ],
   providers: [
     AdminGuard,
@@ -82,6 +87,7 @@ import { ENV } from '../config/config.module.js';
     RedisStore,
     DeployExecutor,
     SystemUpdateService,
+    OpsMonitoringService,
   ],
 })
 export class AdminModule {}

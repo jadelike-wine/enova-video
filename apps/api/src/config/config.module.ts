@@ -9,7 +9,7 @@ export const ENV = Symbol('ENV');
  */
 @Global()
 @Module({
-  providers: [{ provide: ENV, useFactory: () => loadEnv() }],
+  providers: [{ provide: ENV, useFactory: () => loadEnv(process.env, { service: 'api' }) }],
   exports: [ENV],
 })
 export class ConfigModule {}

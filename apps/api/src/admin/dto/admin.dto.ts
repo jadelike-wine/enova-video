@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsDateString,
   IsEnum,
   IsInt,
   IsObject,
@@ -10,6 +11,7 @@ import {
   MaxLength,
   Max,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import {
@@ -234,6 +236,50 @@ export class ForceFailJobDto {
   @IsString()
   @MaxLength(500)
   reason!: string;
+}
+
+/**
+ * 人工退款记录 DTO。
+ *
+ * 产品规则：系统不提供自动退款，不调用支付宝/微信退款 API。
+ * 管理员在渠道商户平台完成人工退款后，在此记录处理结果。
+ * 此接口仅为内部登记和审计，不执行真实退款，不改变 orders.status。
+ *
+ * 必填：reason、refundChannel（ALIPAY/WECHAT）、channelRefundNo。
+ * 可选：refundAmountCents（退款金额，不填则全额）、reviewNote、externalRefundedAt。
+ */
+export class RecordManualRefundDto {
+  @ApiProperty({ example: '用户投诉，已通过支付宝商户后台退款' })
+  @IsString()
+  @MaxLength(500)
+  reason!: string;
+
+  @ApiProperty({ enum: ['ALIPAY', 'WECHAT'], description: '退款渠道' })
+  @IsEnum(['ALIPAY', 'WECHAT'])
+  refundChannel!: string;
+
+  @ApiProperty({ example: '2026081322001400001234567890', description: '渠道商户平台退款流水号（必填，trim 后非空）' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  channelRefundNo!: string;
+
+  @ApiPropertyOptional({ example: 5000, description: '退款金额（分），不填则全额退款' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  refundAmountCents?: number;
+
+  @ApiPropertyOptional({ example: '已核实订单，渠道退款已完成', description: '审核备注' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reviewNote?: string;
+
+  @ApiProperty({ description: '渠道实际退款时间（ISO 8601，必填）', example: '2026-08-13T10:30:00.000Z' })
+  @IsDateString()
+  externalRefundedAt!: string;
 }
 
 export class CreatePricingRuleDto {

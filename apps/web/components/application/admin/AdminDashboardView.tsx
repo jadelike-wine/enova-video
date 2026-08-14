@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { App, Button, Card, Skeleton, Statistic } from 'antd'
+import { Card, Skeleton, Statistic } from 'antd'
 import { adminStatsApi, type AdminStatsView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'

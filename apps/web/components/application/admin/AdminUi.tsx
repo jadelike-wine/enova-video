@@ -75,7 +75,7 @@ export function EmptyState({ text }: { text: string }) {
   return <Empty description={text} />
 }
 
-export function Loading({ text = '加载中…' }: { text?: string }) {
+export function Loading() {
   return <Skeleton active paragraph={{ rows: 3 }} />
 }
 

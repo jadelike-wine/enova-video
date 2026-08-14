@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
-import { BRAND } from '../../lib/brand'
 
 export function CTA() {
   const t = useTranslations('home')

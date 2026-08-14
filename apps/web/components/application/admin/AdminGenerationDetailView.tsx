@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Card, Descriptions, Skeleton, Table, Tag } from 'antd'
+import { Button, Card, Descriptions, Skeleton, Table } from 'antd'
 import type { TableProps } from 'antd'
 import { adminGenerationsApi, type AdminGenerationDetailView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'

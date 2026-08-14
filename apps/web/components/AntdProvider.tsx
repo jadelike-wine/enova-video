@@ -1,7 +1,7 @@
 'use client'
 
 import { type ReactNode } from 'react'
-import { App as AntdApp, ConfigProvider, theme as antdTheme } from 'antd'
+import { App as AntdApp, ConfigProvider } from 'antd'
 import zhCn from 'antd/locale/zh_CN'
 import enUs from 'antd/locale/en_US'
 

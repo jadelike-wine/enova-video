@@ -1,0 +1,120 @@
+# Changelog
+
+All notable changes to EnovaMotion (灵动创影) are documented here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
+
+Git history is the ultimate source of truth; this file aggregates user-, developer-, and ops-relevant changes. Not every commit is listed — only changes that matter to consumers, operators, or maintainers.
+
+## Unreleased
+
+### Added
+- i18n support via `next-intl` with locale-based routing across application and marketing components (v1.4.0+).
+
+### Changed
+- Admin users view migrated to Ant Design `Table` and `Modal` components.
+- Image lightbox replaced with Ant Design `Image` preview.
+
+---
+
+## [1.4.0] — 2026-08-14
+
+### Added
+- Admin settings UI improvements with setting descriptions and grouped layout.
+- Login agreement gate with admin-managed legal documents (revision tracking, user consent logging).
+- Runtime system settings: storage, billing, logging, SSRF, task/video, SMTP, rate limits, and queue options migrated to database-managed settings with admin UI.
+- Worker dynamic configuration hot-reload via Redis Pub/Sub invalidation.
+- Object storage test action in admin UI (upload, verify, delete test object).
+- Qiniu (七牛云) object storage provider implementation.
+- `BACKUP.md` documentation and daily disaster recovery backup script (`scripts/backup.sh`).
+- Product reference document (`docs/product-reference.md`) and docs index (`docs/README.md`).
+
+### Changed
+- `.env` scope reduced to bootstrap/infrastructure/root-secret only; business settings moved to System Settings (DB > env > default).
+- Production Docker Compose no longer injects migrated business settings.
+- Site URL is now an admin-managed runtime setting (build-time `NEXT_PUBLIC_SITE_URL` is fallback only).
+- AWS S3 is the default storage provider (previously `none`); legacy `s3` env alias still works.
+
+### Removed
+- Text chat / conversation feature (`/app/chat`, `ChatView`, `/api/v1/conversations`). Old `/chat` links 308-redirect to `/app/images`. Database tables (`conversations`, `messages`) retained for historical data only.
+- Confirmed-unused environment variables: `AGNES_API_KEY`, `AGNES_BASE_URL`, `SESSION_SECRET`, `UPDATE_CHANNEL` from `.env.example` and production Compose.
+- `INITIAL_ADMIN_EMAIL` env-based admin initialization replaced by `/setup` wizard.
+
+### Fixed
+- Native `http.ServerResponse` handling in NestJS exception filter and access log middleware.
+- Deploy-tool healthcheck using `host.docker.internal`.
+- Stale operation status during API restart in admin system-update.
+- Session cookie `Secure` flag now respects request protocol (fixes HTTP deployment login).
+- Integration tests skip when `DATABASE_URL` is absent (avoids CI failures).
+- `ListQueryDto` limit/offset `@Type` conversion (fixes list API validation failures).
+- `flock release_lock` shell syntax error in deployment scripts.
+- CI production compose validation with required env vars.
+
+---
+
+## [1.3.0] — 2026-08-12
+
+### Added
+- P1 commercialization: RBAC roles/permissions, Settings v2 (transactional CAS / grouped updates / env migration), analytics with cost and gross margin, account lifecycle, and coupons.
+- Setup wizard for first-run admin creation (replaces `INITIAL_ADMIN_EMAIL` env var).
+- Settings v2: transactional CAS, grouped batch updates, env-to-DB migration, Worker dynamic config hot-reload.
+- Redis-backed rate limiting guard.
+- Email templates, mock sender, and tests (P0-1).
+- SMTP email integration, CORS protection, and ops monitoring (P0).
+- Worker resource cleanup service and object storage delete/exists operations.
+- Email management and ops monitoring features.
+- Order management and billing system improvements.
+
+### Changed
+- Application visual upgrade to light purple theme.
+- Brand-neutralized UI: hidden underlying third-party model names from user-visible surfaces.
+- Container timezone set to Shanghai for api/worker/web.
+- Settings page shows full user ID.
+- Sidebar scroll position persists across route changes.
+
+### Removed
+- AI conversation feature and standalone marketing/docs pages (first removal pass).
+
+### Fixed
+- `EMAIL_SENDER` provider registration in `AuthModule`.
+- Integration test skip behavior for missing `DATABASE_URL`.
+
+---
+
+## [1.2.0] — 2026-08-11
+
+### Added
+- P0 commercialization: payment/refund strategy, billing concurrency and merchant management backend, plan purchase, admin operations console, and fulfillment corrections.
+- Refund concurrency integration test spec and migration upgrade spec.
+- `.gitignore` for `deep-research-reports/` output artifacts.
+
+### Fixed
+- CI/Release builds packages before typecheck (resolves `@enova/contracts` module-not-found).
+- Dockerfile runtime copies application `node_modules` (fixes missing `reflect-metadata`).
+- Production frontend CSS loss (Next.js 15.5 nested layout silently dropping global styles).
+
+---
+
+## [1.1.0] — 2026-08-10
+
+### Added
+- Complete SaaS backend rewrite: monorepo (NestJS + Drizzle + BullMQ) replacing old FastAPI + SQLite architecture.
+- Frontend migration to new architecture with generation pipeline and database migrations.
+- Docker deployment and update scripts (`update.sh`, `rollback.sh`, `lib.sh`).
+- `AGENTS.md` and `CLAUDE.md` project documentation.
+- GitHub Actions CI, release, and deploy workflows.
+
+### Changed
+- Old architecture (`backend/` FastAPI + SQLite and `frontend/`) deleted; all new work in monorepo.
+
+### Fixed
+- GitHub Actions deployment chain and release gate.
+- pnpm/action-setup version to v6 (Node 20 deprecation warning).
+- GitHub Actions to Node 24 runtime (Node 20 deprecation warning).
+
+---
+
+[1.4.0]: https://github.com/jadelike-wine/enova-video/releases/tag/v1.4.0
+[1.3.0]: https://github.com/jadelike-wine/enova-video/releases/tag/v1.3.0
+[1.2.0]: https://github.com/jadelike-wine/enova-video/releases/tag/v1.2.0
+[1.1.0]: https://github.com/jadelike-wine/enova-video/releases/tag/v1.1.0

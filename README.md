@@ -289,6 +289,10 @@ AWS_S3_PREFIX=agnes-ai
 
 对象存储是附加能力：转存失败会降级保留 Agnes 原始 URL 并记录日志，不会把 AI 生成结果判为失败。
 
+## 变更记录
+
+详细版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 版本发布、更新与回滚
 
 > 目标：**版本化发布（SemVer）+ 手动执行更新 + PostgreSQL 备份 + 真实健康检查 + 失败自动回滚 + 可人工回滚**。

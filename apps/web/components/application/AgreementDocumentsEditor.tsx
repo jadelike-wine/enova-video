@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
-interface AgreementDocumentDraft {
+export interface AgreementDocumentDraft {
   slug: string
   title: string
   contentMd: string
@@ -13,7 +13,11 @@ interface AgreementDocumentsEditorProps {
   onChange: (value: string) => void
 }
 
-function parseDocuments(value: string): AgreementDocumentDraft[] {
+/**
+ * 解析登录条款文档 JSON。容错处理：非法 JSON / 非数组返回空列表，
+ * 每项仅保留 slug / title / contentMd 三个字符串字段，保持与后端约定一致。
+ */
+export function parseAgreementDocuments(value: string): AgreementDocumentDraft[] {
   try {
     const parsed = JSON.parse(value) as unknown
     if (!Array.isArray(parsed)) return []
@@ -30,11 +34,19 @@ function parseDocuments(value: string): AgreementDocumentDraft[] {
   }
 }
 
+/**
+ * 将文档 JSON 规范化为统一序列化格式（字段顺序固定）。
+ * 用于初始化 draft，保证“内容未变 → 字符串未变 → 不产生脏标记”。
+ */
+export function normalizeDocumentsJson(value: string): string {
+  return JSON.stringify(parseAgreementDocuments(value))
+}
+
 export default function AgreementDocumentsEditor({ value, onChange }: AgreementDocumentsEditorProps) {
-  const [documents, setDocuments] = useState<AgreementDocumentDraft[]>(() => parseDocuments(value))
+  const [documents, setDocuments] = useState<AgreementDocumentDraft[]>(() => parseAgreementDocuments(value))
 
   useEffect(() => {
-    setDocuments(parseDocuments(value))
+    setDocuments(parseAgreementDocuments(value))
   }, [value])
 
   const update = (next: AgreementDocumentDraft[]) => {
@@ -43,38 +55,68 @@ export default function AgreementDocumentsEditor({ value, onChange }: AgreementD
   }
 
   return (
-    <div className="flex-1 space-y-3">
+    <div className="space-y-3">
+      {documents.length === 0 && (
+        <div className="rounded-xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-400">
+          暂无协议文档。添加后将展示在登录 / 注册页面，例如服务条款、隐私政策。
+        </div>
+      )}
+
       {documents.map((document, index) => (
-        <div key={index} className="space-y-2 rounded-xl border border-gray-200 bg-white p-3">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <input
-              className="input-field"
-              value={document.title}
-              placeholder="文档名称"
-              onChange={(event) => update(documents.map((item, i) => i === index ? { ...item, title: event.target.value } : item))}
-            />
-            <input
-              className="input-field"
-              value={document.slug}
-              placeholder="路由标识，如 terms"
-              onChange={(event) => update(documents.map((item, i) => i === index ? { ...item, slug: event.target.value } : item))}
+        <div key={index} className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-semibold text-gray-500">文档 {index + 1}</span>
+            <button
+              type="button"
+              className="text-xs text-rose-500 transition-colors hover:text-rose-600"
+              onClick={() => update(documents.filter((_, i) => i !== index))}
+            >
+              删除文档
+            </button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">文档名称</label>
+              <input
+                className="input-field"
+                value={document.title}
+                placeholder="例如：服务条款"
+                onChange={(event) =>
+                  update(documents.map((item, i) => (i === index ? { ...item, title: event.target.value } : item)))
+                }
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-gray-500">路由标识</label>
+              <input
+                className="input-field"
+                value={document.slug}
+                placeholder="例如：terms"
+                onChange={(event) =>
+                  update(documents.map((item, i) => (i === index ? { ...item, slug: event.target.value } : item)))
+                }
+              />
+              <p className="mt-1 text-[11px] text-gray-400">
+                访问路径：<code className="font-mono">/legal/{document.slug || '…'}</code>
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Markdown 内容</label>
+            <textarea
+              className="input-field min-h-40 font-mono text-xs leading-relaxed"
+              value={document.contentMd}
+              placeholder="输入 Markdown 格式的条款内容"
+              onChange={(event) =>
+                update(documents.map((item, i) => (i === index ? { ...item, contentMd: event.target.value } : item)))
+              }
             />
           </div>
-          <textarea
-            className="input-field min-h-32 font-mono text-xs"
-            value={document.contentMd}
-            placeholder="Markdown 内容"
-            onChange={(event) => update(documents.map((item, i) => i === index ? { ...item, contentMd: event.target.value } : item))}
-          />
-          <button
-            type="button"
-            className="text-xs text-rose-600 hover:underline"
-            onClick={() => update(documents.filter((_, i) => i !== index))}
-          >
-            删除文档
-          </button>
         </div>
       ))}
+
       <button
         type="button"
         className="btn-secondary text-sm"

@@ -202,6 +202,8 @@ export const authApi = {
 
 export interface SiteConfig {
   siteUrl: string
+  supportEmail: string
+  appName: string
 }
 
 export const publicApi = {
@@ -318,6 +320,15 @@ export interface SettingHistoryEntry {
   createdAt: string
 }
 
+export interface StorageTestResult {
+  provider: string
+  bucket: string
+  key: string
+  exists: boolean
+  publicUrl: string
+  publicUrlAccessible: boolean
+}
+
 export const settingsApi = {
   list: () => json<SettingView[]>('/admin/settings'),
   update: (key: string, value: string, expectedVersion?: number) =>
@@ -336,6 +347,7 @@ export const settingsApi = {
     }),
   history: (key: string, limit?: number) =>
     json<SettingHistoryEntry[]>(`/admin/settings/${encodeURIComponent(key)}/history${limit ? `?limit=${limit}` : ''}`),
+  testStorage: () => json<StorageTestResult>('/admin/settings/storage/test', { method: 'POST' }),
 }
 
 // ---------------------------------------------------------------------------

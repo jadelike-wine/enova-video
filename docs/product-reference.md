@@ -104,7 +104,7 @@
 - 图片、视频和用户上传内容统一建模为 Asset。
 - Asset 关联 Workspace、用户和生成任务，可记录 MIME 类型、大小、尺寸、时长和对象 key。
 - Worker 会对 Provider 返回的媒体 URL 做 SSRF 校验、超时/大小/content-type 限制，然后按配置转存。
-- 当前对象存储工厂明确支持 `none` 和 `s3`/S3-compatible 分支；`STORAGE_PROVIDER=none` 是允许的本地默认值。
+- 当前对象存储工厂支持 `aws_s3`、`qiniu` 和 `none` 分支。Provider、凭证和日志/计费运行参数由管理员后台「系统设置」动态管理；数据库没有配置时才回退到环境变量，存储配置不完整时进程保持可运行并暂时使用 `none`。
 
 实现依据：[`packages/db/src/schema.ts`](../packages/db/src/schema.ts)、[`packages/provider/src/storage`](../packages/provider/src/storage)、[`packages/provider/src/url-guard.ts`](../packages/provider/src/url-guard.ts)、[`apps/worker/src/generation/pipeline.ts`](../apps/worker/src/generation/pipeline.ts)。
 

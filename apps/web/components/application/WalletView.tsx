@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { billingApi, paymentApi, type LedgerEntry, type RechargeResult } from '../../lib/api'
+import { billingApi, paymentApi, publicApi, type LedgerEntry, type RechargeResult } from '../../lib/api'
 import { useDialog } from './DialogProvider'
 import { useSession } from '../../lib/auth'
 import { formatErrorMessage } from '../../lib/errorMessage'
@@ -64,6 +64,7 @@ export default function WalletView() {
   const [recharging, setRecharging] = useState(false)
   const [rechargeResult, setRechargeResult] = useState<RechargeResult | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [supportEmail, setSupportEmail] = useState('support@example.com')
 
   const loadWallet = useCallback(async () => {
     try {
@@ -93,6 +94,7 @@ export default function WalletView() {
   useEffect(() => {
     void loadWallet()
     void loadLedger()
+    void publicApi.siteConfig().then((config) => setSupportEmail(config.supportEmail)).catch(() => undefined)
   }, [loadWallet, loadLedger])
 
   const effectiveCny =
@@ -343,10 +345,10 @@ export default function WalletView() {
             <p>
               联系邮箱：
               <a
-                href={`mailto:${process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@example.com'}`}
+                href={`mailto:${supportEmail}`}
                 className="text-[#7C3AED] underline decoration-[#7C3AED]/40 hover:text-[#6D28D9] ml-1"
               >
-                {process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@example.com'}
+                {supportEmail}
               </a>
             </p>
           </div>

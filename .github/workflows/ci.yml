@@ -54,9 +54,9 @@ jobs:
           REDIS_PASSWORD=test-redis-password
           CREDENTIAL_MASTER_KEY=test-32-byte-key-for-production-use-only
           SUPPORT_EMAIL=support@example.com
-          STORAGE_PROVIDER=s3
-          S3_REGION=us-east-1
-          S3_BUCKET=test-bucket
+          STORAGE_PROVIDER=aws_s3
+          AWS_REGION=us-east-1
+          AWS_S3_BUCKET=test-bucket
           PAYMENT_MODE=alipay
           PAYMENT_RETURN_BASE_URL=http://example.com
           PAYMENT_NOTIFY_URL=http://example.com/notify

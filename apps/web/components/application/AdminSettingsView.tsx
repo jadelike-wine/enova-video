@@ -15,17 +15,45 @@ const GROUP_LABEL: Record<string, string> = {
   billing: '基础业务',
   auth: '认证',
   payment: '支付',
+  email: '邮件',
   queue: '任务 / 视频',
-  storage: '对象存储',
+  storage: '存储配置',
   security: '安全 / SSRF',
   log: '日志 / 可观测性',
   general: '通用',
 }
 
-const GROUP_ORDER = ['billing', 'auth', 'payment', 'queue', 'storage', 'security', 'log', 'general']
+const GROUP_ORDER = ['billing', 'auth', 'payment', 'email', 'queue', 'storage', 'security', 'log', 'general']
 
 function groupLabel(group: string): string {
   return GROUP_LABEL[group] || group
+}
+
+const AWS_STORAGE_KEYS = new Set([
+  'storage.awsRegion',
+  'storage.awsS3Bucket',
+  'storage.awsS3Prefix',
+  'storage.awsS3PublicBaseUrl',
+  'storage.awsS3EndpointUrl',
+  'storage.awsAccessKeyId',
+  'storage.awsSecretAccessKey',
+  'storage.awsSessionToken',
+])
+const QINIU_STORAGE_KEYS = new Set([
+  'storage.qiniuAccessKey',
+  'storage.qiniuSecretKey',
+  'storage.qiniuBucket',
+  'storage.qiniuDomain',
+  'storage.qiniuRegion',
+])
+
+function enumLabel(value: string): string {
+  if (value === 'aws_s3') return 'AWS S3'
+  if (value === 'qiniu') return '七牛云'
+  if (value === 'none') return '不使用对象存储'
+  if (value === 'warn') return 'WARNING'
+  if (value === 'fatal') return 'CRITICAL'
+  return value.toUpperCase()
 }
 
 export default function AdminSettingsView() {
@@ -39,6 +67,29 @@ export default function AdminSettingsView() {
   const [historyFor, setHistoryFor] = useState<string | null>(null)
   const [history, setHistory] = useState<SettingHistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+
+  const storageProvider = drafts['storage.provider'] || settings.find((s) => s.key === 'storage.provider')?.value || 'aws_s3'
+  const storageConfigured = (() => {
+    if (storageProvider === 'none') return true
+    if (storageProvider === 'aws_s3') {
+      const accessKeyConfigured = Boolean(
+        settings.find((s) => s.key === 'storage.awsAccessKeyId')?.configured || drafts['storage.awsAccessKeyId']?.trim(),
+      )
+      const secretKeyConfigured = Boolean(
+        settings.find((s) => s.key === 'storage.awsSecretAccessKey')?.configured || drafts['storage.awsSecretAccessKey']?.trim(),
+      )
+      return Boolean(
+        drafts['storage.awsS3Bucket']?.trim() &&
+          (accessKeyConfigured === secretKeyConfigured),
+      )
+    }
+    return Boolean(
+      (settings.find((s) => s.key === 'storage.qiniuAccessKey')?.configured || drafts['storage.qiniuAccessKey']?.trim()) &&
+        (settings.find((s) => s.key === 'storage.qiniuSecretKey')?.configured || drafts['storage.qiniuSecretKey']?.trim()) &&
+        drafts['storage.qiniuBucket']?.trim() &&
+        drafts['storage.qiniuDomain']?.trim(),
+    )
+  })()
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -106,7 +157,7 @@ export default function AdminSettingsView() {
       if (!ok) return
       setSaving((p) => ({ ...p, [key]: true }))
       try {
-        const updated = await settingsApi.clearSecret(key)
+        await settingsApi.clearSecret(key)
         setSettings((prev) =>
           prev.map((s) => (s.key === key ? { ...s, value: '', configured: false, persisted: true } : s)),
         )
@@ -172,6 +223,21 @@ export default function AdminSettingsView() {
     [alert],
   )
 
+  const handleStorageTest = useCallback(async () => {
+    setSaving((p) => ({ ...p, 'storage:test': true }))
+    try {
+      const result = await settingsApi.testStorage()
+      await alert({
+        title: '存储测试完成',
+        message: `Provider：${result.provider}\nBucket/空间：${result.bucket}\n对象存在：${result.exists ? '是' : '否'}\nURL 可访问：${result.publicUrlAccessible ? '是' : '否'}`,
+      })
+    } catch (e) {
+      await alert({ title: '存储测试失败', message: formatErrorMessage(e) })
+    } finally {
+      setSaving((p) => ({ ...p, 'storage:test': false }))
+    }
+  }, [alert])
+
   /** 非 ADMIN 用户不允许进入（后端已拦截，前端仅提示）。 */
   if (user && user.role !== 'ADMIN') {
     return (
@@ -231,12 +297,26 @@ export default function AdminSettingsView() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <h3 className="text-lg font-bold text-gray-900">{groupLabel(group)}</h3>
+                    {group === 'storage' && (
+                      <span className={`text-[10px] px-2 py-0.5 rounded ${storageConfigured ? 'bg-green-500/20 text-green-600' : 'bg-amber-500/20 text-amber-600'}`}>
+                        {storageProvider === 'none' ? '未启用' : storageConfigured ? '已配置' : '请配置对象存储'}
+                      </span>
+                    )}
                     {isSecurityGroup && (
                       <span className="text-[10px] px-2 py-0.5 rounded bg-red-500/20 text-red-600 border border-red-500/30">
                         高风险
                       </span>
                     )}
                   </div>
+                  {group === 'storage' && storageProvider !== 'none' && (
+                    <button
+                      className="btn-secondary text-xs disabled:opacity-50"
+                      disabled={saving['storage:test'] || !storageConfigured}
+                      onClick={() => void handleStorageTest()}
+                    >
+                      {saving['storage:test'] ? '测试中…' : '测试配置'}
+                    </button>
+                  )}
                   {groupDirty && (
                     <button
                       className="btn-primary text-xs disabled:opacity-50"
@@ -248,7 +328,13 @@ export default function AdminSettingsView() {
                   )}
                 </div>
                 <div className="space-y-4">
-                  {items.map((setting) => {
+                  {items.filter((setting) => {
+                    if (group !== 'storage') return true
+                    if (setting.key === 'storage.provider') return true
+                    if (AWS_STORAGE_KEYS.has(setting.key)) return storageProvider === 'aws_s3'
+                    if (QINIU_STORAGE_KEYS.has(setting.key)) return storageProvider === 'qiniu'
+                    return true
+                  }).map((setting) => {
                     const isDirty = (() => {
                       const draft = (drafts[setting.key] ?? '').trim()
                       if (setting.isSecret && draft === '') return false
@@ -338,7 +424,7 @@ export default function AdminSettingsView() {
                             >
                               {setting.options.map((opt) => (
                                 <option key={opt} value={opt}>
-                                  {opt}
+                                  {enumLabel(opt)}
                                 </option>
                               ))}
                             </select>

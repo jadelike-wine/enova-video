@@ -608,6 +608,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/settings/storage/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 测试对象存储配置（上传、检查 URL、清理测试对象） */
+        post: operations["SettingsAdminController_testStorage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/settings/{key}": {
         parameters: {
             query?: never;
@@ -1373,6 +1390,23 @@ export interface paths {
         };
         /** 返回公开法律文档 Markdown（无需登录） */
         get: operations["PublicLoginAgreementController_getLegalDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/site-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 返回公开站点配置（站点 URL、客服邮箱和应用名称，无需登录） */
+        get: operations["PublicLoginAgreementController_getSiteConfig"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2565,6 +2599,23 @@ export interface operations {
             };
         };
     };
+    SettingsAdminController_testStorage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     SettingsAdminController_update: {
         parameters: {
             query?: never;
@@ -3490,6 +3541,23 @@ export interface operations {
             path: {
                 slug: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PublicLoginAgreementController_getSiteConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

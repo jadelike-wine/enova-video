@@ -228,24 +228,24 @@ Production environment variables are injected via `.env` (see `.env.example`). K
 | `DATABASE_URL` | **yes** | PostgreSQL connection string |
 | `REDIS_URL` | **yes** | Redis connection string |
 | `CREDENTIAL_MASTER_KEY` | **yes** | 32-byte Master Key for AES-GCM encrypting provider secrets (`openssl rand -hex 32`) |
-| `STORAGE_PROVIDER` | no | `none` / `s3`, default `none` |
-| `WELCOME_CREDITS` | no | Welcome credits on signup, default `100` |
+| `STORAGE_PROVIDER` | no (legacy fallback) | `aws_s3` / `qiniu` / `none`, default `aws_s3`; configure in Admin Settings |
+| `WELCOME_CREDITS` | no (legacy fallback) | Welcome credits on signup, default `100`; configure in Admin Settings |
 | `PAYMENT_MODE` | no | `sandbox` / `alipay` / `wechat`, default `sandbox` |
 
-> **Security**: never use the dev placeholder keys from `.env.example` in production; `CREDENTIAL_MASTER_KEY`, and database / Redis / object-storage credentials must only be injected via server-side env or IAM / Role.
+> **Security**: never use the dev placeholder keys from `.env.example` in production; `CREDENTIAL_MASTER_KEY`, database, and Redis credentials must be injected via server-side env or IAM / Role. Object-storage credentials may be encrypted in Admin Settings, with server-side env or IAM / Role used as fallback.
 
 ## Object storage
 
-EnovaMotion supports **AWS S3** (or any S3-compatible store), switched via `STORAGE_PROVIDER`. Business code depends only on the `ObjectStorage` interface in `packages/provider`.
+EnovaMotion supports **AWS S3**, Qiniu, and no object storage. Provider, bucket, credentials, and logging can be changed immediately in Admin Settings → Storage Configuration. When the database has no value, the service falls back to environment variables; an incomplete storage configuration keeps the service running with no object persistence. Business code depends only on the `ObjectStorage` interface in `packages/provider`.
 
 ### With Access Keys
 
 ```bash
-STORAGE_PROVIDER=s3
-S3_REGION=ap-southeast-1
-S3_BUCKET=my-bucket
-S3_ACCESS_KEY=yourAccessKey
-S3_SECRET_KEY=yourSecretKey
+STORAGE_PROVIDER=aws_s3
+AWS_REGION=ap-southeast-1
+AWS_S3_BUCKET=my-bucket
+AWS_ACCESS_KEY_ID=yourAccessKey
+AWS_SECRET_ACCESS_KEY=yourSecretKey
 ```
 
 ### With an IAM Role (recommended for production)
@@ -253,10 +253,10 @@ S3_SECRET_KEY=yourSecretKey
 No keys in config; the service obtains credentials from EC2 Instance Profile / ECS Task Role / EKS IAM Role:
 
 ```bash
-STORAGE_PROVIDER=s3
-S3_REGION=ap-southeast-1
-S3_BUCKET=my-bucket
-S3_PREFIX=agnes-ai
+STORAGE_PROVIDER=aws_s3
+AWS_REGION=ap-southeast-1
+AWS_S3_BUCKET=my-bucket
+AWS_S3_PREFIX=agnes-ai
 ```
 
 ### Minimal IAM policy

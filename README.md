@@ -228,24 +228,24 @@ git tag v1.2.0 && git push origin v1.2.0   # 触发 release.yml 构建并推送 
 | `DATABASE_URL` | **是** | PostgreSQL 连接串 |
 | `REDIS_URL` | **是** | Redis 连接串 |
 | `CREDENTIAL_MASTER_KEY` | **是** | AES-GCM 加密 Provider Secret 的 32 字节 Master Key（`openssl rand -hex 32`） |
-| `STORAGE_PROVIDER` | 否 | `none` / `s3`，默认 `none` |
-| `WELCOME_CREDITS` | 否 | 注册发放的 Welcome Credits，默认 `100` |
+| `STORAGE_PROVIDER` | 否（兼容 fallback） | `aws_s3` / `qiniu` / `none`，默认 `aws_s3`；推荐在管理员后台设置 |
+| `WELCOME_CREDITS` | 否（兼容 fallback） | 注册发放的 Welcome Credits，默认 `100`；推荐在管理员后台设置 |
 | `PAYMENT_MODE` | 否 | `sandbox` / `alipay` / `wechat`，默认 `sandbox` |
 
-> **安全**：生产禁止使用 `.env.example` 中的 dev 占位密钥；`CREDENTIAL_MASTER_KEY`、数据库 / Redis / 对象存储凭证只能通过服务端环境或 IAM / Role 注入。
+> **安全**：生产禁止使用 `.env.example` 中的 dev 占位密钥；`CREDENTIAL_MASTER_KEY`、数据库和 Redis 只能通过服务端环境或 IAM / Role 注入。对象存储凭证可在管理员后台加密保存，未配置时才回退到服务端环境或 IAM / Role。
 
 ## 对象存储
 
-灵动创影支持 **AWS S3**（或任何 S3 兼容存储），通过 `STORAGE_PROVIDER` 统一切换。业务代码只依赖 `packages/provider` 的 `ObjectStorage` 抽象接口，不感知底层实现。
+灵动创影支持 **AWS S3**、七牛云和不使用对象存储。Provider、桶、凭证和日志配置可在管理员后台「系统设置 → 存储配置」中动态修改并立即生效。首次启动或数据库没有对应配置时，才回退到环境变量；存储未配置完整时系统保持可运行并暂时不转存对象。业务代码只依赖 `packages/provider` 的 `ObjectStorage` 抽象接口。
 
 ### 使用 Access Key 部署
 
 ```bash
-STORAGE_PROVIDER=s3
-S3_REGION=ap-southeast-1
-S3_BUCKET=my-bucket
-S3_ACCESS_KEY=你的AccessKey
-S3_SECRET_KEY=你的SecretKey
+STORAGE_PROVIDER=aws_s3
+AWS_REGION=ap-southeast-1
+AWS_S3_BUCKET=my-bucket
+AWS_ACCESS_KEY_ID=你的AccessKey
+AWS_SECRET_ACCESS_KEY=你的SecretKey
 ```
 
 ### 使用 IAM Role 部署（推荐生产）
@@ -253,10 +253,10 @@ S3_SECRET_KEY=你的SecretKey
 无需在配置中填写密钥，服务通过 EC2 Instance Profile / ECS Task Role / EKS IAM Role 获取凭据：
 
 ```bash
-STORAGE_PROVIDER=s3
-S3_REGION=ap-southeast-1
-S3_BUCKET=my-bucket
-S3_PREFIX=agnes-ai
+STORAGE_PROVIDER=aws_s3
+AWS_REGION=ap-southeast-1
+AWS_S3_BUCKET=my-bucket
+AWS_S3_PREFIX=agnes-ai
 ```
 
 ### 最小 IAM Policy
@@ -402,12 +402,14 @@ DEPLOY_PATH      # 服务器上仓库克隆路径（如 /opt/enova-video）
 
 ### 日志配置
 
-通过 `.env` 控制（默认值见 `.env.example`）：
+通过管理员后台「系统设置 → 日志 / 可观测性」动态控制（默认值见系统设置注册表）；旧部署仍可使用 `.env` 作为 fallback：
 
 | 变量 | 说明 | 默认 |
 |------|------|------|
-| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
+| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` | `INFO` |
 | `LOG_FORMAT` | `text`（人读）/ `json`（接 CloudWatch / Loki / ELK） | `text` |
+| `LOG_PROMPTS` | 是否记录用户 prompt | `false` |
+| `ACCESS_LOG` | 是否输出请求访问日志 | `true` |
 
 ### 常用日志查询命令
 

@@ -83,3 +83,110 @@ df -h /
 - 不删除正式版本镜像（`enova-video-{api,worker,web,deploy-tool}:<ver>`），它们用于部署与回滚。
 - `docker rmi`、`docker compose down`、数据库回滚等不可逆操作前，先与用户确认。
 - 服务器上的 `.env`、数据库备份、SSH 密钥等敏感内容不写入日志或提交到仓库。
+
+## 7. 系统更新功能（后台一键更新/回滚）
+
+系统更新功能允许管理员在管理后台通过 Web UI 一键触发版本更新或回滚，无需手动 SSH 到服务器操作。
+
+### 7.1 工作原理
+
+```
+管理后台 → API → spawn docker → deploy-tool 容器 → scripts/update.sh
+                   ↑ 需要 docker.sock 挂载        ↑ 需要 /host/repo 挂载
+```
+
+### 7.2 首次启用步骤
+
+在服务器上执行以下操作：
+
+**1) 确保 `.env` 中已启用**
+
+```bash
+cd /home/ubuntu/enova-video
+grep UPDATE_ENABLED .env
+# 应为 UPDATE_ENABLED=true
+```
+
+**2) 拉取 deploy-tool 镜像**
+
+```bash
+APP_VERSION=$(cat VERSION)
+docker pull ghcr.io/jadelike-wine/enova-video-deploy-tool:${APP_VERSION}
+```
+
+**3) 创建 `/host/repo` 软链接（如不存在）**
+
+```bash
+sudo ln -s /home/ubuntu/enova-video /host/repo
+```
+
+**4) 使用 update override 重启 API 容器**
+
+```bash
+cd /home/ubuntu/enova-video
+export APP_VERSION=$(cat VERSION)
+docker compose -f docker-compose.prod.yml -f docker-compose.update.yml up -d api
+```
+
+`docker-compose.update.yml` 会将以下关键挂载加入 API 容器：
+
+| 挂载 | 用途 |
+| --- | --- |
+| `/var/run/docker.sock` | API 通过它触发 deploy-tool 容器 |
+| `/host/repo` | deploy-tool 容器内访问仓库脚本 |
+
+**5) 验证**
+
+```bash
+# 确认 docker socket 已挂载
+docker exec enova-prod-api-1 ls -la /var/run/docker.sock
+
+# 确认 repo 已挂载
+docker exec enova-prod-api-1 ls /host/repo/scripts/update.sh
+
+# 确认 API 容器内可执行 docker
+docker exec enova-prod-api-1 docker ps
+```
+
+### 7.3 后续每次部署后
+
+每次通过 GitHub Actions 部署新版本后，需要重新拉取对应版本的 deploy-tool 镜像并重启 API：
+
+```bash
+cd /home/ubuntu/enova-video
+export APP_VERSION=$(cat VERSION)
+docker pull ghcr.io/jadelike-wine/enova-video-deploy-tool:${APP_VERSION}
+docker compose -f docker-compose.prod.yml -f docker-compose.update.yml up -d api
+```
+
+### 7.4 环境变量参考
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `UPDATE_ENABLED` | `false` | 是否启用系统更新功能 |
+| `UPDATE_GITHUB_REPOSITORY` | `jadelike-wine/enova-video` | GitHub 仓库（用于检查新版本） |
+| `UPDATE_GITHUB_TOKEN` | （空） | 私有仓库需要 GitHub PAT；公开仓库不需要 |
+| `UPDATE_DOCKER_SOCKET` | `/var/run/docker.sock` | Docker socket 路径 |
+| `UPDATE_DEPLOY_TOOL_IMAGE` | `ghcr.io/.../deploy-tool:${APP_VERSION}` | deploy-tool 镜像 |
+| `UPDATE_REPO_MOUNT` | `/host/repo` | 容器内仓库挂载路径 |
+| `UPDATE_CHECK_CACHE_TTL_MS` | `1200000` | 版本检查缓存时间（20 分钟） |
+| `UPDATE_EXEC_TIMEOUT_MS` | `900000` | 更新操作超时（15 分钟） |
+
+### 7.5 故障排查
+
+如果点击"更新到最新版本"后按钮迅速恢复且无效果：
+
+```bash
+# 1. 检查 docker socket 是否挂载
+docker exec enova-prod-api-1 ls -la /var/run/docker.sock
+
+# 2. 检查 deploy-tool 镜像是否存在
+docker images | grep deploy-tool
+
+# 3. 查看 API 容器日志
+docker logs enova-prod-api-1 --tail 50 | grep -i update
+
+# 4. 检查 compose 是否使用了 update override
+docker inspect enova-prod-api-1 --format '{{json .Mounts}}' | python3 -m json.tool
+# 应包含 /var/run/docker.sock 和 /host/repo 两个挂载
+```

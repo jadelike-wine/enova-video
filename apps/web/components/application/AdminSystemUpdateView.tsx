@@ -57,11 +57,14 @@ export default function AdminSystemUpdateView() {
             clearInterval(timer.current)
             timer.current = null
             setWorking(false)
+            if (next.status === 'failed') {
+              void alert({ title: '更新失败', message: next.output?.trim() || '操作未能完成，请检查服务端日志' })
+            }
           }
         })
         .catch(() => undefined)
     }, 2000)
-  }, [])
+  }, [alert])
 
   const runUpdate = useCallback(async (version?: string) => {
     const label = version ? `切换到版本 ${version}` : '更新到最新稳定版本'

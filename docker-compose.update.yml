@@ -1,0 +1,19 @@
+# ============================================================
+# Docker Compose override for System Update / Rollback.
+#
+# 仅在需要后台一键更新/回滚功能（UPDATE_ENABLED=true）时使用：
+#   docker compose -f docker-compose.prod.yml -f docker-compose.update.yml up -d
+#
+# 此文件挂载 Docker Socket 和仓库目录到 API 容器，使其能触发
+# deploy-tool 容器执行 update.sh / rollback.sh。
+#
+# 安全注意：
+#   - Docker Socket 挂载等同于 root 级访问，仅在受控环境使用
+#   - 确保 UPDATE_ENABLED=true 且管理员权限校验已启用
+#   - 仓库目录中不应包含 .env 或真实密钥
+# ============================================================
+services:
+  api:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${UPDATE_HOST_REPO_PATH:-/host/repo}:/host/repo

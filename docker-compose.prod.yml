@@ -8,16 +8,26 @@
 #   升级/回滚 = 切换 APP_VERSION -> docker compose up -d
 #
 # 不要使用 docker compose down -v / docker system prune -a。
+#
+# P0 安全加固：
+#   - POSTGRES_PASSWORD 强制必填（无默认值）
+#   - API 不默认挂载 Docker Socket（需 UPDATE_ENABLED=true 时手动开启）
+#   - 所有服务添加 no-new-privileges
+#   - DB/Redis 不暴露端口到宿主机
+#   - 支付模式/存储模式无不安全默认值
 # ============================================================
 name: enova-prod
 
 services:
   postgres:
     image: postgres:16-alpine
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-enova}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-enova}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-enova}
+      TZ: Asia/Shanghai
     volumes:
       - enova_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -26,33 +36,44 @@ services:
       timeout: 3s
       retries: 12
     restart: unless-stopped
+    # 不暴露端口到宿主机，应用通过内部网络连接
+    networks:
+      - enova-internal
 
   redis:
     image: redis:7-alpine
+    security_opt:
+      - no-new-privileges:true
+    # 生产环境要求 Redis 密码认证
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
     volumes:
       - enova_redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping"]
       interval: 5s
       timeout: 3s
       retries: 12
     restart: unless-stopped
+    # 不暴露端口到宿主机，应用通过内部网络连接
+    networks:
+      - enova-internal
 
   api:
     image: ghcr.io/jadelike-wine/enova-video-api:${APP_VERSION}
+    security_opt:
+      - no-new-privileges:true
     expose:
       - "3001"
-    # 后台一键更新依赖的挂载：
+    # 后台一键更新依赖的挂载（仅在 UPDATE_ENABLED=true 时需要）：
     #   - docker.sock：api 通过它触发宿主机 deploy-tool 容器执行 scripts/update.sh
-    #   - 仓库目录：deploy-tool 需在“与 api 容器内 UPDATE_REPO_MOUNT 相同绝对路径”
+    #   - 仓库目录：deploy-tool 需在"与 api 容器内 UPDATE_REPO_MOUNT 相同绝对路径"
     #     （默认 /host/repo）访问仓库。宿主机务必把仓库放在该路径（或建 symlink），
     #     否则 deploy-tool 的 -v /host/repo:/host/repo 解析不到。
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${UPDATE_HOST_REPO_PATH:-/host/repo}:/host/repo
+    # P0 安全：默认不挂载 Docker Socket。仅在 UPDATE_ENABLED=true 时通过
+    # docker-compose.override.yml 或显式 -v 参数挂载。
     # 健康检查：api 启动前自动执行迁移；就绪后返回 200。
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3001/api/v1/health"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3001/api/v1/health/ready"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -76,18 +97,21 @@ services:
       UPDATE_REPO_MOUNT: ${UPDATE_REPO_MOUNT:-/host/repo}
       UPDATE_SCRIPTS_SUBDIR: ${UPDATE_SCRIPTS_SUBDIR:-scripts}
       UPDATE_MAX_ROLLBACK_VERSIONS: ${UPDATE_MAX_ROLLBACK_VERSIONS:-3}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-enova}:${POSTGRES_PASSWORD:-enova}@postgres:5432/${POSTGRES_DB:-enova}
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-enova}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-enova}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
       BULLMQ_PREFIX: ${BULLMQ_PREFIX:-enova}
       BULLMQ_CONCURRENCY: ${BULLMQ_CONCURRENCY:-3}
       BULLMQ_JOB_ATTEMPTS: ${BULLMQ_JOB_ATTEMPTS:-5}
       BULLMQ_JOB_BACKOFF_MS: ${BULLMQ_JOB_BACKOFF_MS:-5000}
-      CREDENTIAL_MASTER_KEY: ${CREDENTIAL_MASTER_KEY}
+      CREDENTIAL_MASTER_KEY: ${CREDENTIAL_MASTER_KEY:?CREDENTIAL_MASTER_KEY is required}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-text}
-      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-none}
-      S3_REGION: ${S3_REGION:-}
-      S3_BUCKET: ${S3_BUCKET:-}
+      # ---- P0: 客服邮箱 ----
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:?SUPPORT_EMAIL is required}
+      # ---- P0: 存储生产必填 ----
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:?STORAGE_PROVIDER is required (use s3 for production)}
+      S3_REGION: ${S3_REGION:?S3_REGION is required for production}
+      S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required for production}
       S3_PREFIX: ${S3_PREFIX:-agnes-ai}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
@@ -106,11 +130,12 @@ services:
       VIDEO_MAX_POLLS: ${VIDEO_MAX_POLLS:-240}
       VIDEO_MAX_WAIT_MS: ${VIDEO_MAX_WAIT_MS:-1800000}
       WELCOME_CREDITS: ${WELCOME_CREDITS:-100}
-      PAYMENT_MODE: ${PAYMENT_MODE:-sandbox}
+      # ---- P0: 支付生产必填 ----
+      PAYMENT_MODE: ${PAYMENT_MODE:?PAYMENT_MODE is required (use alipay or wechat for production)}
       PAYMENT_CREDITS_PER_CNY: ${PAYMENT_CREDITS_PER_CNY:-100}
       PAYMENT_MIN_RECHARGE_CENTS: ${PAYMENT_MIN_RECHARGE_CENTS:-100}
-      PAYMENT_RETURN_BASE_URL: ${PAYMENT_RETURN_BASE_URL:-http://localhost:3000}
-      PAYMENT_NOTIFY_URL: ${PAYMENT_NOTIFY_URL:-http://localhost:3001/api/v1/payment/notify}
+      PAYMENT_RETURN_BASE_URL: ${PAYMENT_RETURN_BASE_URL:?PAYMENT_RETURN_BASE_URL is required}
+      PAYMENT_NOTIFY_URL: ${PAYMENT_NOTIFY_URL:?PAYMENT_NOTIFY_URL is required}
       ALIPAY_APP_ID: ${ALIPAY_APP_ID:-}
       ALIPAY_PRIVATE_KEY: ${ALIPAY_PRIVATE_KEY:-}
       ALIPAY_PUBLIC_KEY: ${ALIPAY_PUBLIC_KEY:-}
@@ -120,11 +145,35 @@ services:
       WECHAT_API_V3_KEY: ${WECHAT_API_V3_KEY:-}
       WECHAT_SERIAL_NO: ${WECHAT_SERIAL_NO:-}
       WECHAT_PRIVATE_KEY: ${WECHAT_PRIVATE_KEY:-}
+      # ---- P0: 邮件 SMTP 生产必填 ----
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:?SMTP_USER is required}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD is required}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-EnovaMotion}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:?SMTP_FROM_EMAIL is required}
+      # ---- P0: 前端 URL ----
+      APP_PASSWORD_RESET_URL: ${APP_PASSWORD_RESET_URL:?APP_PASSWORD_RESET_URL is required}
+      APP_EMAIL_VERIFY_URL: ${APP_EMAIL_VERIFY_URL:?APP_EMAIL_VERIFY_URL is required}
+      APP_NAME: ${APP_NAME:-EnovaMotion}
+      APP_SITE_URL: ${APP_SITE_URL:?APP_SITE_URL is required}
+      # ---- P0: CORS / 安全 ----
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS is required}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      # ---- P0: 限流 ----
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_PREFIX: ${RATE_LIMIT_PREFIX:-enova:rl}
+      # ---- 可选：Agnes AI 初始导入 ----
+      AGNES_API_KEY: ${AGNES_API_KEY:-}
+      AGNES_BASE_URL: ${AGNES_BASE_URL:-}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - enova-internal
     logging:
       driver: json-file
       options:
@@ -134,21 +183,24 @@ services:
 
   worker:
     image: ghcr.io/jadelike-wine/enova-video-worker:${APP_VERSION}
+    security_opt:
+      - no-new-privileges:true
     environment:
       NODE_ENV: production
       TZ: Asia/Shanghai
-      DATABASE_URL: postgresql://${POSTGRES_USER:-enova}:${POSTGRES_PASSWORD:-enova}@postgres:5432/${POSTGRES_DB:-enova}
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-enova}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-enova}
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379
       BULLMQ_PREFIX: ${BULLMQ_PREFIX:-enova}
       BULLMQ_CONCURRENCY: ${BULLMQ_CONCURRENCY:-3}
       BULLMQ_JOB_ATTEMPTS: ${BULLMQ_JOB_ATTEMPTS:-5}
       BULLMQ_JOB_BACKOFF_MS: ${BULLMQ_JOB_BACKOFF_MS:-5000}
-      CREDENTIAL_MASTER_KEY: ${CREDENTIAL_MASTER_KEY}
+      CREDENTIAL_MASTER_KEY: ${CREDENTIAL_MASTER_KEY:?CREDENTIAL_MASTER_KEY is required}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LOG_FORMAT: ${LOG_FORMAT:-text}
-      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-none}
-      S3_REGION: ${S3_REGION:-}
-      S3_BUCKET: ${S3_BUCKET:-}
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@example.com}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:?STORAGE_PROVIDER is required (use s3 for production)}
+      S3_REGION: ${S3_REGION:?S3_REGION is required for production}
+      S3_BUCKET: ${S3_BUCKET:?S3_BUCKET is required for production}
       S3_PREFIX: ${S3_PREFIX:-agnes-ai}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
@@ -173,6 +225,8 @@ services:
         condition: service_healthy
       api:
         condition: service_healthy
+    networks:
+      - enova-internal
     logging:
       driver: json-file
       options:
@@ -182,13 +236,15 @@ services:
 
   web:
     image: ghcr.io/jadelike-wine/enova-video-web:${APP_VERSION}
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "3000:3000"
+      - "${WEB_BIND_HOST:-0.0.0.0}:${WEB_PORT:-3000}:3000"
     environment:
       # Next rewrite 把 /api/* 代理到 api 服务（运行时读取 BACKEND_URL）
       BACKEND_URL: http://api:3001
       TZ: Asia/Shanghai
-      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?NEXT_PUBLIC_SITE_URL is required}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
       interval: 10s
@@ -198,6 +254,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    networks:
+      - enova-internal
     logging:
       driver: json-file
       options:
@@ -208,3 +266,7 @@ services:
 volumes:
   enova_pgdata:
   enova_redisdata:
+
+networks:
+  enova-internal:
+    driver: bridge

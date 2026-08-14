@@ -147,6 +147,11 @@ export class SettingsStore {
     return this.getRaw(key);
   }
 
+  /** 读取 Secret 的共享接口；解密行为与 getRaw 一致，便于 Provider resolver 复用。 */
+  async getSecret(key: string): Promise<string | null> {
+    return this.getRaw(key);
+  }
+
   /** 写入配置（upsert）。仅允许注册过的 key；敏感项先加密再落库。 */
   async set(key: string, value: string): Promise<void> {
     const def = SETTINGS_BY_KEY.get(key);
@@ -159,6 +164,7 @@ export class SettingsStore {
         key,
         value: stored,
         valueType: def.valueType,
+        defaultValue: def.envDefault ?? '',
         group: def.group,
         isSecret: def.isSecret ?? false,
       })
@@ -198,7 +204,7 @@ export class SettingsStore {
 
       // 首次写入：version=1
       if (!current) {
-        await tx.insert(settings).values({ key, value: stored, valueType: def.valueType, group: def.group, isSecret: def.isSecret ?? false, version: 1 });
+        await tx.insert(settings).values({ key, value: stored, valueType: def.valueType, defaultValue: def.envDefault ?? '', group: def.group, isSecret: def.isSecret ?? false, version: 1 });
         await this.insertHistoryWithTx(tx, key, 1, null, stored, opts);
         return { version: 1 };
       }
@@ -404,6 +410,7 @@ export class SettingsStore {
             key: def.key,
             value: stored,
             valueType: def.valueType,
+            defaultValue: def.envDefault ?? '',
             group: def.group,
             isSecret: def.isSecret ?? false,
             version: 1,
@@ -455,7 +462,7 @@ export class SettingsStore {
         const current = rows[0];
 
         if (!current) {
-          await tx.insert(settings).values({ key, value: stored, valueType: def.valueType, group: def.group, isSecret: def.isSecret ?? false, version: 1 });
+          await tx.insert(settings).values({ key, value: stored, valueType: def.valueType, defaultValue: def.envDefault ?? '', group: def.group, isSecret: def.isSecret ?? false, version: 1 });
           await this.insertHistoryWithTx(tx, key, 1, null, stored, opts);
           results.push({ key, version: 1 });
           continue;

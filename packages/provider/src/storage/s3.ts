@@ -18,7 +18,7 @@ export interface S3StorageConfig {
   prefix?: string;
   publicBaseUrl?: string;
   endpointUrl?: string;
-  credentials?: { accessKeyId: string; secretAccessKey: string };
+  credentials?: { accessKeyId: string; secretAccessKey: string; sessionToken?: string };
   /** 下载上游结果时的 SSRF/大小/超时限制。 */
   download: {
     guard: UrlGuardOptions;
@@ -53,7 +53,7 @@ function randomHex(): string {
 }
 
 export class S3ObjectStorage implements ObjectStorage {
-  readonly provider = 's3';
+  readonly provider = 'aws_s3';
   private readonly client: S3Client;
 
   constructor(private readonly cfg: S3StorageConfig) {

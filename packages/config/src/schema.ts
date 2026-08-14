@@ -135,19 +135,42 @@ export const envSchema = z.object({
   /** 指数退避基础延迟（毫秒）。 */
   BULLMQ_JOB_BACKOFF_MS: z.coerce.number().int().positive().default(5_000),
 
-  // 日志
-  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  // 日志（运行时设置，进程启动时仅作为 legacy fallback）
+  LOG_LEVEL: z.preprocess(
+    (value) => {
+      const normalized = String(value ?? '').trim().toUpperCase();
+      const aliases: Record<string, string> = {
+        DEBUG: 'debug',
+        INFO: 'info',
+        WARNING: 'warn',
+        WARN: 'warn',
+        ERROR: 'error',
+        CRITICAL: 'fatal',
+        FATAL: 'fatal',
+      };
+      return aliases[normalized] ?? value;
+    },
+    z.enum(['debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  ),
   LOG_FORMAT: z.enum(['text', 'json']).default('text'),
+  LOG_PROMPTS: envBool(false),
+  ACCESS_LOG: envBool(true),
 
-  // 对象存储（默认 none）
-  STORAGE_PROVIDER: z.enum(['none', 's3']).default('none'),
-  S3_REGION: z.string().optional().default(''),
-  S3_BUCKET: z.string().optional().default(''),
-  S3_PREFIX: z.string().optional().default('enova'),
-  S3_PUBLIC_BASE_URL: z.string().optional().default(''),
-  S3_ENDPOINT_URL: z.string().optional().default(''),
-  S3_ACCESS_KEY: z.string().optional().default(''),
-  S3_SECRET_KEY: z.string().optional().default(''),
+  // 对象存储（默认 AWS S3；详细配置由 System Settings 管理）
+  STORAGE_PROVIDER: z.enum(['aws_s3', 'qiniu', 'none']).default('aws_s3'),
+  AWS_REGION: z.string().optional().default('ap-southeast-1'),
+  AWS_S3_BUCKET: z.string().optional().default(''),
+  AWS_S3_PREFIX: z.string().optional().default('agnes-ai'),
+  AWS_S3_PUBLIC_BASE_URL: z.string().optional().default(''),
+  AWS_S3_ENDPOINT_URL: z.string().optional().default(''),
+  AWS_ACCESS_KEY_ID: z.string().optional().default(''),
+  AWS_SECRET_ACCESS_KEY: z.string().optional().default(''),
+  AWS_SESSION_TOKEN: z.string().optional().default(''),
+  QINIU_ACCESS_KEY: z.string().optional().default(''),
+  QINIU_SECRET_KEY: z.string().optional().default(''),
+  QINIU_BUCKET: z.string().optional().default(''),
+  QINIU_DOMAIN: z.string().optional().default(''),
+  QINIU_REGION: z.string().optional().default('z0'),
 
   // ---- Provider 流水线 ----
   /** 最大下载生成的资源字节数（防恶意超大文件）。 */
@@ -221,6 +244,30 @@ const DEV_DEFAULTS = new Set(['dev-master-key-not-for-production']);
 export type ServiceType = 'api' | 'worker';
 
 /**
+ * 将旧版本使用的 S3_* 配置转换为 canonical AWS_S3_* 配置。
+ * 仅在 canonical 值缺失时生效，保证显式的新配置优先。
+ */
+function normalizeLegacyRuntimeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const normalized = { ...env };
+  const aliases: Record<string, string> = {
+    AWS_REGION: 'S3_REGION',
+    AWS_S3_BUCKET: 'S3_BUCKET',
+    AWS_S3_PREFIX: 'S3_PREFIX',
+    AWS_S3_PUBLIC_BASE_URL: 'S3_PUBLIC_BASE_URL',
+    AWS_S3_ENDPOINT_URL: 'S3_ENDPOINT_URL',
+    AWS_ACCESS_KEY_ID: 'S3_ACCESS_KEY',
+    AWS_SECRET_ACCESS_KEY: 'S3_SECRET_KEY',
+  };
+  for (const [canonical, legacy] of Object.entries(aliases)) {
+    if (!normalized[canonical] && normalized[legacy]) normalized[canonical] = normalized[legacy];
+  }
+  if (normalized.STORAGE_PROVIDER?.toLowerCase() === 's3') {
+    normalized.STORAGE_PROVIDER = 'aws_s3';
+  }
+  return normalized;
+}
+
+/**
  * 加载并校验环境变量。
  *
  * @param env - 环境变量对象（默认 process.env）
@@ -235,7 +282,8 @@ export function loadEnv(
   opts: { service?: ServiceType } = {},
 ): Env {
   const service = opts.service ?? 'api';
-  const parsed = envSchema.safeParse(env);
+  const normalizedEnv = normalizeLegacyRuntimeEnv(env);
+  const parsed = envSchema.safeParse(normalizedEnv);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `${i.path.join('.')}: ${i.message}`)
@@ -250,16 +298,8 @@ export function loadEnv(
     if (leaked.length > 0) {
       throw new Error(`Production requires real secrets, found dev defaults for: ${leaked.join(', ')}`);
     }
-    // P0: 生产环境禁止使用 none 存储模式（API 和 Worker 都需要 S3）
-    if (data.STORAGE_PROVIDER === 'none') {
-      throw new Error('Production must not use STORAGE_PROVIDER=none. Set STORAGE_PROVIDER=s3 with valid bucket credentials.');
-    }
-    // P0: 生产环境 S3 必须配置 region 和 bucket
-    if (data.STORAGE_PROVIDER === 's3') {
-      if (!data.S3_REGION || !data.S3_BUCKET) {
-        throw new Error('Production with STORAGE_PROVIDER=s3 requires S3_REGION and S3_BUCKET.');
-      }
-    }
+    // 对象存储已迁移到 System Settings。生产进程必须允许在数据库配置完成前启动，
+    // 运行时由 SettingsService / WorkerSettings 校验并在未配置时降级为 none。
     // P0: 数据库和 Redis 不允许默认弱密码
     if (data.DATABASE_URL.includes('enova:enova@')) {
       throw new Error('Production must not use default database credentials (enova:enova).');
@@ -267,57 +307,82 @@ export function loadEnv(
 
     // ---- API 专属校验 ----
     if (service === 'api') {
-      // P0: 生产环境禁止使用 sandbox 支付模式
-      if (data.PAYMENT_MODE === 'sandbox') {
-        throw new Error('Production must not use PAYMENT_MODE=sandbox. Set PAYMENT_MODE=alipay or PAYMENT_MODE=wechat.');
-      }
-      // P0: 生产环境禁止使用 localhost 支付回调
-      if (data.PAYMENT_RETURN_BASE_URL.includes('localhost') || data.PAYMENT_NOTIFY_URL.includes('localhost')) {
-        throw new Error('Production must not use localhost in PAYMENT_RETURN_BASE_URL or PAYMENT_NOTIFY_URL.');
-      }
-      // P0: 支付回调 URL 必须使用 HTTPS
-      if (!data.PAYMENT_RETURN_BASE_URL.startsWith('https://')) {
-        throw new Error('Production requires PAYMENT_RETURN_BASE_URL to use HTTPS.');
-      }
-      if (!data.PAYMENT_NOTIFY_URL.startsWith('https://')) {
-        throw new Error('Production requires PAYMENT_NOTIFY_URL to use HTTPS.');
-      }
-      // P0: 支付渠道凭证必须完整
-      if (data.PAYMENT_MODE === 'alipay') {
-        if (!data.ALIPAY_APP_ID || !data.ALIPAY_PRIVATE_KEY || !data.ALIPAY_PUBLIC_KEY) {
-          throw new Error('Production with PAYMENT_MODE=alipay requires ALIPAY_APP_ID, ALIPAY_PRIVATE_KEY, and ALIPAY_PUBLIC_KEY.');
+      const hasEnvValue = (key: string): boolean => {
+        const value = normalizedEnv[key];
+        return value !== undefined && value.trim() !== '';
+      };
+      const paymentEnvConfigured = [
+        'PAYMENT_MODE',
+        'PAYMENT_RETURN_BASE_URL',
+        'PAYMENT_NOTIFY_URL',
+        'ALIPAY_APP_ID',
+        'ALIPAY_PRIVATE_KEY',
+        'ALIPAY_PUBLIC_KEY',
+        'WECHAT_APP_ID',
+        'WECHAT_MCH_ID',
+        'WECHAT_API_V3_KEY',
+        'WECHAT_SERIAL_NO',
+        'WECHAT_PRIVATE_KEY',
+      ].some(hasEnvValue);
+      if (paymentEnvConfigured) {
+        // 旧部署显式提供支付环境变量时继续执行原有启动校验；新部署由 DB 设置接管。
+        if (data.PAYMENT_MODE === 'sandbox') {
+          throw new Error('Production must not use PAYMENT_MODE=sandbox. Set PAYMENT_MODE=alipay or PAYMENT_MODE=wechat.');
+        }
+        if (data.PAYMENT_RETURN_BASE_URL.includes('localhost') || data.PAYMENT_NOTIFY_URL.includes('localhost')) {
+          throw new Error('Production must not use localhost in PAYMENT_RETURN_BASE_URL or PAYMENT_NOTIFY_URL.');
+        }
+        if (!data.PAYMENT_RETURN_BASE_URL.startsWith('https://')) {
+          throw new Error('Production requires PAYMENT_RETURN_BASE_URL to use HTTPS.');
+        }
+        if (!data.PAYMENT_NOTIFY_URL.startsWith('https://')) {
+          throw new Error('Production requires PAYMENT_NOTIFY_URL to use HTTPS.');
+        }
+        if (data.PAYMENT_MODE === 'alipay') {
+          if (!data.ALIPAY_APP_ID || !data.ALIPAY_PRIVATE_KEY || !data.ALIPAY_PUBLIC_KEY) {
+            throw new Error('Production with PAYMENT_MODE=alipay requires ALIPAY_APP_ID, ALIPAY_PRIVATE_KEY, and ALIPAY_PUBLIC_KEY.');
+          }
+        }
+        if (data.PAYMENT_MODE === 'wechat') {
+          if (!data.WECHAT_APP_ID || !data.WECHAT_MCH_ID || !data.WECHAT_API_V3_KEY || !data.WECHAT_PRIVATE_KEY) {
+            throw new Error('Production with PAYMENT_MODE=wechat requires WECHAT_APP_ID, WECHAT_MCH_ID, WECHAT_API_V3_KEY, and WECHAT_PRIVATE_KEY.');
+          }
         }
       }
-      if (data.PAYMENT_MODE === 'wechat') {
-        if (!data.WECHAT_APP_ID || !data.WECHAT_MCH_ID || !data.WECHAT_API_V3_KEY || !data.WECHAT_PRIVATE_KEY) {
-          throw new Error('Production with PAYMENT_MODE=wechat requires WECHAT_APP_ID, WECHAT_MCH_ID, WECHAT_API_V3_KEY, and WECHAT_PRIVATE_KEY.');
+      const smtpEnvConfigured = [
+        'SMTP_HOST',
+        'SMTP_USER',
+        'SMTP_PASSWORD',
+        'SMTP_FROM_EMAIL',
+        'APP_PASSWORD_RESET_URL',
+        'APP_EMAIL_VERIFY_URL',
+      ].some(hasEnvValue);
+      if (smtpEnvConfigured) {
+        // 旧部署显式提供 SMTP 时保留兼容校验；新部署可先启动，再由后台配置邮件。
+        if (!data.SMTP_HOST || !data.SMTP_USER || !data.SMTP_PASSWORD || !data.SMTP_FROM_EMAIL) {
+          throw new Error('Production requires SMTP_HOST, SMTP_USER, SMTP_PASSWORD, and SMTP_FROM_EMAIL for email delivery.');
         }
-      }
-      // P0: 生产环境必须配置 SMTP 邮件
-      if (!data.SMTP_HOST || !data.SMTP_USER || !data.SMTP_PASSWORD || !data.SMTP_FROM_EMAIL) {
-        throw new Error('Production requires SMTP_HOST, SMTP_USER, SMTP_PASSWORD, and SMTP_FROM_EMAIL for email delivery.');
+        if (!data.APP_PASSWORD_RESET_URL.startsWith('https://')) {
+          throw new Error('Production requires APP_PASSWORD_RESET_URL to use HTTPS.');
+        }
+        if (!data.APP_EMAIL_VERIFY_URL.startsWith('https://')) {
+          throw new Error('Production requires APP_EMAIL_VERIFY_URL to use HTTPS.');
+        }
       }
       // P0: CORS 必须配置非空合法来源
       if (!data.CORS_ALLOWED_ORIGINS || !data.CORS_ALLOWED_ORIGINS.includes('://')) {
         throw new Error('Production requires CORS_ALLOWED_ORIGINS with valid origin(s) (e.g. https://app.example.com).');
       }
       // P0: 站点 URL 必须使用 HTTPS
-      if (!data.APP_SITE_URL.startsWith('https://')) {
+      if (hasEnvValue('APP_SITE_URL') && !data.APP_SITE_URL.startsWith('https://')) {
         throw new Error('Production requires APP_SITE_URL to use HTTPS.');
-      }
-      // P0: 密码重置和邮箱验证 URL 必须使用 HTTPS
-      if (!data.APP_PASSWORD_RESET_URL.startsWith('https://')) {
-        throw new Error('Production requires APP_PASSWORD_RESET_URL to use HTTPS.');
-      }
-      if (!data.APP_EMAIL_VERIFY_URL.startsWith('https://')) {
-        throw new Error('Production requires APP_EMAIL_VERIFY_URL to use HTTPS.');
       }
       // P0: CORS 必须使用 HTTPS origin
       if (!data.CORS_ALLOWED_ORIGINS.includes('https://')) {
         throw new Error('Production requires CORS_ALLOWED_ORIGINS to use HTTPS origin(s).');
       }
-      // P0: 客服邮箱必须配置
-      if (!data.SUPPORT_EMAIL || data.SUPPORT_EMAIL === 'support@example.com') {
+      // 旧部署显式提供客服邮箱时保留校验；新部署可由 System Settings 配置。
+      if (hasEnvValue('SUPPORT_EMAIL') && (!data.SUPPORT_EMAIL || data.SUPPORT_EMAIL === 'support@example.com')) {
         throw new Error('Production requires SUPPORT_EMAIL to be set to a real support email address.');
       }
       // P0: Redis 必须有认证（不允许无密码连接）

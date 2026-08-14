@@ -11,5 +11,7 @@ export * from './agnes/agnes.mapper.js';
 export * from './storage/factory.js';
 export * from './storage/s3.js';
 export * from './storage/none.js';
+export * from './storage/qiniu.js';
+export * from './storage/config.js';
 export * from './storage/downloader.js';
 export * from './credential-manager/redis-credential-manager.js';

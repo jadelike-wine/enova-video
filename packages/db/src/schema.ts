@@ -698,6 +698,8 @@ export const settings = pgTable('settings', {
   value: text('value').notNull().default(''),
   /** 解析类型：string / number / boolean / enum。 */
   valueType: varchar('value_type', { length: 20 }).notNull().default('string'),
+  /** 注册表提供的稳定默认值，便于后续扩展设置 Provider/迁移展示。 */
+  defaultValue: text('default_value').notNull().default(''),
   /** 分组，用于后台界面分类展示。 */
   group: varchar('group', { length: 80 }).notNull().default('general'),
   /** 是否敏感（如密钥）；返回后台时脱敏。 */

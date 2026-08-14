@@ -484,14 +484,16 @@ describe('SettingsStore', () => {
       expect(mode.groupKeys).toContain('payment.alipayAppId');
     });
 
-    it('includes all storage S3 settings', async () => {
+    it('includes all canonical AWS and Qiniu storage settings', async () => {
       const { db } = createDb();
       const store = new SettingsStore(db, {});
       const list = await store.list();
       const keys = list.map((s) => s.key);
       expect(keys).toContain('storage.provider');
-      expect(keys).toContain('storage.s3Region');
-      expect(keys).toContain('storage.s3AccessKey');
+      expect(keys).toContain('storage.awsRegion');
+      expect(keys).toContain('storage.awsAccessKeyId');
+      expect(keys).toContain('storage.qiniuAccessKey');
+      expect(list.find((s) => s.key === 'storage.provider')?.value).toBe('aws_s3');
     });
 
     it('includes wechatPlatformCert setting', async () => {

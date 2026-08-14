@@ -29,6 +29,6 @@ import { ENV, type Env } from '../../config/config.module.js';
     },
     RateLimitGuard,
   ],
-  exports: [RateLimitGuard],
+  exports: [RateLimitGuard, RATE_LIMIT_REDIS],
 })
 export class RateLimitModule {}

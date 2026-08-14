@@ -61,6 +61,6 @@ import type { EmailSender } from '../common/services/email-sender.interface.js';
       },
     },
   ],
-  exports: [AuthService, PasswordService, SessionService, TurnstileService],
+  exports: [AuthService, PasswordService, SessionService, TurnstileService, 'EMAIL_SENDER'],
 })
 export class AuthModule {}

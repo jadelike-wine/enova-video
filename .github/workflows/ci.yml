@@ -27,7 +27,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       # 全新 checkout 后 @enova/contracts 等 workspace 包尚未构建（dist 不存在），
       # 需先构建 packages 供 typecheck / test 解析类型与源码引用。
-      # 注意：不能跑全量 pnpm build（apps/web 需要 NEXT_PUBLIC_SITE_URL，CI 未设置会失败）；
+      # 注意：不能跑全量 pnpm build（apps/web 需要 BACKEND_URL 等，CI 未设置会失败）；
       # 这里只构建纯 TS packages，typecheck/test 针对所有 workspace 全量执行。
       - name: Build packages
         run: pnpm -r --filter './packages/*' build

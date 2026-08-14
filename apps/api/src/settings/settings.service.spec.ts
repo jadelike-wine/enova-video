@@ -47,6 +47,10 @@ const env: Record<string, unknown> = {
   WELCOME_CREDITS: 200,
   PAYMENT_CREDITS_PER_CNY: 100,
   PAYMENT_MIN_RECHARGE_CENTS: 50,
+  STORAGE_PROVIDER: 'aws_s3',
+  AWS_REGION: 'ap-southeast-1',
+  AWS_S3_BUCKET: 'env-bucket',
+  AWS_S3_PREFIX: 'env-prefix',
 };
 
 describe('SettingsService', () => {
@@ -79,5 +83,17 @@ describe('SettingsService', () => {
     const welcome = list.find((s) => s.key === 'billing.welcomeCredits')!;
     expect(welcome.value).toBe('200');
     expect(welcome.persisted).toBe(false);
+  });
+
+  it('exposes canonical storage resolution through the shared settings service', async () => {
+    const { db } = createDb();
+    const svc = new SettingsService(db as any, env as any);
+    await expect(svc.getStorageConfig()).resolves.toMatchObject({
+      provider: 'aws_s3',
+      region: 'ap-southeast-1',
+      bucket: 'env-bucket',
+      prefix: 'env-prefix',
+      configured: true,
+    });
   });
 });

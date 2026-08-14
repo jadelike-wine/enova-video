@@ -37,6 +37,12 @@ class LegalDocumentDto extends PublicLoginAgreementDocumentDto {
 class PublicSiteConfigDto {
   @ApiProperty({ example: 'https://example.com' })
   siteUrl!: string;
+
+  @ApiProperty({ example: 'support@example.com' })
+  supportEmail!: string;
+
+  @ApiProperty({ example: 'EnovaMotion' })
+  appName!: string;
 }
 
 @ApiTags('public')
@@ -63,9 +69,11 @@ export class PublicLoginAgreementController {
   }
 
   @Get('site-config')
-  @ApiOperation({ summary: '返回公开站点配置（站点 URL，无需登录）' })
+  @ApiOperation({ summary: '返回公开站点配置（站点 URL、客服邮箱和应用名称，无需登录）' })
   async getSiteConfig(): Promise<PublicSiteConfigDto> {
     const siteUrl = (await this.settings.getString('general.siteUrl'))?.trim() || 'http://localhost:3000';
-    return { siteUrl };
+    const supportEmail = (await this.settings.getString('general.supportEmail'))?.trim() || 'support@example.com';
+    const appName = (await this.settings.getString('general.appName'))?.trim() || 'EnovaMotion';
+    return { siteUrl, supportEmail, appName };
   }
 }

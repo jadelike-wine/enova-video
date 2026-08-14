@@ -7,8 +7,7 @@ import { PermissionGuard } from '../common/guards/permission.guard.js';
 import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
 import { AdminAuditService } from './admin.audit.service.js';
-import type { EmailSender } from '../common/services/email-sender.interface.js';
-import { SmtpEmailSender } from '../common/services/smtp-email.sender.js';
+import { RuntimeEmailSender } from '../common/services/runtime-email.sender.js';
 import { IsEmail, IsOptional, IsString } from 'class-validator';
 
 class TestEmailDto {
@@ -31,7 +30,7 @@ class TestEmailDto {
 @UseGuards(AuthGuard, PermissionGuard)
 export class EmailAdminController {
   constructor(
-    @Inject('EMAIL_SENDER') private readonly emailSender: EmailSender,
+    @Inject('EMAIL_SENDER') private readonly emailSender: RuntimeEmailSender,
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
   ) {}
 
@@ -43,10 +42,10 @@ export class EmailAdminController {
     @Req() req: FastifyRequest,
     @Body() dto: TestEmailDto,
   ): Promise<{ ok: true; message: string }> {
-    if (!(this.emailSender instanceof SmtpEmailSender)) {
+    if (!(await this.emailSender.isSmtpConfigured())) {
       throw domainError(
         ERROR_CODES.EMAIL_NOT_CONFIGURED,
-        'SMTP email sender is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_FROM_EMAIL in production.',
+        'SMTP email sender is not configured. Configure it in Admin Settings or provide the legacy environment fallback.',
         400,
       );
     }
@@ -74,11 +73,11 @@ export class EmailAdminController {
   @Post('check')
   @RequirePermission(PERMISSIONS.EMAIL_TEST)
   @ApiOperation({ summary: '检查邮件配置状态' })
-  checkConfig(): { configured: boolean; sender: string } {
-    const isSmtp = this.emailSender instanceof SmtpEmailSender;
+  async checkConfig(): Promise<{ configured: boolean; sender: string }> {
+    const configured = await this.emailSender.isSmtpConfigured();
     return {
-      configured: isSmtp,
-      sender: this.emailSender.constructor.name,
+      configured,
+      sender: configured ? 'SmtpEmailSender' : 'DisabledEmailSender',
     };
   }
 }

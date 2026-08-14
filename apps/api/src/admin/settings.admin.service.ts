@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { domainError, ERROR_CODES } from '@enova/contracts';
 import { isRegisteredSetting, SETTINGS_BY_KEY } from '@enova/db';
+import { createObjectStorage, validateFetchableUrl } from '@enova/provider';
 import { SettingsService, type SettingValueView } from '../settings/settings.service.js';
 import { LoginAgreementValidationError, parseLoginAgreementDocuments } from '../settings/login-agreement.js';
 
@@ -30,6 +31,72 @@ export class SettingsAdminService {
     return views.map((v) => (v.isSecret ? { ...v, value: v.value ? maskSecret(v.value) : '' } : v));
   }
 
+  /** 上传、检查并删除一个短生命周期测试对象，验证桶/空间与访问权限。 */
+  async testStorage(): Promise<{
+    provider: string;
+    bucket: string;
+    key: string;
+    exists: boolean;
+    publicUrl: string;
+    publicUrlAccessible: boolean;
+  }> {
+    const config = await this.settings.getStorageConfig();
+    if (config.provider === 'none' || !config.configured) {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, '请配置对象存储', 400);
+    }
+
+    const storage = createObjectStorage(
+      config.provider === 'aws_s3'
+        ? {
+            kind: 'aws_s3',
+            s3: {
+              region: config.region,
+              bucket: config.bucket,
+              prefix: config.prefix,
+              publicBaseUrl: config.publicBaseUrl,
+              endpointUrl: config.endpointUrl,
+              credentials: config.credentials,
+              download: { guard: { allowHttp: false, resolveDns: true, devAllowlist: [] }, maxBytes: 1024, timeoutMs: 5000 },
+              allowedContentTypePrefixes: ['text/'],
+            },
+          }
+        : {
+            kind: 'qiniu',
+            qiniu: {
+              accessKey: config.qiniu.accessKey,
+              secretKey: config.qiniu.secretKey,
+              bucket: config.qiniu.bucket,
+              domain: config.qiniu.domain,
+              region: config.qiniu.region,
+              prefix: config.prefix,
+              download: { guard: { allowHttp: false, resolveDns: true, devAllowlist: [] }, maxBytes: 1024, timeoutMs: 5000 },
+              allowedContentTypePrefixes: ['text/'],
+            },
+          },
+    );
+    const stored = await storage.uploadBytes(Buffer.from('enova-storage-test\n'), {
+      mediaType: 'document',
+      ext: 'txt',
+      contentType: 'text/plain',
+    });
+    if (!stored) throw domainError(ERROR_CODES.VALIDATION_ERROR, '对象存储未完成上传', 400);
+
+    try {
+      const exists = await storage.objectExists(stored.key);
+      const publicUrl = stored.url ?? await storage.getDisplayUrl(stored.key);
+      let publicUrlAccessible = false;
+      if (publicUrl) {
+        await validateFetchableUrl(publicUrl, { allowHttp: false, resolveDns: true, devAllowlist: [] });
+        const response = await fetch(publicUrl, { method: 'GET', signal: AbortSignal.timeout(5000) });
+        publicUrlAccessible = response.ok;
+        await response.body?.cancel();
+      }
+      return { provider: stored.provider, bucket: config.provider === 'aws_s3' ? config.bucket : config.qiniu.bucket, key: stored.key, exists, publicUrl, publicUrlAccessible };
+    } finally {
+      await storage.deleteObject(stored.key);
+    }
+  }
+
   /** 更新单个配置（CAS + history + 失效广播）。 */
   async update(
     key: string,
@@ -40,6 +107,7 @@ export class SettingsAdminService {
       throw domainError(ERROR_CODES.VALIDATION_ERROR, `Unknown setting key: ${key}`, 400);
     }
     const def = SETTINGS_BY_KEY.get(key)!;
+    value = this.normalizeValue(key, value);
 
     // Secret 留空 = 保持不变（不允许用空字符串覆盖已有 Secret）。
     if (def.isSecret && value === '') {
@@ -84,8 +152,10 @@ export class SettingsAdminService {
     items: Array<{ key: string; value: string }>,
     opts: { updatedBy?: string; requestId?: string; reason?: string } = {},
   ): Promise<SettingValueView[]> {
+    const normalizedItems = items.map(({ key, value }) => ({ key, value: this.normalizeValue(key, value) }));
+
     // 校验所有 key 已注册。
-    for (const { key, value } of items) {
+    for (const { key, value } of normalizedItems) {
       if (!isRegisteredSetting(key)) {
         throw domainError(ERROR_CODES.VALIDATION_ERROR, `Unknown setting key: ${key}`, 400);
       }
@@ -93,9 +163,9 @@ export class SettingsAdminService {
       this.validateProductionSetting(key, value);
     }
 
-    await this.validateLoginAgreementGroup(items);
+    await this.validateLoginAgreementGroup(normalizedItems);
 
-    await this.settings.updateGroup(items, opts);
+    await this.settings.updateGroup(normalizedItems, opts);
 
     // 返回更新后的全部配置（脱敏）。
     return this.list();
@@ -156,15 +226,6 @@ export class SettingsAdminService {
       );
     }
 
-    // 禁止将存储改为 none
-    if (key === 'storage.provider' && value === 'none') {
-      throw domainError(
-        ERROR_CODES.VALIDATION_ERROR,
-        'Cannot set storage.provider to none in production. Use s3.',
-        400,
-      );
-    }
-
     // 禁止将支付回调地址改为 HTTP 或 localhost
     if (key === 'payment.returnBaseUrl' || key === 'payment.notifyUrl') {
       if (value.includes('localhost') || !value.startsWith('https://')) {
@@ -203,6 +264,26 @@ export class SettingsAdminService {
           400,
         );
       }
+    }
+
+    // 邮件链接必须指向生产站点，避免发送不可用或不安全的验证链接。
+    if (key === 'email.passwordResetUrl' || key === 'email.emailVerifyUrl') {
+      if (value.includes('localhost') || !value.startsWith('https://')) {
+        throw domainError(
+          ERROR_CODES.VALIDATION_ERROR,
+          `Production requires ${key} to use HTTPS and not contain localhost.`,
+          400,
+        );
+      }
+    }
+
+    // 客服邮箱是公开信息，生产环境不允许继续使用示例地址。
+    if (key === 'general.supportEmail' && (!value || value === 'support@example.com')) {
+      throw domainError(
+        ERROR_CODES.VALIDATION_ERROR,
+        'Production requires general.supportEmail to be set to a real support email address.',
+        400,
+      );
     }
   }
 
@@ -246,6 +327,20 @@ export class SettingsAdminService {
 
   private parseBoolean(value: string | null | undefined): boolean {
     return ['1', 'true', 'yes', 'on'].includes((value ?? '').toLowerCase());
+  }
+
+  private normalizeValue(key: string, value: string): string {
+    if (key !== 'log.level') return value;
+    const aliases: Record<string, string> = {
+      DEBUG: 'debug',
+      INFO: 'info',
+      WARNING: 'warn',
+      WARN: 'warn',
+      ERROR: 'error',
+      CRITICAL: 'fatal',
+      FATAL: 'fatal',
+    };
+    return aliases[value.trim().toUpperCase()] ?? value;
   }
 
   private parseLoginAgreementDocuments(raw: string | null | undefined) {

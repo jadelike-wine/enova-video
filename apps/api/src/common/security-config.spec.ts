@@ -14,9 +14,9 @@ const sharedProdEnv = {
   CREDENTIAL_MASTER_KEY: 'real-32-byte-key-for-production-use-only',
   DATABASE_URL: 'postgresql://enova:realpass@db:5432/enova',
   REDIS_URL: 'redis://:realpass@redis:6379',
-  STORAGE_PROVIDER: 's3' as const,
-  S3_REGION: 'ap-southeast-1',
-  S3_BUCKET: 'my-bucket',
+  STORAGE_PROVIDER: 'aws_s3' as const,
+  AWS_REGION: 'ap-southeast-1',
+  AWS_S3_BUCKET: 'my-bucket',
   SUPPORT_EMAIL: 'support@enova-motion.com',
   APP_PASSWORD_RESET_URL: 'https://app.example.com/auth/reset-password',
   APP_EMAIL_VERIFY_URL: 'https://app.example.com/auth/verify-email',
@@ -73,7 +73,7 @@ describe('P0-2: Production Security Configuration', () => {
       const env = loadEnv(apiProdEnv, { service: 'api' });
       expect(env.NODE_ENV).toBe('production');
       expect(env.PAYMENT_MODE).toBe('alipay');
-      expect(env.STORAGE_PROVIDER).toBe('s3');
+      expect(env.STORAGE_PROVIDER).toBe('aws_s3');
     });
 
     it('should reject sandbox payment mode', () => {
@@ -82,10 +82,10 @@ describe('P0-2: Production Security Configuration', () => {
       ).toThrow(/PAYMENT_MODE=sandbox/);
     });
 
-    it('should reject none storage provider', () => {
+    it('should allow storage to be configured later in System Settings', () => {
       expect(() =>
         loadEnv({ ...apiProdEnv, STORAGE_PROVIDER: 'none' }, { service: 'api' }),
-      ).toThrow(/STORAGE_PROVIDER=none/);
+      ).not.toThrow();
     });
 
     it('should reject localhost payment URLs', () => {
@@ -148,7 +148,7 @@ describe('P0-2: Production Security Configuration', () => {
       // Worker only needs: DB, Redis, Master Key, Storage. No SMTP, no payment, no CORS.
       const env = loadEnv(sharedProdEnv, { service: 'worker' });
       expect(env.NODE_ENV).toBe('production');
-      expect(env.STORAGE_PROVIDER).toBe('s3');
+      expect(env.STORAGE_PROVIDER).toBe('aws_s3');
     });
 
     it('should NOT reject missing SMTP for worker', () => {
@@ -170,16 +170,16 @@ describe('P0-2: Production Security Configuration', () => {
       ).toThrow(/dev defaults/);
     });
 
-    it('should reject none storage for worker', () => {
+    it('should allow none storage for worker before System Settings is configured', () => {
       expect(() =>
         loadEnv({ ...sharedProdEnv, STORAGE_PROVIDER: 'none' }, { service: 'worker' }),
-      ).toThrow(/STORAGE_PROVIDER=none/);
+      ).not.toThrow();
     });
 
-    it('should reject missing S3 region/bucket for worker', () => {
+    it('should allow missing storage settings for worker bootstrap', () => {
       expect(() =>
-        loadEnv({ ...sharedProdEnv, S3_REGION: '' }, { service: 'worker' }),
-      ).toThrow(/S3_REGION/);
+        loadEnv({ ...sharedProdEnv, AWS_REGION: '', AWS_S3_BUCKET: '' }, { service: 'worker' }),
+      ).not.toThrow();
     });
 
     it('should reject default database credentials for worker', () => {

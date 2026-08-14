@@ -13,9 +13,9 @@
  *   @UseGuards(RateLimitGuard)
  *   @RateLimit({ key: 'login', limit: 10, windowSec: 60, by: 'ip' })
  *
- * Configuration via environment:
- *   RATE_LIMIT_ENABLED=false  → guard is bypassed (all requests allowed)
- *   RATE_LIMIT_PREFIX=xxx     → Redis key prefix (default: enova:rl)
+ * Configuration via System Settings (legacy environment fallback):
+ *   security.rateLimitEnabled=false → guard is bypassed (all requests allowed)
+ *   security.rateLimitPrefix=xxx    → Redis key prefix (default: enova:rl)
  *
  * Redis failure behavior:
  *   - Production: fail-closed (reject request with 503 to protect the system)
@@ -35,6 +35,7 @@ import type { FastifyRequest } from 'fastify';
 import IORedis from 'ioredis';
 import { domainError, ERROR_CODES } from '@enova/contracts';
 import { ENV, type Env } from '../../config/config.module.js';
+import { SettingsService } from '../../settings/settings.service.js';
 
 /** Rate limit configuration metadata. */
 export interface RateLimitConfig {
@@ -65,20 +66,22 @@ export class RateLimitGuard implements CanActivate {
     private readonly reflector: Reflector,
     @Inject(RATE_LIMIT_REDIS) private readonly redis: IORedis,
     @Inject(ENV) private readonly env: Env,
+    @Inject(SettingsService) private readonly settings: SettingsService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // If rate limiting is globally disabled, skip entirely.
-    if (!this.env.RATE_LIMIT_ENABLED) return true;
-
     const config = this.reflector.get<RateLimitConfig>(RATE_LIMIT_KEY, context.getHandler());
     if (!config) return true; // No rate limit configured → allow
+
+    // API 侧每次读取 DB，确保管理员修改后下一个请求立即生效；DB 不可用时回退 legacy env。
+    const { enabled, prefix } = await this.getRuntimeConfig();
+    if (!enabled) return true;
 
     const request = context.switchToHttp().getRequest<FastifyRequest>();
     const identifier = this.extractIdentifier(request, config);
     if (!identifier) return true; // Cannot extract identifier → allow
 
-    const redisKey = this.buildKey(config, identifier);
+    const redisKey = this.buildKey(prefix, config, identifier);
 
     let allowed: boolean;
     try {
@@ -146,8 +149,23 @@ export class RateLimitGuard implements CanActivate {
   }
 
   /** Build Redis key using the configured prefix. */
-  private buildKey(config: RateLimitConfig, identifier: string): string {
-    return `${this.env.RATE_LIMIT_PREFIX}:${config.key}:${identifier}`;
+  private buildKey(prefix: string, config: RateLimitConfig, identifier: string): string {
+    return `${prefix}:${config.key}:${identifier}`;
+  }
+
+  private async getRuntimeConfig(): Promise<{ enabled: boolean; prefix: string }> {
+    try {
+      const [enabled, prefix] = await Promise.all([
+        this.settings.getBoolean('security.rateLimitEnabled'),
+        this.settings.getString('security.rateLimitPrefix'),
+      ]);
+      return {
+        enabled: enabled ?? this.env.RATE_LIMIT_ENABLED,
+        prefix: prefix?.trim() || this.env.RATE_LIMIT_PREFIX,
+      };
+    } catch {
+      return { enabled: this.env.RATE_LIMIT_ENABLED, prefix: this.env.RATE_LIMIT_PREFIX };
+    }
   }
 
   /**

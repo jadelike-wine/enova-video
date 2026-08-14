@@ -13,6 +13,7 @@ import { SettingsModule } from './settings/settings.module.js';
 import { SetupModule } from './setup/setup.module.js';
 import { RequestIdMiddleware } from './common/request-id/request-id.middleware.js';
 import { RateLimitModule } from './common/guards/rate-limit.module.js';
+import { AccessLogMiddleware } from './common/access-log/access-log.middleware.js';
 
 @Module({
   imports: [
@@ -30,9 +31,10 @@ import { RateLimitModule } from './common/guards/rate-limit.module.js';
     SetupModule,
     RateLimitModule,
   ],
+  providers: [AccessLogMiddleware],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(RequestIdMiddleware).forRoutes('*');
+    consumer.apply(RequestIdMiddleware, AccessLogMiddleware).forRoutes('*');
   }
 }

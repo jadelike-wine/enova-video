@@ -4,6 +4,7 @@ import { ENV, type Env } from '../config/config.module.js';
 import { SettingsService, SETTINGS_REDIS } from './settings.service.js';
 import { LoginAgreementService } from './login-agreement.service.js';
 import { PublicLoginAgreementController } from './public-login-agreement.controller.js';
+import { EnovaLogger } from '../common/logger/enova-logger.js';
 
 /**
  * 全局动态配置模块：SettingsService 被 Auth / Payment / Admin 等多个模块依赖，
@@ -15,6 +16,11 @@ import { PublicLoginAgreementController } from './public-login-agreement.control
 @Module({
   providers: [
     {
+      provide: EnovaLogger,
+      inject: [ENV],
+      useFactory: (env: Env) => new EnovaLogger({ level: env.LOG_LEVEL, format: env.LOG_FORMAT }),
+    },
+    {
       provide: SETTINGS_REDIS,
       inject: [ENV],
       useFactory: (env: Env) => new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null }),
@@ -23,7 +29,7 @@ import { PublicLoginAgreementController } from './public-login-agreement.control
     LoginAgreementService,
   ],
   controllers: [PublicLoginAgreementController],
-  exports: [SettingsService, LoginAgreementService],
+  exports: [SettingsService, LoginAgreementService, EnovaLogger],
 })
 export class SettingsModule implements OnApplicationShutdown {
   constructor() {}

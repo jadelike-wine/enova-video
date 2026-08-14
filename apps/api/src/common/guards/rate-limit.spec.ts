@@ -10,10 +10,56 @@
  * - Configuration correctness
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { loadEnv } from '@enova/config';
+import { RateLimitGuard } from './rate-limit.guard.js';
 
 describe('P0-4: Rate Limit Configuration', () => {
+  describe('System Settings runtime override', () => {
+    it('should use database settings immediately and keep env as fallback', async () => {
+      const pipeline = {
+        incr: vi.fn(),
+        expire: vi.fn(),
+        exec: vi.fn().mockResolvedValue([[null, 1], [null, 1]]),
+      };
+      const redis = { pipeline: vi.fn(() => pipeline) };
+      const reflector = { get: vi.fn().mockReturnValue({ key: 'login', limit: 10, windowSec: 60, by: 'ip' }) };
+      const settings = {
+        getBoolean: vi.fn().mockResolvedValue(true),
+        getString: vi.fn().mockResolvedValue('runtime:rl'),
+      };
+      const env = loadEnv({ NODE_ENV: 'development', RATE_LIMIT_PREFIX: 'env:rl' });
+      const guard = new RateLimitGuard(reflector as never, redis as never, env, settings as never);
+      const context = {
+        getHandler: vi.fn(),
+        switchToHttp: () => ({ getRequest: () => ({ ip: '1.2.3.4', body: null }) }),
+      };
+
+      await expect(guard.canActivate(context as never)).resolves.toBe(true);
+      expect(pipeline.incr).toHaveBeenCalledWith('runtime:rl:login:1.2.3.4');
+      expect(settings.getBoolean).toHaveBeenCalledWith('security.rateLimitEnabled');
+      expect(settings.getString).toHaveBeenCalledWith('security.rateLimitPrefix');
+    });
+
+    it('should bypass the guard when the database disables rate limiting', async () => {
+      const redis = { pipeline: vi.fn() };
+      const reflector = { get: vi.fn().mockReturnValue({ key: 'login', limit: 10, windowSec: 60, by: 'ip' }) };
+      const settings = {
+        getBoolean: vi.fn().mockResolvedValue(false),
+        getString: vi.fn().mockResolvedValue('runtime:rl'),
+      };
+      const env = loadEnv({ NODE_ENV: 'development' });
+      const guard = new RateLimitGuard(reflector as never, redis as never, env, settings as never);
+      const context = {
+        getHandler: vi.fn(),
+        switchToHttp: () => ({ getRequest: () => ({ ip: '1.2.3.4', body: null }) }),
+      };
+
+      await expect(guard.canActivate(context as never)).resolves.toBe(true);
+      expect(redis.pipeline).not.toHaveBeenCalled();
+    });
+  });
+
   describe('RATE_LIMIT_ENABLED', () => {
     it('should default to true', () => {
       const env = loadEnv({ NODE_ENV: 'development' });

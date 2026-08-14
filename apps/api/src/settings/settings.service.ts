@@ -9,10 +9,10 @@ import {
   type SettingValueView,
   type UpdateActor,
 } from '@enova/db';
-import { CredentialCrypto } from '@enova/provider';
+import { CredentialCrypto, resolveStorageConfig, type ResolvedStorageConfig } from '@enova/provider';
 import { DATABASE } from '../database/database.module.js';
 import { ENV, type Env } from '../config/config.module.js';
-import type { EnovaLogger } from '../common/logger/enova-logger.js';
+import { EnovaLogger } from '../common/logger/enova-logger.js';
 
 export type { SettingValueView, UpdateActor } from '@enova/db';
 
@@ -20,7 +20,7 @@ export type { SettingValueView, UpdateActor } from '@enova/db';
 export const SETTINGS_REDIS = Symbol('SETTINGS_REDIS');
 
 /** 需要热更新 logger 的配置 key 集合。 */
-const LOG_RELOAD_KEYS = new Set(['log.level']);
+const LOG_RELOAD_KEYS = new Set(['log.level', 'log.format']);
 
 /**
  * 动态配置服务（NestJS 薄包装）：
@@ -37,13 +37,15 @@ const LOG_RELOAD_KEYS = new Set(['log.level']);
 export class SettingsService implements OnApplicationBootstrap {
   private readonly store: SettingsStore;
   private readonly subscriber?: IORedis;
+  private readonly env: Env;
 
   constructor(
     @Inject(DATABASE) db: Database,
     @Inject(ENV) env: Env,
     @Optional() @Inject(SETTINGS_REDIS) redis?: IORedis,
-    @Optional() private readonly logger?: EnovaLogger,
+    @Optional() @Inject(EnovaLogger) private readonly logger?: EnovaLogger,
   ) {
+    this.env = env;
     const crypto = env.CREDENTIAL_MASTER_KEY
       ? CredentialCrypto.fromEnv(env.CREDENTIAL_MASTER_KEY)
       : undefined;
@@ -58,11 +60,7 @@ export class SettingsService implements OnApplicationBootstrap {
       this.subscriber.subscribe(SETTINGS_INVALIDATION_CHANNEL);
       this.subscriber.on('message', createSettingsInvalidationHandler(({ key }) => {
         if (LOG_RELOAD_KEYS.has(key) && this.logger) {
-          // log.level 为 realtime：仅热更新日志级别，不重建日志器。
-          // log.format 为 restartRequired，不受此 invalidation 影响。
-          void this.store.getRaw('log.level').then((level) => {
-            if (level) this.logger!.setLevel(level as 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'trace');
-          }).catch(() => {
+          void this.applyLogSettings().catch(() => {
             // 静默失败：日志配置加载失败不影响业务。
           });
         }
@@ -83,7 +81,7 @@ export class SettingsService implements OnApplicationBootstrap {
       // 迁移失败不阻断启动——仍可从 env 兜底读取。
     }
 
-    // 从 DB 读取并应用日志配置（热更新 logger level 和 prompts 开关）。
+    // 从 DB 读取并应用日志配置。
     await this.applyLogSettings();
   }
 
@@ -92,9 +90,29 @@ export class SettingsService implements OnApplicationBootstrap {
     if (!this.logger) return;
     const level = ((await this.getRaw('log.level')) ?? 'info') as 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'trace';
     const format = ((await this.getRaw('log.format')) ?? 'text') as 'text' | 'json';
-    // reconfigure：重建内部 Pino 实例，应用 log.format（restartRequired）。
-    // 运行期间仅通过 setLevel() 热更新级别，不重建日志器。
     this.logger.reconfigure({ level, format });
+  }
+
+  /** 统一系统设置读取入口，供业务模块避免直接访问 process.env。 */
+  getSystemSetting(key: string): Promise<string | null> {
+    return this.getRaw(key);
+  }
+
+  /** Secret 读取入口：SettingsStore 已负责解密。 */
+  getSecret(key: string): Promise<string | null> {
+    return this.store.getRaw(key);
+  }
+
+  async getStorageConfig(): Promise<ResolvedStorageConfig> {
+    return resolveStorageConfig(this, this.env);
+  }
+
+  getLogPrompts(): Promise<boolean | null> {
+    return this.getBoolean('log.prompts');
+  }
+
+  getAccessLog(): Promise<boolean | null> {
+    return this.getBoolean('log.accessLog');
   }
 
   getRaw(key: string): Promise<string | null> {

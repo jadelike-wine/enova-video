@@ -61,6 +61,13 @@ export class SettingsAdminController {
     return this.service.list();
   }
 
+  @Post('storage/test')
+  @RequirePermission(PERMISSIONS.SETTINGS_WRITE)
+  @ApiOperation({ summary: '测试对象存储配置（上传、检查 URL、清理测试对象）' })
+  testStorage() {
+    return this.service.testStorage();
+  }
+
   @Patch(':key')
   @RequirePermission(PERMISSIONS.SETTINGS_WRITE)
   @ApiOperation({ summary: '更新单个动态配置（CAS + history + 实时生效）' })

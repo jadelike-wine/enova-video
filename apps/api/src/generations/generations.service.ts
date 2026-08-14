@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import {
   domainError,
@@ -15,6 +15,7 @@ import { PricingService } from '../billing/pricing.service.js';
 import { WalletService } from '../billing/wallet.service.js';
 import { EntitlementService } from '@enova/billing';
 import { SettingsService } from '../settings/settings.service.js';
+import { EnovaLogger } from '../common/logger/enova-logger.js';
 import type { Queue } from 'bullmq';
 
 export interface GenerationView {
@@ -59,6 +60,7 @@ export class GenerationsService {
     @Inject(GENERATION_QUEUE) private readonly queue: Queue<GenerationJobPayload>,
     @Inject(EntitlementService) private readonly entitlement: EntitlementService,
     @Inject(SettingsService) private readonly settings: SettingsService,
+    @Optional() @Inject(EnovaLogger) private readonly logger?: EnovaLogger,
   ) {}
 
   /** 从动态配置获取当前 job 级别 options。 */
@@ -141,6 +143,12 @@ export class GenerationsService {
 
       return { job: generationJob };
     });
+
+    if (this.logger) {
+      const fields: Record<string, unknown> = { generationJobId: jobId, workspaceId, type, provider, model };
+      if (await this.settings.getLogPrompts()) fields.prompt = typeof input.prompt === 'string' ? input.prompt : undefined;
+      this.logger.info('generation job queued', fields);
+    }
 
     return this.toView(job);
   }

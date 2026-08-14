@@ -31,4 +31,24 @@ describe('SettingsAdminService login agreement validation', () => {
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(settings.updateGroup).not.toHaveBeenCalled();
   });
+
+  it('rejects storage tests with the actionable configuration message', async () => {
+    const settings = makeSettings();
+    settings.getStorageConfig = vi.fn().mockResolvedValue({ provider: 'aws_s3', configured: false });
+    const service = new SettingsAdminService(settings as never);
+
+    await expect(service.testStorage()).rejects.toMatchObject({ statusCode: 400, message: '请配置对象存储' });
+  });
+
+  it('normalizes the documented uppercase log level values', async () => {
+    const settings = makeSettings();
+    const service = new SettingsAdminService(settings as never);
+
+    await service.updateGroup([{ key: 'log.level', value: 'WARNING' }]);
+
+    expect(settings.updateGroup).toHaveBeenCalledWith(
+      [{ key: 'log.level', value: 'warn' }],
+      {},
+    );
+  });
 });

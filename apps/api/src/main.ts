@@ -15,7 +15,6 @@ import { DomainExceptionFilter } from './common/exceptions/domain-exception.filt
 
 async function bootstrap(): Promise<void> {
   const env = loadEnv(process.env, { service: 'api' });
-  const logger = new EnovaLogger();
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
@@ -23,6 +22,7 @@ async function bootstrap(): Promise<void> {
     { logger: false },
   );
 
+  const logger = app.get(EnovaLogger);
   app.useLogger(logger);
   app.useGlobalFilters(new DomainExceptionFilter(logger));
   app.useGlobalPipes(

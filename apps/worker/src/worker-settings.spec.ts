@@ -282,7 +282,7 @@ describe('WorkerSettings', () => {
   });
 
   describe('getStorageConfig', () => {
-    it('throws for unsupported provider (e.g. legacy qiniu)', async () => {
+    it('accepts qiniu and reports incomplete credentials without throwing', async () => {
       const { db } = createMockDb([
         { key: 'storage.provider', value: 'qiniu', valueType: 'enum', group: 'storage', isSecret: false, version: 1 },
       ]);
@@ -290,23 +290,24 @@ describe('WorkerSettings', () => {
       const logger = createMockLogger();
       const settings = new WorkerSettings({
         db: db as any,
-        env: { STORAGE_PROVIDER: 'none' },
+        env: { STORAGE_PROVIDER: 'aws_s3' },
         redis: redis as any,
         logger: logger as any,
       });
 
       await expect(
         settings.getStorageConfig({
-          STORAGE_PROVIDER: 'none',
-          S3_REGION: '', S3_BUCKET: '', S3_PREFIX: 'enova',
-          S3_PUBLIC_BASE_URL: '', S3_ENDPOINT_URL: '',
-          S3_ACCESS_KEY: '', S3_SECRET_KEY: '',
+          STORAGE_PROVIDER: 'aws_s3',
+          AWS_REGION: '', AWS_S3_BUCKET: '', AWS_S3_PREFIX: 'agnes-ai',
+          AWS_S3_PUBLIC_BASE_URL: '', AWS_S3_ENDPOINT_URL: '',
+          AWS_ACCESS_KEY_ID: '', AWS_SECRET_ACCESS_KEY: '', AWS_SESSION_TOKEN: '',
+          QINIU_ACCESS_KEY: '', QINIU_SECRET_KEY: '', QINIU_BUCKET: '', QINIU_DOMAIN: '', QINIU_REGION: 'z0',
           STORAGE_MAX_BYTES: 1000, STORAGE_DOWNLOAD_TIMEOUT_MS: 1000,
           STORAGE_ALLOWED_CONTENT_TYPES: 'image/',
           SSRF_ALLOW_HTTP: true, SSRF_DEV_ALLOW_LIST: '',
           SSRF_RESOLVE_DNS: false, NODE_ENV: 'development',
         }),
-      ).rejects.toThrow(/Unsupported storage.provider "qiniu"/);
+      ).resolves.toMatchObject({ provider: 'qiniu', configured: false });
     });
 
     it('accepts valid provider none', async () => {
@@ -324,9 +325,10 @@ describe('WorkerSettings', () => {
 
       const config = await settings.getStorageConfig({
         STORAGE_PROVIDER: 'none',
-        S3_REGION: '', S3_BUCKET: '', S3_PREFIX: 'enova',
-        S3_PUBLIC_BASE_URL: '', S3_ENDPOINT_URL: '',
-        S3_ACCESS_KEY: '', S3_SECRET_KEY: '',
+        AWS_REGION: '', AWS_S3_BUCKET: '', AWS_S3_PREFIX: 'agnes-ai',
+        AWS_S3_PUBLIC_BASE_URL: '', AWS_S3_ENDPOINT_URL: '',
+        AWS_ACCESS_KEY_ID: '', AWS_SECRET_ACCESS_KEY: '', AWS_SESSION_TOKEN: '',
+        QINIU_ACCESS_KEY: '', QINIU_SECRET_KEY: '', QINIU_BUCKET: '', QINIU_DOMAIN: '', QINIU_REGION: 'z0',
         STORAGE_MAX_BYTES: 1000, STORAGE_DOWNLOAD_TIMEOUT_MS: 1000,
         STORAGE_ALLOWED_CONTENT_TYPES: 'image/',
         SSRF_ALLOW_HTTP: true, SSRF_DEV_ALLOW_LIST: '',
@@ -335,9 +337,9 @@ describe('WorkerSettings', () => {
       expect(config.provider).toBe('none');
     });
 
-    it('accepts valid provider s3', async () => {
+    it('accepts canonical provider aws_s3', async () => {
       const { db } = createMockDb([
-        { key: 'storage.provider', value: 's3', valueType: 'enum', group: 'storage', isSecret: false, version: 1 },
+        { key: 'storage.provider', value: 'aws_s3', valueType: 'enum', group: 'storage', isSecret: false, version: 1 },
       ]);
       const redis = createMockRedis();
       const logger = createMockLogger();
@@ -349,16 +351,18 @@ describe('WorkerSettings', () => {
       });
 
       const config = await settings.getStorageConfig({
-        STORAGE_PROVIDER: 'none',
-        S3_REGION: '', S3_BUCKET: '', S3_PREFIX: 'enova',
-        S3_PUBLIC_BASE_URL: '', S3_ENDPOINT_URL: '',
-        S3_ACCESS_KEY: '', S3_SECRET_KEY: '',
+        STORAGE_PROVIDER: 'aws_s3',
+        AWS_REGION: 'ap-southeast-1', AWS_S3_BUCKET: 'bucket', AWS_S3_PREFIX: 'agnes-ai',
+        AWS_S3_PUBLIC_BASE_URL: '', AWS_S3_ENDPOINT_URL: '',
+        AWS_ACCESS_KEY_ID: '', AWS_SECRET_ACCESS_KEY: '', AWS_SESSION_TOKEN: '',
+        QINIU_ACCESS_KEY: '', QINIU_SECRET_KEY: '', QINIU_BUCKET: '', QINIU_DOMAIN: '', QINIU_REGION: 'z0',
         STORAGE_MAX_BYTES: 1000, STORAGE_DOWNLOAD_TIMEOUT_MS: 1000,
         STORAGE_ALLOWED_CONTENT_TYPES: 'image/',
         SSRF_ALLOW_HTTP: true, SSRF_DEV_ALLOW_LIST: '',
         SSRF_RESOLVE_DNS: false, NODE_ENV: 'development',
       });
-      expect(config.provider).toBe('s3');
+      expect(config.provider).toBe('aws_s3');
+      expect(config.configured).toBe(true);
     });
   });
 });

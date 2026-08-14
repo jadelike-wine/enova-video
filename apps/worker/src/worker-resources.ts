@@ -95,37 +95,65 @@ export class WorkerResources {
 
     try {
       const storageConfig = await this.deps.settings.getStorageConfig({
-      STORAGE_PROVIDER: String(env.STORAGE_PROVIDER ?? 'none'),
-      S3_REGION: String(env.S3_REGION ?? ''),
-      S3_BUCKET: String(env.S3_BUCKET ?? ''),
-      S3_PREFIX: String(env.S3_PREFIX ?? 'enova'),
-      S3_PUBLIC_BASE_URL: String(env.S3_PUBLIC_BASE_URL ?? ''),
-      S3_ENDPOINT_URL: String(env.S3_ENDPOINT_URL ?? ''),
-      S3_ACCESS_KEY: String(env.S3_ACCESS_KEY ?? ''),
-      S3_SECRET_KEY: String(env.S3_SECRET_KEY ?? ''),
-      STORAGE_MAX_BYTES: Number(env.STORAGE_MAX_BYTES ?? 536870912),
-      STORAGE_DOWNLOAD_TIMEOUT_MS: Number(env.STORAGE_DOWNLOAD_TIMEOUT_MS ?? 120000),
-      STORAGE_ALLOWED_CONTENT_TYPES: String(env.STORAGE_ALLOWED_CONTENT_TYPES ?? 'image/,video/'),
-      SSRF_ALLOW_HTTP: Boolean(env.SSRF_ALLOW_HTTP),
-      SSRF_DEV_ALLOW_LIST: String(env.SSRF_DEV_ALLOW_LIST ?? ''),
-      SSRF_RESOLVE_DNS: env.SSRF_RESOLVE_DNS !== false,
-      NODE_ENV: String(env.NODE_ENV ?? 'development'),
-    });
+        STORAGE_PROVIDER: String(env.STORAGE_PROVIDER ?? 'aws_s3'),
+        AWS_REGION: String(env.AWS_REGION ?? 'ap-southeast-1'),
+        AWS_S3_BUCKET: String(env.AWS_S3_BUCKET ?? ''),
+        AWS_S3_PREFIX: String(env.AWS_S3_PREFIX ?? 'agnes-ai'),
+        AWS_S3_PUBLIC_BASE_URL: String(env.AWS_S3_PUBLIC_BASE_URL ?? ''),
+        AWS_S3_ENDPOINT_URL: String(env.AWS_S3_ENDPOINT_URL ?? ''),
+        AWS_ACCESS_KEY_ID: String(env.AWS_ACCESS_KEY_ID ?? ''),
+        AWS_SECRET_ACCESS_KEY: String(env.AWS_SECRET_ACCESS_KEY ?? ''),
+        AWS_SESSION_TOKEN: String(env.AWS_SESSION_TOKEN ?? ''),
+        QINIU_ACCESS_KEY: String(env.QINIU_ACCESS_KEY ?? ''),
+        QINIU_SECRET_KEY: String(env.QINIU_SECRET_KEY ?? ''),
+        QINIU_BUCKET: String(env.QINIU_BUCKET ?? ''),
+        QINIU_DOMAIN: String(env.QINIU_DOMAIN ?? ''),
+        QINIU_REGION: String(env.QINIU_REGION ?? 'z0'),
+        STORAGE_MAX_BYTES: Number(env.STORAGE_MAX_BYTES ?? 536870912),
+        STORAGE_DOWNLOAD_TIMEOUT_MS: Number(env.STORAGE_DOWNLOAD_TIMEOUT_MS ?? 120000),
+        STORAGE_ALLOWED_CONTENT_TYPES: String(env.STORAGE_ALLOWED_CONTENT_TYPES ?? 'image/,video/'),
+        SSRF_ALLOW_HTTP: Boolean(env.SSRF_ALLOW_HTTP),
+        SSRF_DEV_ALLOW_LIST: String(env.SSRF_DEV_ALLOW_LIST ?? ''),
+        SSRF_RESOLVE_DNS: env.SSRF_RESOLVE_DNS !== false,
+        NODE_ENV: String(env.NODE_ENV ?? 'development'),
+      });
 
-    // 先完整构建新资源，成功后再 swap（失败保留旧资源，不泄漏 Secret）。
+    // 未配置完整时使用 none 保持进程可运行，后台测试接口会提示具体缺失项。
+    if (storageConfig.provider !== 'none' && !storageConfig.configured) {
+      this.deps.logger.warn('object storage is not configured; using none storage', {
+        provider: storageConfig.provider,
+        message: '请配置对象存储',
+      });
+    }
     const newStorage = createObjectStorage(
-      storageConfig.provider === 's3'
+      storageConfig.provider === 'aws_s3' && storageConfig.configured
         ? {
-            kind: 's3',
+            kind: 'aws_s3',
             s3: {
-              region: storageConfig.s3Region,
-              bucket: storageConfig.s3Bucket,
-              prefix: storageConfig.s3Prefix,
-              publicBaseUrl: storageConfig.s3PublicBaseUrl,
-              endpointUrl: storageConfig.s3EndpointUrl,
-              credentials: storageConfig.s3AccessKey
-                ? { accessKeyId: storageConfig.s3AccessKey, secretAccessKey: storageConfig.s3SecretKey! }
-                : undefined,
+              region: storageConfig.region,
+              bucket: storageConfig.bucket,
+              prefix: storageConfig.prefix,
+              publicBaseUrl: storageConfig.publicBaseUrl,
+              endpointUrl: storageConfig.endpointUrl,
+              credentials: storageConfig.credentials,
+              download: {
+                guard: storageConfig.guard,
+                maxBytes: storageConfig.maxBytes,
+                timeoutMs: storageConfig.downloadTimeoutMs,
+              },
+              allowedContentTypePrefixes: storageConfig.allowedContentTypePrefixes,
+            },
+          }
+        : storageConfig.provider === 'qiniu' && storageConfig.configured
+        ? {
+            kind: 'qiniu',
+            qiniu: {
+              accessKey: storageConfig.qiniu.accessKey,
+              secretKey: storageConfig.qiniu.secretKey,
+              bucket: storageConfig.qiniu.bucket,
+              domain: storageConfig.qiniu.domain,
+              region: storageConfig.qiniu.region,
+              prefix: storageConfig.prefix,
               download: {
                 guard: storageConfig.guard,
                 maxBytes: storageConfig.maxBytes,

@@ -16,7 +16,7 @@ import { ResourceCleanupService } from './resource-cleanup.service.js';
 
 async function main(): Promise<void> {
   const env = loadEnv(process.env, { service: 'worker' });
-  const logger = new WorkerLogger('enova-worker');
+  const logger = new WorkerLogger('enova-worker', { level: env.LOG_LEVEL, format: env.LOG_FORMAT });
 
   const db: Database = createDb(env.DATABASE_URL);
 
@@ -126,10 +126,14 @@ async function main(): Promise<void> {
       const payload = job.data;
       try {
         await processGenerationPayload(pipeline, payload);
+        const promptFields = (await settings.getBoolean('log.prompts'))
+          ? { prompt: typeof payload.input?.prompt === 'string' ? payload.input.prompt : undefined }
+          : {};
         logger.info('generation job processing finished', {
           generationJobId: payload.generationJobId,
           stage: payload.stage,
           duration: Date.now() - started,
+          ...promptFields,
         });
       } catch (err) {
         logger.error('generation job processing failed', {

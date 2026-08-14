@@ -20,7 +20,7 @@ import {
   SETTINGS_INVALIDATION_CHANNEL,
   type SettingsCrypto,
 } from '@enova/db';
-import type { UrlGuardOptions } from '@enova/provider';
+import { resolveStorageConfig, type ResolvedStorageConfig, type StorageEnvironment, type UrlGuardOptions } from '@enova/provider';
 import { WorkerLogger } from './logger.js';
 
 /** 缓存 TTL（毫秒）：pub/sub 失败时最终一致的兜底。 */
@@ -41,21 +41,12 @@ interface CacheEntry {
   expiresAt: number;
 }
 
-export interface StorageRuntimeConfig {
-  provider: 'none' | 's3';
+export interface StorageRuntimeConfig extends ResolvedStorageConfig {
   /** SSRF guard（base_url 与上游下载 URL 校验）。 */
   guard: UrlGuardOptions;
   maxBytes: number;
   downloadTimeoutMs: number;
   allowedContentTypePrefixes: string[];
-  // S3
-  s3Region: string;
-  s3Bucket: string;
-  s3Prefix: string;
-  s3PublicBaseUrl: string;
-  s3EndpointUrl: string;
-  s3AccessKey: string | null;
-  s3SecretKey: string | null;
 }
 
 export interface PipelineRuntimeConfig {
@@ -76,7 +67,9 @@ export interface PipelineRuntimeConfig {
 /** 需要触发 storage/registry 重建的配置 key 集合。 */
 const STORAGE_REBUILD_KEYS = new Set([
   'storage.provider',
-  'storage.s3Region', 'storage.s3Bucket', 'storage.s3Prefix', 'storage.s3PublicBaseUrl', 'storage.s3EndpointUrl', 'storage.s3AccessKey', 'storage.s3SecretKey',
+  'storage.awsRegion', 'storage.awsS3Bucket', 'storage.awsS3Prefix', 'storage.awsS3PublicBaseUrl', 'storage.awsS3EndpointUrl',
+  'storage.awsAccessKeyId', 'storage.awsSecretAccessKey', 'storage.awsSessionToken',
+  'storage.qiniuAccessKey', 'storage.qiniuSecretKey', 'storage.qiniuBucket', 'storage.qiniuDomain', 'storage.qiniuRegion',
   'storage.maxBytes', 'storage.downloadTimeoutMs', 'storage.allowedContentTypes',
   'ssrf.allowHttp', 'ssrf.devAllowList', 'ssrf.resolveDns',
   'provider.httpTimeoutMs',
@@ -84,7 +77,7 @@ const STORAGE_REBUILD_KEYS = new Set([
 ]);
 
 /** 需要热更新 logger 的配置 key 集合。 */
-const LOG_RELOAD_KEYS = new Set(['log.level']);
+const LOG_RELOAD_KEYS = new Set(['log.level', 'log.format']);
 
 export class WorkerSettings {
   private readonly store: SettingsStore;
@@ -106,13 +99,9 @@ export class WorkerSettings {
     this.subscriber.on('message', createSettingsInvalidationHandler(({ key }) => {
       this.cache.delete(key);
       this.logger.debug('settings cache invalidated', { key });
-      // 日志级别变更：仅热更新 logger level（无需重启）。
-      // log.format 为 restartRequired，不受此 invalidation 影响。
       if (LOG_RELOAD_KEYS.has(key)) {
-        void this.getString('log.level').then((level) => {
-          if (level) this.logger.setLevel(level as 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'trace');
-        }).catch((err) => {
-          this.logger.error('reload log.level failed', {}, err as Error);
+        void this.applyLogSettings().catch((err) => {
+          this.logger.error('reload log settings failed', {}, err as Error);
         });
       }
       // 如果是 storage/SSRF 相关配置，触发重建回调。
@@ -227,15 +216,7 @@ export class WorkerSettings {
   }
 
   /** 获取完整存储运行时配置（重建 ObjectStorage 时调用）。 */
-  async getStorageConfig(env: {
-    STORAGE_PROVIDER: string;
-    S3_REGION: string;
-    S3_BUCKET: string;
-    S3_PREFIX: string;
-    S3_PUBLIC_BASE_URL: string;
-    S3_ENDPOINT_URL: string;
-    S3_ACCESS_KEY: string;
-    S3_SECRET_KEY: string;
+  async getStorageConfig(env: StorageEnvironment & {
     STORAGE_MAX_BYTES: number;
     STORAGE_DOWNLOAD_TIMEOUT_MS: number;
     STORAGE_ALLOWED_CONTENT_TYPES: string;
@@ -244,33 +225,18 @@ export class WorkerSettings {
     SSRF_RESOLVE_DNS: boolean;
     NODE_ENV: string;
   }): Promise<StorageRuntimeConfig> {
-    const rawProvider = (await this.getString('storage.provider')) ?? env.STORAGE_PROVIDER;
-    if (rawProvider !== 'none' && rawProvider !== 's3') {
-      throw new Error(
-        `Unsupported storage.provider "${rawProvider}". ` +
-        `Supported values: none, s3. ` +
-        `If you previously used "qiniu", please update storage.provider in the admin settings.`,
-      );
-    }
-    const provider = rawProvider as 'none' | 's3';
+    const storage = await resolveStorageConfig(this.store, env);
     const guard = await this.getSsrfGuard(env);
     const maxBytes = (await this.getNumber('storage.maxBytes')) ?? env.STORAGE_MAX_BYTES;
     const downloadTimeoutMs = (await this.getNumber('storage.downloadTimeoutMs')) ?? env.STORAGE_DOWNLOAD_TIMEOUT_MS;
     const allowedContentTypes = (await this.getString('storage.allowedContentTypes')) ?? env.STORAGE_ALLOWED_CONTENT_TYPES;
 
     return {
-      provider,
+      ...storage,
       guard,
       maxBytes,
       downloadTimeoutMs,
       allowedContentTypePrefixes: allowedContentTypes.split(',').map((s) => s.trim()).filter(Boolean),
-      s3Region: (await this.getString('storage.s3Region')) ?? env.S3_REGION,
-      s3Bucket: (await this.getString('storage.s3Bucket')) ?? env.S3_BUCKET,
-      s3Prefix: (await this.getString('storage.s3Prefix')) ?? env.S3_PREFIX,
-      s3PublicBaseUrl: (await this.getString('storage.s3PublicBaseUrl')) ?? env.S3_PUBLIC_BASE_URL,
-      s3EndpointUrl: (await this.getString('storage.s3EndpointUrl')) ?? env.S3_ENDPOINT_URL,
-      s3AccessKey: await this.getSecret('storage.s3AccessKey') ?? (env.S3_ACCESS_KEY || null),
-      s3SecretKey: await this.getSecret('storage.s3SecretKey') ?? (env.S3_SECRET_KEY || null),
     };
   }
 
@@ -285,8 +251,6 @@ export class WorkerSettings {
   async applyLogSettings(): Promise<void> {
     const level = ((await this.getString('log.level')) ?? 'info') as 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'trace';
     const format = ((await this.getString('log.format')) ?? 'text') as 'text' | 'json';
-    // reconfigure：重建内部 Pino 实例，应用 log.format（restartRequired）。
-    // 运行期间仅通过 setLevel() 热更新级别，不重建日志器。
     this.logger.reconfigure({ level, format });
   }
 }

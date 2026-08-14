@@ -30,6 +30,19 @@ import {
  * - Email tokens are NEVER logged (only in ConsoleEmailSender for dev).
  * - Send failures produce structured error logs without leaking credentials.
  */
+export interface SmtpEmailOptions {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password: string;
+  fromName: string;
+  fromEmail: string;
+  resetUrl: string;
+  verifyUrl: string;
+  appName: string;
+}
+
 @Injectable()
 export class SmtpEmailSender implements EmailSender {
   private readonly logger = new Logger('SmtpEmailSender');
@@ -40,18 +53,7 @@ export class SmtpEmailSender implements EmailSender {
   private readonly verifyUrl: string;
   private readonly appName: string;
 
-  constructor(opts: {
-    host: string;
-    port: number;
-    secure: boolean;
-    user: string;
-    password: string;
-    fromName: string;
-    fromEmail: string;
-    resetUrl: string;
-    verifyUrl: string;
-    appName: string;
-  }) {
+  constructor(opts: SmtpEmailOptions) {
     this.transporter = createTransport({
       host: opts.host,
       port: opts.port,

@@ -52,7 +52,7 @@ export const walletLedgerType = pgEnum('wallet_ledger_type', [
   'GENERATION_RESERVE',
   'GENERATION_SETTLE',
   'GENERATION_RELEASE',
-  'REFUND', // LEGACY ONLY. 产品策略不支持自动退款，禁止新增 REFUND ledger 写入。
+  'REFUND', // 人工退款 Credits 冲正（负值流水，由 recordManualRefund 写入）。
   'SUBSCRIPTION_GRANT',
   'ADMIN_ADJUSTMENT',
 ]);
@@ -65,6 +65,22 @@ export const costStatus = pgEnum('cost_status', ['ESTIMATED', 'REPORTED', 'RECON
 export const outboxStatus = pgEnum('outbox_status', ['PENDING', 'DISPATCHED', 'SUPERSEDED']);
 export const attemptStatus = pgEnum('attempt_status', ['RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED']);
 export const orderType = pgEnum('order_type', ['RECHARGE', 'PLAN', 'CREDIT_PACK']);
+
+/**
+ * 人工退款记录状态。
+ *
+ * 产品策略：系统不提供自动退款，不调用支付宝/微信退款 API。
+ * 用户需联系客服邮箱申请退款，客服在渠道商户后台人工退款后，
+ * 管理员在后台记录处理结果。此记录仅为内部登记和审计，
+ * 不改变支付渠道的真实状态，不改变 orders.status。
+ */
+export const manualRefundStatus = pgEnum('manual_refund_status', [
+  'PENDING_REVIEW',  // 客服已记录申请，待人工审核
+  'APPROVED',        // 审核通过，待渠道退款
+  'COMPLETED',       // 渠道已退款 + credits 已成功冲正
+  'CREDITS_PENDING', // 渠道已退款，但 credits 因余额不足或异常尚未完全冲正
+  'REJECTED',        // 审核拒绝
+]);
 export const fulfillmentStatus = pgEnum('fulfillment_status', ['PENDING', 'SUCCEEDED', 'FAILED']);
 export const pricingVersionStatus = pgEnum('pricing_version_status', ['DRAFT', 'PUBLISHED', 'ARCHIVED']);
 export const costType = pgEnum('cost_type', [
@@ -873,6 +889,54 @@ export const revenueEvents = pgTable('revenue_events', {
   index('revenue_events_workspace_id_idx').on(t.workspaceId),
   index('revenue_events_order_id_idx').on(t.orderId),
   index('revenue_events_recognized_at_idx').on(t.recognizedAt),
+]);
+
+// ---------------------------------------------------------------------------
+// Manual Refund Records (人工退款处理记录)
+//
+// 产品策略：系统不提供自动退款。用户联系客服申请退款，客服在渠道商户平台
+// 人工退款后，管理员在此记录处理结果。此表仅为内部登记和审计，
+// 不改变 orders.status，不调用渠道退款 API。
+// ---------------------------------------------------------------------------
+export const manualRefundRecords = pgTable('manual_refund_records', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'cascade' }),
+  /** 人工退款处理状态。 */
+  status: manualRefundStatus('status').notNull().default('PENDING_REVIEW'),
+  /** 退款原因（用户申请时提供或客服记录）。 */
+  reason: varchar('reason', { length: 500 }).notNull(),
+  /** 人工退款金额（分）。 */
+  refundAmountCents: integer('refund_amount_cents').notNull(),
+  /** 是否全额退款。 */
+  isFullRefund: boolean('is_full_refund').notNull(),
+  /** 渠道商户平台退款流水号（人工填写，必填）。 */
+  channelRefundNo: varchar('channel_refund_no', { length: 255 }).notNull(),
+  /** 退款渠道（ALIPAY/WECHAT）。 */
+  refundChannel: varchar('refund_channel', { length: 50 }).notNull(),
+  /** 需要冲正的 Credits 数量。 */
+  creditsToRevoke: bigint('credits_to_revoke', { mode: 'number' }).notNull().default(0),
+  /** Credits 实际扣回数量。 */
+  creditsRevoked: bigint('credits_revoked', { mode: 'number' }).notNull().default(0),
+  /** Credits 是否完全扣回（余额不足时为 false）。 */
+  creditsFullyRevoked: boolean('credits_fully_revoked').notNull().default(true),
+  /** 操作人（管理员 userId）。 */
+  operatorId: uuid('operator_id').notNull(),
+  /** 审核备注。 */
+  reviewNote: varchar('review_note', { length: 1000 }),
+  /** 渠道实际退款时间（人工填写）。 */
+  externalRefundedAt: timestamp('external_refunded_at', { withTimezone: true }),
+  /** 处理完成时间。 */
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  // 同一订单只能有一条非 REJECTED 的退款记录（幂等）。
+  // 通过应用层 + for('update') 锁保证并发安全。
+  index('manual_refund_records_order_id_idx').on(t.orderId),
+  index('manual_refund_records_status_idx').on(t.status),
+  // 渠道退款流水号唯一（防止重复登记同一笔渠道退款）。
+  uniqueIndex('manual_refund_records_channel_refund_no_unique').on(t.channelRefundNo),
 ]);
 
 // ---------------------------------------------------------------------------

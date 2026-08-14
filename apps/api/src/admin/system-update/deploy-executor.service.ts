@@ -43,7 +43,7 @@ export class DeployExecutor {
       // 健康检查依赖 FRONTEND_URL；未配置时由脚本默认。
       ...(this.env.NODE_ENV === 'production' ? ['-e', 'FRONTEND_URL=http://localhost:3000'] : []),
       this.env.UPDATE_DEPLOY_TOOL_IMAGE,
-      'bash', '-lc',
+      '-lc',
       `cd ${repo} && bash ${scriptRel}${args.length ? ' ' + args.join(' ') : ''}`,
     ];
 

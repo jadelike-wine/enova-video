@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Inject,
@@ -19,7 +20,7 @@ import { CurrentUser, type AuthUser } from '../common/decorators/current-user.de
 import { OrdersAdminService } from './orders.admin.service.js';
 import { AdminAuditService } from './admin.audit.service.js';
 import { SensitiveActionService } from '../common/services/sensitive-action.service.js';
-import { OrderListQueryDto } from './dto/admin.dto.js';
+import { OrderListQueryDto, RecordManualRefundDto } from './dto/admin.dto.js';
 
 @ApiTags('admin/orders')
 @Controller('api/v1/admin/orders')
@@ -116,5 +117,113 @@ export class OrdersAdminController {
       userAgent: req.headers['user-agent'],
     });
     return { orderId: id, status: 'CLOSED' };
+  }
+
+  // ---- 人工退款记录（非自动退款）----
+
+  @Post(':id/manual-refund')
+  @RequirePermission(PERMISSIONS.ORDERS_REFUND)
+  @ApiOperation({
+    summary: '记录人工退款处理结果（非自动退款）：管理员在渠道商户平台完成退款后，在此记录处理结果 + 回收 credits',
+    description: '此接口不调用渠道退款 API，不改变 orders.status，仅为内部登记和审计。',
+  })
+  async recordManualRefund(
+    @CurrentUser() user: AuthUser,
+    @Req() req: FastifyRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RecordManualRefundDto,
+  ) {
+    const before = await this.service.getStatus(id);
+    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
+    await this.sensitiveAction.execute({
+      actorUserId: user.userId,
+      permission: PERMISSIONS.ORDERS_REFUND,
+      target: `order:${id}`,
+      reason: `Record manual refund: ${dto.reason}`,
+      before: before ? { status: before.status } : undefined,
+      requestId: req.id,
+      stepUpPassword,
+    });
+    const result = await this.service.recordManualRefund(id, {
+      operatorId: user.userId,
+      reason: dto.reason,
+      refundChannel: dto.refundChannel,
+      channelRefundNo: dto.channelRefundNo,
+      refundAmountCents: dto.refundAmountCents,
+      reviewNote: dto.reviewNote,
+      externalRefundedAt: dto.externalRefundedAt,
+    });
+    await this.audit.record({
+      actorUserId: user.userId,
+      action: 'order.record_manual_refund',
+      resourceType: 'order',
+      resourceId: id,
+      before: before ? { status: before.status } : undefined,
+      after: {
+        recordId: result.recordId,
+        refundStatus: result.status,
+        refundAmountCents: result.refundAmountCents,
+        isFullRefund: result.isFullRefund,
+        creditsToRevoke: result.creditsToRevoke,
+        creditsRevoked: result.creditsRevoked,
+        creditsFullyRevoked: result.creditsFullyRevoked,
+        subscriptionCanceled: result.subscriptionCanceled,
+        reason: dto.reason,
+      },
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
+  }
+
+  @Post(':id/manual-refund/credits-retry')
+  @RequirePermission(PERMISSIONS.ORDERS_REFUND)
+  @ApiOperation({
+    summary: '补扣 Credits（仅 CREDITS_PENDING 状态）：不重新退款，只再次尝试 Credits 冲正',
+    description: '此接口不调用渠道退款 API，不重新创建现金退款记录，不重复取消订阅。',
+  })
+  async retryCreditsRevocation(
+    @CurrentUser() user: AuthUser,
+    @Req() req: FastifyRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const before = await this.service.getStatus(id);
+    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
+    await this.sensitiveAction.execute({
+      actorUserId: user.userId,
+      permission: PERMISSIONS.ORDERS_REFUND,
+      target: `order:${id}`,
+      reason: 'Retry credits revocation for manual refund',
+      before: before ? { status: before.status } : undefined,
+      requestId: req.id,
+      stepUpPassword,
+    });
+    const result = await this.service.retryCreditsRevocation(id, {
+      operatorId: user.userId,
+    });
+    await this.audit.record({
+      actorUserId: user.userId,
+      action: 'order.retry_credits_revocation',
+      resourceType: 'order',
+      resourceId: id,
+      before: before ? { status: before.status } : undefined,
+      after: {
+        refundRecordId: result.recordId,
+        creditsToRevoke: result.creditsToRevoke,
+        creditsRevoked: result.creditsRevoked,
+        creditsFullyRevoked: result.creditsFullyRevoked,
+        finalStatus: result.status,
+      },
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return result;
+  }
+
+  @Post('anomalies')
+  @RequirePermission(PERMISSIONS.ORDERS_READ)
+  @ApiOperation({ summary: '查询异常订单（支付成功但履约失败/待处理）' })
+  async listAnomalies() {
+    return { anomalies: await this.service.listAnomalies() };
   }
 }

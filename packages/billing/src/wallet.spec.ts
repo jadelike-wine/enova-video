@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { computeCapture, computeReleaseForJob, computeReserve } from './wallet';
+import { describe, expect, it, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { computeCapture, computeReleaseForJob, computeReserve, WalletGateway } from './wallet';
+import { ERROR_CODES } from '@enova/contracts';
+import {
+  wallets as walletsTable,
+  walletLedger as ledgerTable,
+} from '@enova/db';
 
 describe('computeReserve', () => {
   it('reserves credits when sufficient', () => {
@@ -306,5 +312,295 @@ describe('P0-1: insufficient credits', () => {
     // Try to reserve 50 with only 20 available
     const r2 = computeReserve(r1.balanceAfter, r1.reservedAfter, 50);
     expect(r2.ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// refundCreditsInTx: real behavior tests with table-aware mock DB
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates a mock DB that simulates Drizzle's transaction + query builder
+ * with table-aware select, update, insert — enough to test refundCreditsInTx.
+ */
+function createMockTxWallet(config: { wallet: any; ledger: any[] }) {
+  const store = {
+    wallet: { ...config.wallet },
+    ledger: [...config.ledger],
+  };
+  const insertedLedger: any[] = [];
+  let walletUpdated = false;
+  let walletUpdateValue: any = null;
+  let forUpdateCalled = false;
+
+  /**
+   * Resolve data by table, optionally filtering by the where clause.
+   * Supports simple `eq(column, value)` and `and(eq(...), eq(...))` patterns
+   * used by refundCreditsInTx idempotency checks.
+   */
+  const resolveData = (table: unknown, whereArgs?: unknown): any[] => {
+    if (table === walletsTable) return [{ ...store.wallet }];
+    if (table === ledgerTable) {
+      if (!whereArgs) return store.ledger;
+      // Recursively search the Drizzle SQL object tree for 'REFUND' value.
+      // Drizzle's and(eq(key, val), eq(type, 'REFUND')) creates a deeply nested
+      // SQL object with queryChunks arrays. We traverse to find string values.
+      // Use a visited Set to handle circular references.
+      // Only traverse queryChunks and value properties (SQL condition parts)
+      // to avoid walking into column/table schema definitions that contain enum values.
+      const visited = new WeakSet();
+      const hasRefundFilter = (obj: unknown): boolean => {
+        if (obj === 'REFUND') return true;
+        if (typeof obj !== 'object' || obj === null) return false;
+        if (visited.has(obj as object)) return false;
+        visited.add(obj as object);
+        // Only traverse queryChunks and value properties (SQL condition parts).
+        const queryChunks = (obj as any)?.queryChunks;
+        if (Array.isArray(queryChunks)) {
+          for (const chunk of queryChunks) {
+            if (hasRefundFilter(chunk)) return true;
+          }
+        }
+        const value = (obj as any)?.value;
+        if (value === 'REFUND') return true;
+        return false;
+      };
+      if (hasRefundFilter(whereArgs)) {
+        return store.ledger.filter((r) => r.type === 'REFUND');
+      }
+      return store.ledger;
+    }
+    return [];
+  };
+
+  const makeWhere = (table: unknown, data: any[]) => ({
+    orderBy: vi.fn(() => ({ limit: vi.fn(() => Promise.resolve(data)) })),
+    limit: vi.fn(() => Promise.resolve(data)),
+    for: vi.fn(() => {
+      if (table === walletsTable) forUpdateCalled = true;
+      return Promise.resolve(data);
+    }),
+    groupBy: vi.fn(() => ({ limit: vi.fn(() => Promise.resolve(data)) })),
+    innerJoin: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn(() => Promise.resolve(data)) })) })),
+  });
+
+  const tx = {
+    select: vi.fn(() => ({
+      from: vi.fn((t: unknown) => {
+        return {
+          where: vi.fn((...args: any[]) => {
+            const d = resolveData(t, args[0]);
+            return makeWhere(t, d);
+          }),
+        };
+      }),
+    })),
+    update: vi.fn((t: unknown) => ({
+      set: vi.fn((v: any) => ({
+        where: vi.fn(() => {
+          if (t === walletsTable) {
+            walletUpdated = true;
+            walletUpdateValue = v;
+            Object.assign(store.wallet, v);
+          }
+          return Promise.resolve();
+        }),
+      })),
+    })),
+    insert: vi.fn((t: unknown) => ({
+      values: vi.fn((v: any) => {
+        // Track insert immediately (Drizzle insert happens on values() call).
+        let insertedRec: any = null;
+        if (t === ledgerTable) {
+          insertedRec = { id: `ledger-${insertedLedger.length + 1}`, ...v };
+          insertedLedger.push(insertedRec);
+          store.ledger.push(insertedRec);
+        }
+        // In Drizzle, values() returns a promise that also has .returning().
+        const promise = Promise.resolve() as any;
+        promise.returning = vi.fn(() => {
+          if (insertedRec) return Promise.resolve([insertedRec]);
+          return Promise.resolve([{ id: 'x' }]);
+        });
+        return promise;
+      }),
+    })),
+  };
+
+  const db = {
+    transaction: vi.fn(async (fn: (tx: any) => Promise<any>) => fn(tx)),
+  };
+
+  return {
+    db,
+    tx,
+    store,
+    insertedLedger,
+    get walletUpdated() { return walletUpdated; },
+    get walletUpdateValue() { return walletUpdateValue; },
+    get forUpdateCalled() { return forUpdateCalled; },
+  };
+}
+
+describe('refundCreditsInTx — real behavior', () => {
+  const baseWallet = { id: 'w1', workspaceId: 'ws1', balance: 1000, reservedBalance: 0, updatedAt: new Date() };
+
+  it('locks wallet row with FOR UPDATE', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    await gw.refundCreditsInTx(mock.tx as any, 'ws1', 100, 'o1', 'key-1', 'test');
+    expect(mock.forUpdateCalled).toBe(true);
+  });
+
+  it('correctly decreases wallet balance', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet, balance: 500 }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    const result = await gw.refundCreditsInTx(mock.tx as any, 'ws1', 200, 'o1', 'key-2', 'test');
+    expect(result.balance).toBe(300);
+    expect(mock.store.wallet.balance).toBe(300);
+    expect(mock.walletUpdated).toBe(true);
+  });
+
+  it('writes REFUND ledger with negative amount', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet, balance: 500 }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    await gw.refundCreditsInTx(mock.tx as any, 'ws1', 200, 'o1', 'key-3', 'test refund');
+    expect(mock.insertedLedger).toHaveLength(1);
+    const entry = mock.insertedLedger[0];
+    expect(entry.type).toBe('REFUND');
+    expect(entry.amount).toBe(-200);
+    expect(entry.amount).toBeLessThan(0);
+  });
+
+  it('writes correct workspaceId and orderId', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet, workspaceId: 'ws-xyz' }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    await gw.refundCreditsInTx(mock.tx as any, 'ws-xyz', 50, 'order-abc', 'key-4', 'test');
+    const entry = mock.insertedLedger[0];
+    expect(entry.workspaceId).toBe('ws-xyz');
+    expect(entry.orderId).toBe('order-abc');
+  });
+
+  it('writes correct idempotencyKey', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    await gw.refundCreditsInTx(mock.tx as any, 'ws1', 100, 'o1', 'manual-refund:o1:ALI123', 'test');
+    expect(mock.insertedLedger[0].idempotencyKey).toBe('manual-refund:o1:ALI123');
+  });
+
+  it('writes correct balanceBefore and balanceAfter', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet, balance: 500 }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    await gw.refundCreditsInTx(mock.tx as any, 'ws1', 200, 'o1', 'key-5', 'test');
+    const entry = mock.insertedLedger[0];
+    expect(entry.balanceBefore).toBe(500);
+    expect(entry.balanceAfter).toBe(300);
+  });
+
+  it('does NOT update wallet when balance insufficient', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet, balance: 50 }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    await expect(
+      gw.refundCreditsInTx(mock.tx as any, 'ws1', 200, 'o1', 'key-6', 'test'),
+    ).rejects.toThrow();
+    expect(mock.walletUpdated).toBe(false);
+    expect(mock.store.wallet.balance).toBe(50);
+  });
+
+  it('does NOT insert ledger when balance insufficient', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet, balance: 50 }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    await expect(
+      gw.refundCreditsInTx(mock.tx as any, 'ws1', 200, 'o1', 'key-7', 'test'),
+    ).rejects.toThrow();
+    expect(mock.insertedLedger).toHaveLength(0);
+  });
+
+  it('throws NEGATIVE_BALANCE error code when insufficient', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet, balance: 50 }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    try {
+      await gw.refundCreditsInTx(mock.tx as any, 'ws1', 200, 'o1', 'key-8', 'test');
+      expect.unreachable('Should have thrown');
+    } catch (err) {
+      expect((err as any).code).toBe(ERROR_CODES.NEGATIVE_BALANCE);
+    }
+  });
+
+  it('does NOT allow balance to go negative (exact zero is OK)', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet, balance: 100 }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    const result = await gw.refundCreditsInTx(mock.tx as any, 'ws1', 100, 'o1', 'key-9', 'test');
+    expect(result.balance).toBe(0);
+    expect(mock.store.wallet.balance).toBe(0);
+  });
+
+  it('idempotency: same key does NOT double-deduct', async () => {
+    // Pre-existing ledger with the same idempotencyKey
+    const existingLedger = [{
+      id: 'ledger-existing',
+      idempotencyKey: 'key-dup',
+      type: 'REFUND',
+      amount: -100,
+      workspaceId: 'ws1',
+      orderId: 'o1',
+    }];
+    const mock = createMockTxWallet({ wallet: { ...baseWallet, balance: 400 }, ledger: existingLedger });
+    const gw = new WalletGateway(mock.db as any);
+    const result = await gw.refundCreditsInTx(mock.tx as any, 'ws1', 100, 'o1', 'key-dup', 'test');
+    // Should return current balance without deducting again
+    expect(result.balance).toBe(400);
+    expect(mock.walletUpdated).toBe(false);
+    expect(mock.insertedLedger).toHaveLength(0);
+  });
+
+  it('idempotency: non-REFUND type with same key does NOT count as already processed', async () => {
+    // A non-REFUND ledger with the same idempotencyKey should NOT trigger idempotent skip.
+    // The refund should proceed and deduct balance.
+    const existingLedger = [{
+      id: 'ledger-non-refund',
+      idempotencyKey: 'shared-key',
+      type: 'ADMIN_ADJUSTMENT', // NOT REFUND
+      amount: 50,
+      workspaceId: 'ws1',
+      orderId: 'o1',
+    }];
+    const mock = createMockTxWallet({ wallet: { ...baseWallet, balance: 500 }, ledger: existingLedger });
+    const gw = new WalletGateway(mock.db as any);
+    const result = await gw.refundCreditsInTx(mock.tx as any, 'ws1', 100, 'o1', 'shared-key', 'test');
+    // Should proceed with the deduction (not treat as idempotent).
+    expect(result.balance).toBe(400);
+    expect(mock.walletUpdated).toBe(true);
+    expect(mock.insertedLedger).toHaveLength(1);
+    expect(mock.insertedLedger[0].type).toBe('REFUND');
+  });
+
+  it('rejects non-positive creditsToRevoke', async () => {
+    const mock = createMockTxWallet({ wallet: { ...baseWallet }, ledger: [] });
+    const gw = new WalletGateway(mock.db as any);
+    await expect(
+      gw.refundCreditsInTx(mock.tx as any, 'ws1', 0, 'o1', 'key-10', 'test'),
+    ).rejects.toThrow(/positive integer/);
+    await expect(
+      gw.refundCreditsInTx(mock.tx as any, 'ws1', -50, 'o1', 'key-11', 'test'),
+    ).rejects.toThrow(/positive integer/);
+  });
+
+  it('throws NOT_FOUND when wallet does not exist', async () => {
+    // Mock with empty wallet
+    const mock = createMockTxWallet({ wallet: null as any, ledger: [] });
+    // Override resolveData to return empty for wallets
+    mock.tx.select = vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: vi.fn(() => Promise.resolve([])),
+          for: vi.fn(() => Promise.resolve([])),
+        })),
+      })),
+    })) as any;
+    const gw = new WalletGateway(mock.db as any);
+    await expect(
+      gw.refundCreditsInTx(mock.tx as any, 'ws-missing', 100, 'o1', 'key-12', 'test'),
+    ).rejects.toThrow(/Wallet not found/);
   });
 });

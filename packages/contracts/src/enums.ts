@@ -143,6 +143,10 @@ export const PERMISSIONS = {
   ROLE_ASSIGN: 'role.assign',
   ANALYTICS_READ: 'analytics.read',
   COUPON_WRITE: 'coupon.write',
+  // P0: 退款与邮件测试
+  ORDERS_REFUND: 'orders.refund',
+  EMAIL_TEST: 'email.test',
+  OPS_READ: 'ops.read',
 } as const;
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 

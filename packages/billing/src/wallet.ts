@@ -507,6 +507,95 @@ export class WalletGateway {
     return { balance: balanceAfter };
   }
 
+  // ---- MANUAL REFUND CREDITS REVOCATION ----
+
+  /**
+   * 人工退款 Credits 冲正：在事务内从钱包余额扣除 credits，写入 REFUND ledger。
+   *
+   * - amount 为负数（冲正）
+   * - ledger type = REFUND
+   * - 必须带 orderId、workspaceId
+   * - 幂等由 idempotencyKey 唯一约束保证（type=REFUND + idempotencyKey）
+   * - 余额不足时抛出 NEGATIVE_BALANCE，**不**写负余额
+   *
+   * 并发幂等保障：
+   * 1. 先锁 wallet 行（SELECT ... FOR UPDATE），串行化对同一 wallet 的并发 refund。
+   * 2. 锁后重新检查幂等：如果另一个事务在锁释放前已插入相同 idempotencyKey 的 REFUND ledger，
+   *    当前事务会检测到并直接返回（不重复扣减）。
+   * 3. 幂等查询限定 type = 'REFUND'，避免非 REFUND 类型的同名 idempotencyKey 误判。
+   *
+   * 调用方应在 catch 中将退款记录标记为 CREDITS_PENDING。
+   */
+  async refundCreditsInTx(
+    tx: Tx,
+    workspaceId: string,
+    creditsToRevoke: number,
+    orderId: string,
+    idempotencyKey: string,
+    description?: string,
+  ): Promise<{ balance: number }> {
+    if (!Number.isInteger(creditsToRevoke) || creditsToRevoke <= 0) {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, 'creditsToRevoke must be a positive integer', 400);
+    }
+
+    // Lock wallet row FIRST — serializes concurrent refund operations on the same wallet.
+    // P0 fix: idempotency check must happen AFTER acquiring the FOR UPDATE lock.
+    // Previously the check was before the lock: two concurrent transactions would both
+    // see "no existing ledger" → both proceed to insert → unique constraint violation
+    // on one side (instead of graceful idempotent return).
+    const rows = await tx.select().from(wallets).where(eq(wallets.workspaceId, workspaceId)).for('update');
+    const wallet = rows[0];
+    if (!wallet) throw domainError(ERROR_CODES.NOT_FOUND, 'Wallet not found', 404);
+
+    // Idempotency (post-lock): if a REFUND ledger with this idempotencyKey already exists,
+    // the revocation was already applied — return current balance without re-deducting.
+    // Filter by type = 'REFUND' to avoid false positives from non-REFUND ledgers
+    // that happen to share the same idempotencyKey.
+    const existing = await tx
+      .select({ id: walletLedger.id })
+      .from(walletLedger)
+      .where(
+        and(
+          eq(walletLedger.idempotencyKey, idempotencyKey),
+          eq(walletLedger.type, 'REFUND'),
+        ),
+      )
+      .limit(1);
+    if (existing.length > 0) {
+      return { balance: wallet.balance };
+    }
+
+    const balanceAfter = wallet.balance - creditsToRevoke;
+    if (balanceAfter < 0) {
+      throw domainError(
+        ERROR_CODES.NEGATIVE_BALANCE,
+        'Balance cannot be negative — credits insufficient for manual refund revocation',
+        400,
+        { balance: wallet.balance, creditsToRevoke },
+      );
+    }
+
+    await tx
+      .update(wallets)
+      .set({ balance: balanceAfter, updatedAt: new Date() })
+      .where(eq(wallets.workspaceId, workspaceId));
+
+    await tx.insert(walletLedger).values({
+      workspaceId,
+      type: 'REFUND',
+      amount: -creditsToRevoke,
+      balanceBefore: wallet.balance,
+      balanceAfter,
+      reservedBefore: wallet.reservedBalance,
+      reservedAfter: wallet.reservedBalance,
+      orderId,
+      idempotencyKey,
+      description: description ?? `Manual refund: revoke ${creditsToRevoke} credits`,
+    });
+
+    return { balance: balanceAfter };
+  }
+
   // ---- HELPERS ----
 
   /** 幂等检查：该 key + job 是否已有对应 ledger 记录。 */

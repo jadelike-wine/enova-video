@@ -1,7 +1,12 @@
+'use client'
+
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { BRAND } from '../../lib/brand'
+import LanguageSwitcher from '../LanguageSwitcher'
 
 export default function MarketingHeader() {
+  const t = useTranslations('navigation')
   return (
     <header
       className="sticky top-0 z-50 border-b border-[#E5E7EB]"
@@ -15,9 +20,10 @@ export default function MarketingHeader() {
           <span className="font-bold text-lg text-[#111827]">{BRAND.nameZh}</span>
         </Link>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <LanguageSwitcher />
           <Link href="/app/images" className="btn-primary text-sm px-5">
-            开始使用
+            {t('getStarted')}
           </Link>
         </div>
       </div>

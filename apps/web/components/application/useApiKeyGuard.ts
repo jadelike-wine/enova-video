@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { useSession } from '../../lib/auth'
 import { useDialog } from './DialogProvider'
 
@@ -13,13 +14,6 @@ import { useDialog } from './DialogProvider'
  * 只做一件事：确认余额充足（生成需要预留 Credits）。
  */
 
-export const NO_API_KEY_TITLE = '余额不足'
-export const NO_API_KEY_MESSAGE =
-  '当前余额不足以生成，请先前往「钱包」充值后再试。'
-
-/** 兼容旧导出：新架构存储由平台统一管理，无需用户配置。 */
-export const NO_STORAGE_TITLE = '无需配置'
-export const NO_STORAGE_MESSAGE = '对象存储已由平台统一托管，无需额外配置。'
 
 /** 兼容旧导出：新架构任何模式都无需前置存储配置。 */
 export function imageModeNeedsQiniu(): boolean {
@@ -32,6 +26,7 @@ export function videoModeNeedsQiniu(): boolean {
 }
 
 export function useApiKeyGuard() {
+  const t = useTranslations('guard')
   const router = useRouter()
   const { balance, refresh } = useSession()
   const { confirm } = useDialog()
@@ -54,10 +49,10 @@ export function useApiKeyGuard() {
     if (balance > 0) return true
 
     const goWallet = await confirm({
-      title: NO_API_KEY_TITLE,
-      message: NO_API_KEY_MESSAGE,
-      confirmText: '去充值',
-      cancelText: '取消',
+      title: t('insufficientBalanceTitle'),
+      message: t('insufficientBalanceMessage'),
+      confirmText: t('goToWallet'),
+      cancelText: t('cancel'),
       confirmVariant: 'primary',
     })
     if (goWallet) {

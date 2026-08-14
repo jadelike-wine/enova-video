@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Image as AntdImage } from 'antd'
+import { useTranslations } from 'next-intl'
 import {
   generationApi,
   uploadApi,
@@ -35,14 +36,14 @@ interface InputImage {
   preview: string
 }
 
-function statusLabel(status: string): string {
+function statusLabel(t: (k: string) => string, status: string): string {
   const map: Record<string, string> = {
-    PENDING: '等待中',
-    QUEUED: '排队中',
-    RUNNING: '生成中',
-    SUCCEEDED: '已完成',
-    FAILED: '失败',
-    CANCELED: '已取消',
+    PENDING: t('status.PENDING'),
+    QUEUED: t('status.QUEUED'),
+    RUNNING: t('status.RUNNING'),
+    SUCCEEDED: t('status.SUCCEEDED'),
+    FAILED: t('status.FAILED'),
+    CANCELED: t('status.CANCELED'),
   }
   return map[status] || status
 }
@@ -76,7 +77,7 @@ function modeTagClass(mode?: string): string {
   return map[mode || ''] || 'bg-gray-100 text-gray-600 border-gray-200'
 }
 
-function formatSizeLabel(size: string): string {
+function formatSizeLabel(t: ReturnType<typeof useTranslations<'image'>>, size: string): string {
   const parts = size.split('x').map(Number)
   const w = parts[0]
   const h = parts[1]
@@ -84,9 +85,9 @@ function formatSizeLabel(size: string): string {
   const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a)
   const g = gcd(w, h)
   const ratio = `${w / g}:${h / g}`
-  if (w === h) return `${size} (${ratio} 方图)`
-  if (w > h) return `${size} (${ratio} 横图)`
-  return `${size} (${ratio} 竖图)`
+  if (w === h) return `${size} (${ratio} ${t('squareImage')})`
+  if (w > h) return `${size} (${ratio} ${t('landscapeImage')})`
+  return `${size} (${ratio} ${t('portraitImage')})`
 }
 
 /** 将后端 Generation 归一化为视图所需的 ImageTask。 */
@@ -116,6 +117,8 @@ function inputImagesOf(task: ImageTask): string[] {
 }
 
 export default function ImageView() {
+  const t = useTranslations('image')
+  const tc = useTranslations()
   const { alert } = useDialog()
   const { hasActiveKey, keyStatusLoading, refreshKeyStatus, requireApiKey } = useApiKeyGuard()
 
@@ -181,7 +184,7 @@ export default function ImageView() {
   }
 
   const taskErrorMessage = (task: ImageTask) =>
-    formatErrorMessage(task?.error_message) || (task?.status === 'FAILED' ? '生成失败' : '')
+    formatErrorMessage(task?.error_message) || (task?.status === 'FAILED' ? t('generateFailed') : '')
 
   /** 上传本地文件，返回可访问 URL 列表。 */
   const uploadLocalFiles = async (items: InputImage[]): Promise<string[]> => {
@@ -199,15 +202,15 @@ export default function ImageView() {
 
   const generate = useCallback(async () => {
     if (!form.prompt.trim()) {
-      setError('请输入提示词')
+      setError(t('promptRequired'))
       return
     }
     if (form.mode === 'img2img' && !inputImages.length) {
-      setError('请选择参考图')
+      setError(t('referenceRequired'))
       return
     }
     if (form.mode === 'multi_img' && !inputImages.length) {
-      setError('请选择输入图片')
+      setError(t('inputImagesRequired'))
       return
     }
     if (!(await requireApiKey())) return
@@ -259,7 +262,7 @@ export default function ImageView() {
       setHistory((prev) => prev.filter((t) => t.id !== tempId))
       setSelectedTaskId(null)
       setError((err as Error).message)
-      await alert({ title: '生成失败', message: (err as Error).message, confirmVariant: 'danger' })
+      await alert({ title: t('generateFailed'), message: (err as Error).message, confirmVariant: 'danger' })
     } finally {
       setGenerating(false)
       setGenerateStep('')
@@ -311,10 +314,10 @@ export default function ImageView() {
       <div className="w-96 border-r border-gray-200 flex flex-col bg-gray-50">
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="font-bold text-gray-900">生成历史</h3>
-            {generating && <span className="badge-progress">生成中</span>}
+            <h3 className="font-bold text-gray-900">{t('history')}</h3>
+            {generating && <span className="badge-progress">{t('generating')}</span>}
           </div>
-          <p className="text-xs text-gray-400">点击预览</p>
+          <p className="text-xs text-gray-400">{t('clickToPreview')}</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -346,7 +349,7 @@ export default function ImageView() {
                     ) : ACTIVE_STATUSES.includes(task.status) ? (
                       <div className="w-6 h-6 border-2 border-fuchsia-400/30 border-t-fuchsia-400 rounded-full animate-spin" />
                     ) : (
-                      <span className="text-xs text-gray-400">{statusLabel(task.status)}</span>
+                      <span className="text-xs text-gray-400">{statusLabel(tc, task.status)}</span>
                     )}
                   </div>
 
@@ -355,7 +358,7 @@ export default function ImageView() {
                       <span className="text-xs text-gray-400 font-mono">
                         #{task._optimistic ? '...' : String(task.id).slice(0, 8)}
                       </span>
-                      <span className={statusBadgeClass(task.status)}>{statusLabel(task.status)}</span>
+                      <span className={statusBadgeClass(task.status)}>{statusLabel(tc, task.status)}</span>
                     </div>
                     <p className="text-sm text-gray-800 truncate font-medium mt-1">{task.prompt}</p>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -366,7 +369,7 @@ export default function ImageView() {
                       >
                         {modeLabel(task.mode)}
                       </span>
-                      <span className="text-xs text-gray-400">{formatSizeLabel(task.size || '')}</span>
+                      <span className="text-xs text-gray-400">{formatSizeLabel(t, task.size || '')}</span>
                     </div>
                     {task.status === 'FAILED' && (
                       <p className="text-xs text-rose-600 mt-1.5 truncate">{taskErrorMessage(task)}</p>
@@ -380,8 +383,8 @@ export default function ImageView() {
           {!history.length && !historyLoading && (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <div className="text-4xl mb-3">🎨</div>
-              <p className="text-sm">暂无生成记录</p>
-              <p className="text-xs mt-1">填写参数后点击生成</p>
+              <p className="text-sm">{t('noHistory')}</p>
+              <p className="text-xs mt-1">{t('noHistoryHint')}</p>
             </div>
           )}
         </div>
@@ -393,19 +396,19 @@ export default function ImageView() {
           <div className="max-w-5xl mx-auto space-y-6">
             <div>
               <h2 className="text-2xl font-extrabold bg-gradient-to-r from-pink-600 via-fuchsia-600 to-orange-600 bg-clip-text text-transparent">
-                图片生成
+                {t('title')}
               </h2>
-              <p className="text-gray-500 text-sm mt-1">文生图 · 单图编辑 · 多图合成</p>
+              <p className="text-gray-500 text-sm mt-1">{t('subtitle')}</p>
             </div>
 
             {!keyStatusLoading && !hasActiveKey && (
               <div className="glass-card border border-amber-400/30 bg-amber-400/10 py-3 px-4">
                 <p className="text-sm text-amber-600">
-                  余额不足，无法生成图片。请先前往
+                  {t('insufficientBalance')}{' '}
                   <Link href="/app/wallet" className="text-cyan-600 hover:underline">
-                    {' '}钱包
+                    {tc('common.wallet')}
                   </Link>
-                  充值后再试。
+                  {t('rechargeHint')}
                 </p>
               </div>
             )}
@@ -414,7 +417,7 @@ export default function ImageView() {
               {/* Form */}
               <div ref={formCardRef} className="glass-card space-y-4">
                 <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">生成模式</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('generationMode')}</label>
                   <div className="grid grid-cols-3 gap-2">
                     {IMAGE_MODES.map((m) => (
                       <button
@@ -433,7 +436,7 @@ export default function ImageView() {
                 </div>
 
                 <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">模型</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('model')}</label>
                   <select
                     value={form.model}
                     onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))}
@@ -442,14 +445,14 @@ export default function ImageView() {
                     {IMAGE_MODELS.map((m) => (
                       <option key={m.apiId} value={m.apiId}>
                         {m.name}
-                        {m.deprecated ? ' (已废弃)' : ''}
+                        {m.deprecated ? ` (${t('deprecated')})` : ''}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">尺寸</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('size')}</label>
                   <select
                     value={form.size}
                     onChange={(e) => setForm((prev) => ({ ...prev, size: e.target.value }))}
@@ -457,34 +460,34 @@ export default function ImageView() {
                   >
                     {IMAGE_SIZES.map((s) => (
                       <option key={s} value={s}>
-                        {formatSizeLabel(s)}
+                        {formatSizeLabel(t, s)}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-sm text-gray-600 mb-2 block font-medium">提示词</label>
+                  <label className="text-sm text-gray-600 mb-2 block font-medium">{t('prompt')}</label>
                   <textarea
                     value={form.prompt}
                     onChange={(e) => setForm((prev) => ({ ...prev, prompt: e.target.value }))}
                     rows={3}
                     className="input-field text-sm"
-                    placeholder="描述你想生成的图片内容..."
+                    placeholder={t('promptPlaceholder')}
                   />
                 </div>
 
                 {form.mode !== 'text2img' && (
                   <div>
                     <label className="text-sm text-gray-600 mb-2 block font-medium">
-                      {form.mode === 'img2img' ? '参考图' : '输入图片'}
+                      {form.mode === 'img2img' ? t('referenceImage') : t('inputImages')}
                     </label>
                     <div className="flex flex-wrap gap-2 mb-2">
                       {inputImages.map((item, i) => (
                         <div key={i} className="relative group">
                           <AntdImage
                             src={item.preview}
-                            alt="参考图"
+                            alt={t('referenceImage')}
                             width={80}
                             height={80}
                             preview={false}
@@ -510,9 +513,9 @@ export default function ImageView() {
                       />
                       {form.mode === 'img2img'
                         ? inputImages.length
-                          ? '更换参考图'
-                          : '选择参考图'
-                        : '+ 选择图片'}
+                          ? t('changeReference')
+                          : t('selectReference')
+                        : t('selectImages')}
                     </label>
                   </div>
                 )}
@@ -525,10 +528,10 @@ export default function ImageView() {
 
                 <button onClick={generate} disabled={generating} className="btn-primary w-full py-3 text-base">
                   {generateStep === 'uploading'
-                    ? '上传并生成中...'
+                    ? t('generatingWithUpload')
                     : generating
-                      ? '生成中...'
-                      : '✨ 开始生成'}
+                      ? t('generatingNow')
+                      : t('startGenerate')}
                 </button>
               </div>
 
@@ -538,32 +541,32 @@ export default function ImageView() {
                   <div className="flex-1 flex flex-col">
                     <div className="flex items-center justify-between mb-4">
                       <span className="font-bold text-gray-900">
-                        {selectedTask._optimistic ? '新任务' : `任务 #${String(selectedTask.id).slice(0, 8)}`}
+                        {selectedTask._optimistic ? t('newTask') : `${t('taskPrefix')} #${String(selectedTask.id).slice(0, 8)}`}
                       </span>
                       <span className={statusBadgeClass(selectedTask.status)}>
-                        {statusLabel(selectedTask.status)}
+                        {statusLabel(tc, selectedTask.status)}
                       </span>
                     </div>
 
                     {ACTIVE_STATUSES.includes(selectedTask.status) && (
                       <div className="flex-1 flex flex-col items-center justify-center">
                         <div className="w-16 h-16 rounded-full border-4 border-fuchsia-400/30 border-t-fuchsia-400 animate-spin" />
-                        <p className="text-gray-500 mt-5 text-sm">图片生成中，请稍候...</p>
+                        <p className="text-gray-500 mt-5 text-sm">{t('generatingHint')}</p>
                       </div>
                     )}
 
                     {!ACTIVE_STATUSES.includes(selectedTask.status) && displayUrl(selectedTask) && (
                       <div className="flex-1">
-                        <p className="text-xs text-gray-500 mb-2 font-medium">生成结果</p>
+                        <p className="text-xs text-gray-500 mb-2 font-medium">{t('result')}</p>
                         <AntdImage
                           src={displayUrl(selectedTask)}
-                          alt={selectedTask.prompt || '生成的图片'}
+                          alt={selectedTask.prompt || t('generatedImage')}
                           width="100%"
                           className="rounded-2xl border border-gray-200 object-contain max-h-[360px] bg-gray-100 cursor-zoom-in hover:opacity-90 transition-opacity"
                           preview={{ mask: false }}
                         />
                         <div className="mt-3 text-xs text-gray-500 flex flex-wrap gap-4">
-                          <span>{formatSizeLabel(selectedTask.size || '')}</span>
+                          <span>{formatSizeLabel(t, selectedTask.size || '')}</span>
                         </div>
                       </div>
                     )}
@@ -571,7 +574,7 @@ export default function ImageView() {
                     {selectedTask.status === 'FAILED' || selectedTask.status === 'CANCELED' ? (
                       <div className="glass px-4 py-3 rounded-2xl border border-rose-400/30">
                         <p className="text-rose-600 text-sm whitespace-pre-wrap break-words">
-                          {statusLabel(selectedTask.status)}
+                          {statusLabel(tc, selectedTask.status)}
                           {taskErrorMessage(selectedTask) ? `：${taskErrorMessage(selectedTask)}` : ''}
                         </p>
                       </div>
@@ -579,32 +582,32 @@ export default function ImageView() {
 
                     <div className="mt-4 space-y-3">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs text-gray-500 font-medium">生成参数</p>
+                        <p className="text-xs text-gray-500 font-medium">{t('params')}</p>
                         {!selectedTask._optimistic && (
                           <button
                             onClick={() => fillFormFromTask(selectedTask)}
                             className="btn-secondary text-xs px-3 py-1.5"
                           >
-                            填充到表单
+                            {t('fillForm')}
                           </button>
                         )}
                       </div>
                       <div className="glass px-4 py-3 rounded-2xl border border-gray-200 space-y-2 text-sm">
                         <div>
-                          <span className="text-gray-400 text-xs">提示词</span>
+                          <span className="text-gray-400 text-xs">{t('prompt')}</span>
                           <p className="text-gray-800 mt-0.5 leading-relaxed">{selectedTask.prompt || '—'}</p>
                         </div>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs pt-1">
                           <div>
-                            <span className="text-gray-400">模式</span>{' '}
+                            <span className="text-gray-400">{t('mode')}</span>{' '}
                             <span className="text-gray-700">{modeLabel(selectedTask.mode)}</span>
                           </div>
                           <div>
-                            <span className="text-gray-400">尺寸</span>{' '}
-                            <span className="text-gray-700">{formatSizeLabel(selectedTask.size || '')}</span>
+                            <span className="text-gray-400">{t('size')}</span>{' '}
+                            <span className="text-gray-700">{formatSizeLabel(t, selectedTask.size || '')}</span>
                           </div>
                           <div className="col-span-2">
-                            <span className="text-gray-400">模型</span>{' '}
+                            <span className="text-gray-400">{t('model')}</span>{' '}
                             <span className="text-gray-700">{modelDisplayName(selectedTask.model)}</span>
                           </div>
                         </div>
@@ -616,7 +619,7 @@ export default function ImageView() {
                     <div className="w-20 h-20 rounded-3xl bg-pink-100 flex items-center justify-center text-4xl mb-4 border border-gray-200">
                       🎨
                     </div>
-                    <p>选择左侧记录或创建新任务</p>
+                    <p>{t('selectOrCreate')}</p>
                   </div>
                 )}
               </div>

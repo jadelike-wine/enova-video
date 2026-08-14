@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Image as AntdImage } from 'antd'
+import { useTranslations } from 'next-intl'
 import { billingApi, paymentApi, publicApi, type LedgerEntry, type RechargeResult } from '../../lib/api'
 import { useDialog } from './DialogProvider'
 import { useSession } from '../../lib/auth'
@@ -11,19 +12,12 @@ import { formatErrorMessage } from '../../lib/errorMessage'
 /** 预置充值档位（人民币，元）。 */
 const RECHARGE_PRESETS_CNY = [10, 30, 50, 100, 200]
 
-const LEDGER_TYPE_LABEL: Record<string, string> = {
-  WELCOME: '新用户赠送',
-  RECHARGE: '充值',
-  GENERATION_RESERVE: '生成预留',
-  GENERATION_SETTLE: '生成结算',
-  GENERATION_RELEASE: '生成释放',
-  REFUND: '退款',
-  SUBSCRIPTION_GRANT: '订阅发放',
-  ADMIN_ADJUSTMENT: '管理员调整',
-}
-
-function ledgerTypeLabel(type?: string): string {
-  return LEDGER_TYPE_LABEL[type ?? ''] || type || '—'
+function ledgerTypeLabel(t: ReturnType<typeof useTranslations<'wallet'>>, type?: string): string {
+  const knownTypes = ['WELCOME', 'RECHARGE', 'GENERATION_RESERVE', 'GENERATION_SETTLE', 'GENERATION_RELEASE', 'REFUND', 'SUBSCRIPTION_GRANT', 'ADMIN_ADJUSTMENT']
+  if (type && knownTypes.includes(type)) {
+    return t(`ledgerTypes.${type}` as 'ledgerTypes.WELCOME')
+  }
+  return type || '—'
 }
 
 function ledgerTypeClass(type?: string): string {
@@ -51,6 +45,8 @@ function formatTime(iso?: string): string {
 }
 
 export default function WalletView() {
+  const t = useTranslations('wallet')
+  const tc = useTranslations()
   const { alert } = useDialog()
   const { user, refresh } = useSession()
 
@@ -86,7 +82,7 @@ export default function WalletView() {
       setLedger(items)
     } catch (e) {
       setLedger([])
-      await alert({ title: '加载失败', message: formatErrorMessage(e) })
+      await alert({ title: tc('common.loadFailed'), message: formatErrorMessage(e) })
     } finally {
       setLedgerLoading(false)
     }
@@ -104,7 +100,7 @@ export default function WalletView() {
   const handleRecharge = useCallback(async () => {
     const amountCny = effectiveCny
     if (!Number.isFinite(amountCny) || amountCny <= 0 || amountCny > 100000) {
-      await alert({ title: '提示', message: '请输入有效充值金额（1 ~ 100000 元）' })
+      await alert({ title: tc('dialog.alertTitle'), message: t('invalidAmount') })
       return
     }
     setRecharging(true)
@@ -113,7 +109,7 @@ export default function WalletView() {
       const res = await paymentApi.recharge(Math.round(amountCny * 100))
       setRechargeResult(res)
     } catch (e) {
-      await alert({ title: '创建订单失败', message: formatErrorMessage(e) })
+      await alert({ title: t('createOrderFailed'), message: formatErrorMessage(e) })
     } finally {
       setRecharging(false)
     }
@@ -124,12 +120,12 @@ export default function WalletView() {
     setConfirming(true)
     try {
       const res = await paymentApi.sandboxConfirm(rechargeResult.orderId)
-      await alert({ title: '支付成功', message: `已到账 +${Number(res.credits).toLocaleString()} Credits` })
+      await alert({ title: t('paySuccess'), message: t('paySuccessMessage', { credits: Number(res.credits).toLocaleString() }) })
       setRechargeResult(null)
       setCustomCny('')
       await Promise.all([loadWallet(), refresh(), loadLedger()])
     } catch (e) {
-      await alert({ title: '确认失败', message: formatErrorMessage(e) })
+      await alert({ title: t('payConfirmFailed'), message: formatErrorMessage(e) })
     } finally {
       setConfirming(false)
     }
@@ -140,12 +136,12 @@ export default function WalletView() {
       <header className="flex-shrink-0 px-8 py-6 border-b border-gray-200 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold bg-gradient-to-r from-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
-            钱包
+            {t('title')}
           </h2>
-          <p className="text-sm text-gray-500 mt-1">充值 Credits，用于图片/视频生成</p>
+          <p className="text-sm text-gray-500 mt-1">{t('subtitle')}</p>
         </div>
         <Link href="/app/settings" className="btn-secondary text-sm">
-          账户设置
+          {t('accountSettings')}
         </Link>
       </header>
 
@@ -153,28 +149,28 @@ export default function WalletView() {
         {/* 余额总览 */}
         <section className="glass-card">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-gray-900">当前余额</h3>
+            <h3 className="text-lg font-bold text-gray-900">{t('currentBalance')}</h3>
             {!loading && (
               <span className="text-xs text-gray-400">{user?.email ?? ''}</span>
             )}
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
-              <p className="text-xs text-gray-400 mb-1">可用余额</p>
+              <p className="text-xs text-gray-400 mb-1">{t('availableBalance')}</p>
               <p className="text-3xl font-extrabold text-cyan-600">
                 {balance.toLocaleString()}
                 <span className="text-sm font-normal text-gray-500 ml-1">Credits</span>
               </p>
             </div>
             <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
-              <p className="text-xs text-gray-400 mb-1">已预留（进行中任务）</p>
+              <p className="text-xs text-gray-400 mb-1">{t('reservedBalance')}</p>
               <p className="text-3xl font-extrabold text-amber-600">
                 {reservedBalance.toLocaleString()}
                 <span className="text-sm font-normal text-gray-500 ml-1">Credits</span>
               </p>
             </div>
             <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
-              <p className="text-xs text-gray-400 mb-1">总余额</p>
+              <p className="text-xs text-gray-400 mb-1">{t('totalBalance')}</p>
               <p className="text-3xl font-extrabold text-gray-900">
                 {(balance + reservedBalance).toLocaleString()}
                 <span className="text-sm font-normal text-gray-500 ml-1">Credits</span>
@@ -185,9 +181,9 @@ export default function WalletView() {
 
         {/* 充值 */}
         <section className="glass-card">
-          <h3 className="text-lg font-bold text-gray-900 mb-1">充值</h3>
+          <h3 className="text-lg font-bold text-gray-900 mb-1">{t('recharge')}</h3>
           <p className="text-sm text-gray-500 mb-4">
-            选择或输入充值金额（人民币），创建订单后完成支付，Credits 即时到账。
+            {t('rechargeHint')}
           </p>
 
           <div className="flex flex-wrap gap-2 mb-4">
@@ -220,25 +216,21 @@ export default function WalletView() {
               type="number"
               min={1}
               className="input-field flex-1"
-              placeholder="自定义金额（元）"
+              placeholder={t('customAmount')}
             />
             <button
               className="btn-primary flex-shrink-0"
               disabled={recharging}
               onClick={handleRecharge}
             >
-              {recharging ? '创建订单中…' : '立即充值'}
+              {recharging ? t('creatingOrder') : t('rechargeNow')}
             </button>
           </div>
 
           {rechargeResult && (
             <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5 space-y-4">
               <p className="text-sm text-gray-800">
-                订单 <code className="text-cyan-600">{rechargeResult.orderId.slice(0, 8)}</code>{' '}
-                已创建，到账{' '}
-                <strong className="text-cyan-600">
-                  +{Number(rechargeResult.credits).toLocaleString()} Credits
-                </strong>
+                {t('orderCreated', { orderId: rechargeResult.orderId.slice(0, 8), credits: Number(rechargeResult.credits).toLocaleString() })}
               </p>
               {rechargeResult.payUrl && (
                 <a
@@ -247,15 +239,15 @@ export default function WalletView() {
                   rel="noopener noreferrer"
                   className="btn-primary inline-block"
                 >
-                  前往支付
+                  {t('goToPay')}
                 </a>
               )}
               {rechargeResult.qrCode && (
                 <div>
-                  <p className="text-xs text-gray-400 mb-2">扫码支付：</p>
+                  <p className="text-xs text-gray-400 mb-2">{t('scanToPay')}</p>
                   <AntdImage
                     src={rechargeResult.qrCode}
-                    alt="支付二维码"
+                    alt={t('qrCode')}
                     width={160}
                     height={160}
                     preview={false}
@@ -268,7 +260,7 @@ export default function WalletView() {
                 disabled={confirming}
                 onClick={handleSandboxConfirm}
               >
-                {confirming ? '确认中…' : '模拟确认支付（演示模式）'}
+                {confirming ? t('confirming') : t('sandboxConfirm')}
               </button>
             </div>
           )}
@@ -277,22 +269,22 @@ export default function WalletView() {
         {/* 交易流水 */}
         <section className="glass-card">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-gray-900">交易流水</h3>
+            <h3 className="text-lg font-bold text-gray-900">{t('transactionHistory')}</h3>
             <button
               className="btn-ghost text-xs"
               onClick={() => void loadLedger()}
               disabled={ledgerLoading}
             >
-              刷新
+              {tc('common.refresh')}
             </button>
           </div>
 
           {ledgerLoading && (
-            <div className="text-center py-12 text-gray-400">加载中…</div>
+            <div className="text-center py-12 text-gray-400">{tc('common.loading')}</div>
           )}
 
           {!ledgerLoading && ledger.length === 0 && (
-            <div className="text-center py-12 text-gray-400">暂无交易记录</div>
+            <div className="text-center py-12 text-gray-400">{t('noTransactions')}</div>
           )}
 
           {!ledgerLoading && ledger.length > 0 && (
@@ -311,7 +303,7 @@ export default function WalletView() {
                             entry.type,
                           )}`}
                         >
-                          {ledgerTypeLabel(entry.type)}
+                          {ledgerTypeLabel(t, entry.type)}
                         </span>
                         {entry.description && (
                           <span className="text-xs text-gray-400 truncate">
@@ -326,7 +318,7 @@ export default function WalletView() {
                         {formatAmount(amount)}
                       </p>
                       <p className="text-xs text-gray-400">
-                        余额 {Number(entry.balanceAfter || 0).toLocaleString()}
+                        {t('balanceAfter', { balance: Number(entry.balanceAfter || 0).toLocaleString() })}
                       </p>
                     </div>
                   </div>
@@ -338,16 +330,16 @@ export default function WalletView() {
 
         {/* 客服联系方式 — 退款/订单问题 */}
         <section className="glass-card">
-          <h3 className="text-sm font-bold text-gray-900 mb-2">退款与订单问题</h3>
+          <h3 className="text-sm font-bold text-gray-900 mb-2">{t('refundTitle')}</h3>
           <div className="space-y-2 text-xs text-gray-500">
             <p>
-              退款需联系客服人工处理，系统不会自动退款。
+              {t('refundHint1')}
             </p>
             <p>
-              请提供订单号和付款账号信息，客服将在 1-3 个工作日内处理。
+              {t('refundHint2')}
             </p>
             <p>
-              联系邮箱：
+              {t('contactEmail')}
               <a
                 href={`mailto:${supportEmail}`}
                 className="text-[#7C3AED] underline decoration-[#7C3AED]/40 hover:text-[#6D28D9] ml-1"

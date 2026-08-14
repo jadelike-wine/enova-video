@@ -1,6 +1,10 @@
+'use client'
+
+import { useTranslations } from 'next-intl'
 import { BRAND } from '../../lib/brand'
 
 export default function MarketingFooter() {
+  const t = useTranslations('home')
   return (
     <footer className="border-t border-[#E5E7EB] bg-white">
       <div className="max-w-6xl mx-auto px-6 py-12">
@@ -13,7 +17,7 @@ export default function MarketingFooter() {
               <span className="font-bold text-[#111827]">{BRAND.nameZh}</span>
             </div>
             <p className="text-sm text-[#6B7280] leading-relaxed">
-              {BRAND.nameZh}（{BRAND.name}）AI 智能创作平台，提供 AI 图片生成与 AI 视频生成的一体化创作体验。
+              {t('footerDescription')}
             </p>
           </div>
         </div>

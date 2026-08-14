@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { useTranslations } from 'next-intl'
 
 export interface DialogState {
   visible: boolean
@@ -53,6 +54,7 @@ const variantClass: Record<'primary' | 'danger', string> = {
 }
 
 export function DialogProvider({ children }: { children: ReactNode }) {
+  const t = useTranslations('dialog')
   const [state, setState] = useState<DialogState>({
     visible: false,
     type: 'confirm',
@@ -70,17 +72,17 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       setState({
         visible: true,
         type,
-        title: opts.title || (type === 'confirm' ? '确认操作' : '提示'),
+        title: opts.title || (type === 'confirm' ? t('confirmTitle') : t('alertTitle')),
         message: opts.message || '',
-        confirmText: opts.confirmText || (type === 'confirm' ? '确定' : '知道了'),
-        cancelText: opts.cancelText || (type === 'confirm' ? '取消' : ''),
+        confirmText: opts.confirmText || (type === 'confirm' ? t('confirm') : t('ok')),
+        cancelText: opts.cancelText || (type === 'confirm' ? t('cancel') : ''),
         confirmVariant: opts.confirmVariant || 'primary',
       })
       return new Promise<boolean>((resolve) => {
         resolverRef.current = resolve
       })
     },
-    [],
+    [t],
   )
 
   const confirm = useCallback(

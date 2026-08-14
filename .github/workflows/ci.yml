@@ -48,5 +48,26 @@ jobs:
       - name: Validate prod compose
         run: |
           mkdir -p .deploy
-          echo "APP_VERSION=1.0.0" > .deploy/version.env
+          cat > .deploy/version.env <<'EOF'
+          APP_VERSION=1.0.0
+          POSTGRES_PASSWORD=test-password-for-ci-validation
+          REDIS_PASSWORD=test-redis-password
+          CREDENTIAL_MASTER_KEY=test-32-byte-key-for-production-use-only
+          SUPPORT_EMAIL=support@example.com
+          STORAGE_PROVIDER=s3
+          S3_REGION=us-east-1
+          S3_BUCKET=test-bucket
+          PAYMENT_MODE=alipay
+          PAYMENT_RETURN_BASE_URL=http://example.com
+          PAYMENT_NOTIFY_URL=http://example.com/notify
+          SMTP_HOST=smtp.example.com
+          SMTP_USER=test@example.com
+          SMTP_PASSWORD=test-smtp-password
+          SMTP_FROM_EMAIL=test@example.com
+          APP_PASSWORD_RESET_URL=http://localhost:3000/auth/reset-password
+          APP_EMAIL_VERIFY_URL=http://localhost:3000/auth/verify-email
+          APP_SITE_URL=http://localhost:3000
+          CORS_ALLOWED_ORIGINS=http://localhost:3000
+          NEXT_PUBLIC_SITE_URL=http://localhost:3000
+          EOF
           docker compose -f docker-compose.prod.yml --env-file .deploy/version.env config -q

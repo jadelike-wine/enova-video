@@ -41,7 +41,10 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AuthResult> {
-    const result = await this.auth.register(dto.email, dto.password, dto.turnstileToken, req.ip);
+    const result = await this.auth.register(dto.email, dto.password, dto.turnstileToken, req.ip, {
+      agreementRevision: dto.agreementRevision,
+      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+    });
     this.setSessionCookie(res, result, req);
     return this.toPublic(result);
   }
@@ -55,7 +58,10 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
   ): Promise<AuthResult> {
-    const result = await this.auth.login(dto.email, dto.password, dto.turnstileToken, req.ip);
+    const result = await this.auth.login(dto.email, dto.password, dto.turnstileToken, req.ip, {
+      agreementRevision: dto.agreementRevision,
+      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+    });
     this.setSessionCookie(res, result, req);
     return this.toPublic(result);
   }

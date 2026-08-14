@@ -71,6 +71,13 @@
       "when": 1786622224879,
       "tag": "0009_cooing_robbie_robertson",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786673418748,
+      "tag": "0010_fair_maginty",
+      "breakpoints": true
     }
   ]
 }

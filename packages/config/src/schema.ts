@@ -184,6 +184,10 @@ export const envSchema = z.object({
   TURNSTILE_ENABLED: envBool(false),
   TURNSTILE_SITE_KEY: z.string().optional().default(''),
   TURNSTILE_SECRET_KEY: z.string().optional().default(''),
+  LOGIN_AGREEMENT_ENABLED: envBool(false),
+  LOGIN_AGREEMENT_MODE: z.enum(['modal', 'checkbox']).default('modal'),
+  LOGIN_AGREEMENT_UPDATED_AT: z.string().default(''),
+  LOGIN_AGREEMENT_DOCUMENTS: z.string().default('[]'),
 
   // ---- 支付 ----
   /** 支付模式：sandbox=本地演示（无需商户密钥）；alipay/wechat=真实渠道。 */

@@ -9,6 +9,7 @@ import {
 import { useDialog } from './DialogProvider'
 import { useSession } from '../../lib/auth'
 import { formatErrorMessage } from '../../lib/errorMessage'
+import AgreementDocumentsEditor from './AgreementDocumentsEditor'
 
 const GROUP_LABEL: Record<string, string> = {
   billing: '基础业务',
@@ -310,7 +311,12 @@ export default function AdminSettingsView() {
                         </div>
 
                         <div className="flex flex-col sm:flex-row gap-2 mt-3">
-                          {setting.valueType === 'boolean' ? (
+                          {setting.key === 'general.loginAgreementDocuments' ? (
+                            <AgreementDocumentsEditor
+                              value={drafts[setting.key] ?? '[]'}
+                              onChange={(value) => setDrafts((p) => ({ ...p, [setting.key]: value }))}
+                            />
+                          ) : setting.valueType === 'boolean' ? (
                             <label className="flex items-center gap-2 cursor-pointer flex-1">
                               <input
                                 type="checkbox"

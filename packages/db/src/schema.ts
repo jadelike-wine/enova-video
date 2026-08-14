@@ -131,6 +131,19 @@ export const sessions = pgTable('sessions', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('sessions_user_id_idx').on(t.userId)]);
 
+/** 用户同意的登录条款版本。每个用户/条款 revision 只记录一次，保留历史版本。 */
+export const userAgreementAcceptances = pgTable('user_agreement_acceptances', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  revision: varchar('revision', { length: 64 }).notNull(),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }).notNull().defaultNow(),
+  ip: varchar('ip', { length: 64 }),
+  userAgent: varchar('user_agent', { length: 512 }),
+}, (t) => [
+  index('user_agreement_acceptances_user_id_idx').on(t.userId),
+  uniqueIndex('user_agreement_acceptances_user_revision_unique').on(t.userId, t.revision),
+]);
+
 // ---------------------------------------------------------------------------
 // Workspace
 // ---------------------------------------------------------------------------

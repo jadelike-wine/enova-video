@@ -2,6 +2,8 @@ import { Global, Module, OnApplicationShutdown } from '@nestjs/common';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/config.module.js';
 import { SettingsService, SETTINGS_REDIS } from './settings.service.js';
+import { LoginAgreementService } from './login-agreement.service.js';
+import { PublicLoginAgreementController } from './public-login-agreement.controller.js';
 
 /**
  * 全局动态配置模块：SettingsService 被 Auth / Payment / Admin 等多个模块依赖，
@@ -18,8 +20,10 @@ import { SettingsService, SETTINGS_REDIS } from './settings.service.js';
       useFactory: (env: Env) => new IORedis(env.REDIS_URL, { maxRetriesPerRequest: null }),
     },
     SettingsService,
+    LoginAgreementService,
   ],
-  exports: [SettingsService],
+  controllers: [PublicLoginAgreementController],
+  exports: [SettingsService, LoginAgreementService],
 })
 export class SettingsModule implements OnApplicationShutdown {
   constructor() {}

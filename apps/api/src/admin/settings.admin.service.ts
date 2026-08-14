@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { domainError, ERROR_CODES } from '@enova/contracts';
 import { isRegisteredSetting, SETTINGS_BY_KEY } from '@enova/db';
 import { SettingsService, type SettingValueView } from '../settings/settings.service.js';
+import { LoginAgreementValidationError, parseLoginAgreementDocuments } from '../settings/login-agreement.js';
 
 /** 脱敏展示：Secret 返回 masked 尾缀或空。 */
 function maskSecret(value: string): string {
@@ -69,6 +70,7 @@ export class SettingsAdminService {
 
     // P0: 生产环境动态配置安全守卫——拒绝危险值。
     this.validateProductionSetting(key, value);
+    await this.validateLoginAgreementUpdate(key, value);
 
     await this.settings.update(key, value, opts);
 
@@ -90,6 +92,8 @@ export class SettingsAdminService {
       // P0: 生产环境动态配置安全守卫。
       this.validateProductionSetting(key, value);
     }
+
+    await this.validateLoginAgreementGroup(items);
 
     await this.settings.updateGroup(items, opts);
 
@@ -188,6 +192,59 @@ export class SettingsAdminService {
         'Cannot enable ssrf.allowHttp in production.',
         400,
       );
+    }
+  }
+
+  private async validateLoginAgreementUpdate(key: string, value: string): Promise<void> {
+    if (key === 'general.loginAgreementDocuments') {
+      this.parseLoginAgreementDocuments(value);
+    }
+    if (key !== 'general.loginAgreementEnabled' && key !== 'general.loginAgreementDocuments') return;
+
+    const current = await this.settings.getMany([
+      'general.loginAgreementEnabled',
+      'general.loginAgreementDocuments',
+    ]);
+    const enabled = key === 'general.loginAgreementEnabled'
+      ? this.parseBoolean(value)
+      : this.parseBoolean(current.get('general.loginAgreementEnabled'));
+    const rawDocuments = key === 'general.loginAgreementDocuments'
+      ? value
+      : current.get('general.loginAgreementDocuments');
+    const documents = this.parseLoginAgreementDocuments(rawDocuments);
+    if (enabled && documents.length === 0) {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, 'At least one legal document is required when login agreement is enabled', 400);
+    }
+  }
+
+  private async validateLoginAgreementGroup(items: Array<{ key: string; value: string }>): Promise<void> {
+    if (!items.some(({ key }) => key === 'general.loginAgreementEnabled' || key === 'general.loginAgreementDocuments')) return;
+
+    const current = await this.settings.getMany([
+      'general.loginAgreementEnabled',
+      'general.loginAgreementDocuments',
+    ]);
+    const values = new Map(current);
+    for (const item of items) values.set(item.key, item.value);
+
+    const documents = this.parseLoginAgreementDocuments(values.get('general.loginAgreementDocuments'));
+    if (this.parseBoolean(values.get('general.loginAgreementEnabled')) && documents.length === 0) {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, 'At least one legal document is required when login agreement is enabled', 400);
+    }
+  }
+
+  private parseBoolean(value: string | null | undefined): boolean {
+    return ['1', 'true', 'yes', 'on'].includes((value ?? '').toLowerCase());
+  }
+
+  private parseLoginAgreementDocuments(raw: string | null | undefined) {
+    try {
+      return parseLoginAgreementDocuments(raw);
+    } catch (error) {
+      if (error instanceof LoginAgreementValidationError) {
+        throw domainError(ERROR_CODES.VALIDATION_ERROR, error.message, 400);
+      }
+      throw error;
     }
   }
 }

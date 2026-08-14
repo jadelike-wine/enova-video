@@ -8,11 +8,12 @@ import { Pool } from 'pg';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDbFromPool, sessions, users, type Database } from '@enova/db';
+import { createDbFromPool, sessions, userAgreementAcceptances, users, type Database } from '@enova/db';
 import { AuthService } from './auth.service.js';
 import { PasswordService } from './password.service.js';
 import { SessionService } from './session.service.js';
 import { ERROR_CODES } from '@enova/contracts';
+import { LoginAgreementService } from '../settings/login-agreement.service.js';
 
 const connectionString = process.env.DATABASE_URL;
 const hasDb = !!connectionString;
@@ -131,6 +132,55 @@ describe('AuthService sessions (real PostgreSQL)', () => {
     // 其它已撤销
     const rows = await db!.select().from(sessions).where(eq(sessions.userId, userId));
     expect(rows.filter((s) => !s.revokedAt).length).toBe(1);
+  });
+
+  it.skipIf(!hasDb)('requires the current agreement revision and records user consent', async () => {
+    const settings = {
+      ...makeSettings(),
+      getMany: async (keys: string[]) => new Map(keys.map((key) => [
+        key,
+        {
+          'general.loginAgreementEnabled': 'true',
+          'general.loginAgreementMode': 'modal',
+          'general.loginAgreementUpdatedAt': '2026-08-14',
+          'general.loginAgreementDocuments': JSON.stringify([
+            { slug: 'terms', title: '服务条款', contentMd: '# 内容' },
+          ]),
+        }[key] ?? null,
+      ])),
+    };
+    const agreement = new LoginAgreementService(settings as never);
+    const agreementAuth = new AuthService(
+      db,
+      settings as never,
+      new PasswordService(),
+      new SessionService(),
+      makeTurnstile() as never,
+      undefined as never,
+      agreement,
+    );
+    const config = await agreement.getConfig();
+    const email = `agreement-${crypto.randomUUID()}@t.com`;
+
+    await expect(agreementAuth.register(email, 'password123')).rejects.toMatchObject({
+      code: ERROR_CODES.AGREEMENT_REQUIRED,
+    });
+    const registered = await agreementAuth.register(email, 'password123', undefined, '1.2.3.4', {
+      agreementRevision: config.revision,
+      userAgent: 'integration-test',
+    });
+    await agreementAuth.login(registered.user.email, 'password123', undefined, '5.6.7.8', {
+      agreementRevision: config.revision,
+      userAgent: 'integration-test',
+    });
+
+    const acceptances = await db
+      .select()
+      .from(userAgreementAcceptances)
+      .where(eq(userAgreementAcceptances.userId, registered.user.userId));
+    expect(acceptances).toHaveLength(1);
+    expect(acceptances[0]?.revision).toBe(config.revision);
+    expect(acceptances[0]?.userAgent).toBe('integration-test');
   });
 
   it.skipIf(!hasDb)('change-password rejects wrong current password', async () => {

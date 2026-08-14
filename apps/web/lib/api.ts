@@ -27,6 +27,23 @@ export interface AuthResult {
   reservedBalance: number
 }
 
+export interface LoginAgreementDocument {
+  slug: string
+  title: string
+}
+
+export interface LoginAgreementConfig {
+  enabled: boolean
+  mode: 'modal' | 'checkbox'
+  updatedAt: string
+  revision: string
+  documents: LoginAgreementDocument[]
+}
+
+export interface LegalDocument extends LoginAgreementDocument {
+  contentMd: string
+}
+
 export interface TurnstileConfig {
   enabled: boolean
   siteKey: string
@@ -169,12 +186,23 @@ async function json<T>(url: string, options: RequestInit = {}): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export const authApi = {
-  register: (email: string, password: string, turnstileToken?: string) =>
-    json<AuthResult>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, turnstileToken }) }),
-  login: (email: string, password: string, turnstileToken?: string) =>
-    json<AuthResult>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, turnstileToken }) }),
+  register: (email: string, password: string, turnstileToken?: string, agreementRevision?: string) =>
+    json<AuthResult>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, turnstileToken, agreementRevision }),
+    }),
+  login: (email: string, password: string, turnstileToken?: string, agreementRevision?: string) =>
+    json<AuthResult>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, turnstileToken, agreementRevision }),
+    }),
   logout: () => json<{ ok: true }>('/auth/logout', { method: 'POST' }),
   me: () => json<AuthResult>('/auth/me'),
+}
+
+export const publicApi = {
+  loginAgreement: () => json<LoginAgreementConfig>('/public/login-agreement'),
+  legalDocument: (slug: string) => json<LegalDocument>(`/public/legal/${encodeURIComponent(slug)}`),
 }
 
 export const turnstileApi = {

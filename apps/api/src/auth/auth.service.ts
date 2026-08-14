@@ -15,6 +15,7 @@ import {
   emailVerificationTokens,
   passwordResetTokens,
   sessions,
+  userAgreementAcceptances,
   users,
   wallets,
   walletLedger,
@@ -27,6 +28,7 @@ import { SettingsService } from '../settings/settings.service.js';
 import { PasswordService } from './password.service.js';
 import { SessionService, SESSION_TTL_SECONDS } from './session.service.js';
 import { TurnstileService } from './turnstile.service.js';
+import { LoginAgreementService } from '../settings/login-agreement.service.js';
 
 export interface AuthUser {
   userId: string;
@@ -55,6 +57,12 @@ export interface SessionView {
   revoked: boolean;
 }
 
+export interface AuthRequestOptions {
+  admin?: boolean;
+  agreementRevision?: string;
+  userAgent?: string;
+}
+
 function fail(code: ErrorCode, message: string, statusCode = 400): never {
   throw domainError(code, message, statusCode);
 }
@@ -70,6 +78,7 @@ export class AuthService {
     private readonly session: SessionService,
     private readonly turnstile: TurnstileService,
     @Inject(RbacStore) private readonly rbacStore: RbacStore,
+    @Inject(LoginAgreementService) private readonly loginAgreement?: LoginAgreementService,
   ) {}
 
   /** 注册：事务内创建 User + Personal Workspace + Member + Wallet + Welcome Credits + Session。 */
@@ -78,11 +87,12 @@ export class AuthService {
     plainPassword: string,
     turnstileToken?: string,
     remoteIP?: string,
-    opts: { admin?: boolean } = {},
+    opts: AuthRequestOptions = {},
   ): Promise<AuthResult & { token: string }> {
     // 首启创建管理员走 setup.init，不经过人机验证；普通注册始终校验。
     if (!opts.admin) {
       await this.turnstile.verify(turnstileToken, remoteIP ?? '');
+      await this.loginAgreement?.assertCurrentRevision(opts.agreementRevision);
     }
     const normalized = email.trim().toLowerCase();
 
@@ -148,6 +158,20 @@ export class AuthService {
       const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
       await tx.insert(sessions).values({ userId: user.id, tokenHash, expiresAt });
 
+      if (opts.agreementRevision && this.loginAgreement) {
+        await tx
+          .insert(userAgreementAcceptances)
+          .values({
+            userId: user.id,
+            revision: opts.agreementRevision,
+            ip: remoteIP ?? null,
+            userAgent: opts.userAgent ?? null,
+          })
+          .onConflictDoNothing({
+            target: [userAgreementAcceptances.userId, userAgreementAcceptances.revision],
+          });
+      }
+
       return { userId: user.id, email: user.email, role: user.role, status: user.status, workspaceId: workspace.id, balance: wallet.balance, reservedBalance: wallet.reservedBalance };
     });
 
@@ -186,8 +210,10 @@ export class AuthService {
     plainPassword: string,
     turnstileToken?: string,
     remoteIP?: string,
+    opts: AuthRequestOptions = {},
   ): Promise<AuthResult & { token: string }> {
     await this.turnstile.verify(turnstileToken, remoteIP ?? '');
+    await this.loginAgreement?.assertCurrentRevision(opts.agreementRevision);
     const normalized = email.trim().toLowerCase();
     const rows = await this.db.select().from(users).where(eq(users.email, normalized)).limit(1);
     const user = rows[0];
@@ -201,12 +227,28 @@ export class AuthService {
     const token = this.session.issueToken();
     const tokenHash = this.session.hashToken(token);
     const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
-    await this.db.insert(sessions).values({
-      userId: user.id,
-      tokenHash,
-      expiresAt,
-      ip: remoteIP || null,
-      userAgent: null,
+    await this.db.transaction(async (tx) => {
+      await tx.insert(sessions).values({
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+        ip: remoteIP || null,
+        userAgent: opts.userAgent ?? null,
+      });
+
+      if (opts.agreementRevision && this.loginAgreement) {
+        await tx
+          .insert(userAgreementAcceptances)
+          .values({
+            userId: user.id,
+            revision: opts.agreementRevision,
+            ip: remoteIP ?? null,
+            userAgent: opts.userAgent ?? null,
+          })
+          .onConflictDoNothing({
+            target: [userAgreementAcceptances.userId, userAgreementAcceptances.revision],
+          });
+      }
     });
 
     const context = await this.loadAuthContext(user.id);

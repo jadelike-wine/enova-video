@@ -17,6 +17,12 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   turnstileToken?: string;
+
+  @ApiProperty({ required: false, description: '用户同意的登录条款 revision；启用条款时必填' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  agreementRevision?: string;
 }
 
 export class LoginDto {
@@ -34,6 +40,12 @@ export class LoginDto {
   @IsOptional()
   @IsString()
   turnstileToken?: string;
+
+  @ApiProperty({ required: false, description: '用户同意的登录条款 revision；启用条款时必填' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  agreementRevision?: string;
 }
 
 /** P1-6: 修改密码请求体。 */

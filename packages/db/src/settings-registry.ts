@@ -527,6 +527,44 @@ export const SETTINGS: SettingDef[] = [
     envDefault: 'text',
     restartRequired: true,
   },
+  // ---- 通用 / 登录条款 ----
+  {
+    key: 'general.loginAgreementEnabled',
+    valueType: 'boolean',
+    group: 'general',
+    label: '启用登录条款',
+    description: '开启后，登录和注册必须同意当前条款版本。',
+    envKey: 'LOGIN_AGREEMENT_ENABLED',
+    envDefault: 'false',
+  },
+  {
+    key: 'general.loginAgreementMode',
+    valueType: 'enum',
+    group: 'general',
+    label: '条款展示模式',
+    description: 'modal=弹窗；checkbox=复选框。',
+    options: ['modal', 'checkbox'],
+    envKey: 'LOGIN_AGREEMENT_MODE',
+    envDefault: 'modal',
+  },
+  {
+    key: 'general.loginAgreementUpdatedAt',
+    valueType: 'string',
+    group: 'general',
+    label: '条款更新日期',
+    description: '用于展示并参与条款版本计算。',
+    envKey: 'LOGIN_AGREEMENT_UPDATED_AT',
+    envDefault: '',
+  },
+  {
+    key: 'general.loginAgreementDocuments',
+    valueType: 'string',
+    group: 'general',
+    label: '登录条款文档列表 (JSON)',
+    description: 'JSON 数组，每项含 slug、title、contentMd。',
+    envKey: 'LOGIN_AGREEMENT_DOCUMENTS',
+    envDefault: '[]',
+  },
 ];
 
 export const SETTINGS_BY_KEY: ReadonlyMap<string, SettingDef> = new Map(

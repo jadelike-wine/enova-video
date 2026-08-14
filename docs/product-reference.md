@@ -38,6 +38,8 @@
 ### 3.1 账户、会话与工作区
 
 - 邮箱和密码注册、登录、登出。
+- 可由管理员配置登录/注册条款；启用后后端校验条款 revision，并记录用户同意的版本、时间、IP 与 User-Agent。
+- 公开法律文档页可通过条款文档 slug 访问，Markdown 内容经过前端安全渲染。
 - HttpOnly Session Cookie 鉴权；支持查看会话、撤销单个会话、撤销其他会话和修改密码。
 - 可选 Turnstile 人机校验。
 - 用户默认进入 Personal Workspace；数据访问按 Workspace 隔离。
@@ -191,6 +193,7 @@ PENDING → QUEUED → RUNNING → SUCCEEDED
 | 能力 | 用户/运营入口 | 状态 | 说明 |
 | --- | --- | --- | --- |
 | 注册/登录/会话 | `/auth/*`、设置页 | 已实现 | HttpOnly Cookie；含会话管理和密码流程 |
+| 登录条款与公开法律文档 | `/auth/*`、`/legal/[slug]`、管理员系统配置 | 已实现 | 后端强制校验当前 revision；按用户记录同意历史；条款关闭时不影响原有登录流程 |
 | Personal Workspace | 登录初始化 | 已实现 | 注册后自动创建并隔离资源 |
 | 文本对话 | `/app/chat` | 已实现 | 会话、消息、流式发送和历史管理 |
 | 图片生成 | `/app/images` | 已实现 | 文生图、单图编辑、多图合成 |

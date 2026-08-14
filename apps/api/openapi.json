@@ -19,7 +19,7 @@
     "/api/v1/health/ready": {
       "get": {
         "operationId": "HealthController_readiness",
-        "summary": "就绪探针（校验与 PostgreSQL 连通性）",
+        "summary": "就绪探针（校验 PostgreSQL + Redis 连通性，不可用时返回 503）",
         "parameters": [],
         "responses": {
           "200": {
@@ -123,6 +123,229 @@
         },
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "operationId": "AuthController_sessions",
+        "summary": "列出当前用户全部 Session（不含 token 明文）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
+        "operationId": "AuthController_revokeSession",
+        "summary": "撤销指定 Session",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/revoke-others": {
+      "post": {
+        "operationId": "AuthController_revokeOthers",
+        "summary": "撤销当前用户除本会话外的所有 Session",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/change-password": {
+      "post": {
+        "operationId": "AuthController_changePassword",
+        "summary": "修改密码：校验当前密码 → 更新 hash → 撤销其它 Session",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/password/forgot": {
+      "post": {
+        "operationId": "AuthController_forgotPassword",
+        "summary": "发起密码重置（无论邮箱是否存在均返回 ok）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForgotPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/password/reset": {
+      "post": {
+        "operationId": "AuthController_resetPassword",
+        "summary": "重置密码（token + 新密码）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/email/verify": {
+      "post": {
+        "operationId": "AuthController_verifyEmail",
+        "summary": "验证邮箱 token",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/email/resend-verification": {
+      "post": {
+        "operationId": "AuthController_resendVerification",
+        "summary": "重发邮箱验证 token（需登录，有频率限制）",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout-all": {
+      "post": {
+        "operationId": "AuthController_logoutAll",
+        "summary": "撤销当前用户所有 Session 并清除 Cookie",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/billing/wallet": {
+      "get": {
+        "operationId": "BillingController_wallet",
+        "summary": "当前 Workspace 钱包余额",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/api/v1/billing/ledger": {
+      "get": {
+        "operationId": "BillingController_ledger",
+        "summary": "当前 Workspace 的余额流水（Workspace 隔离）",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "billing"
         ]
       }
     },
@@ -346,45 +569,6 @@
         },
         "tags": [
           "conversations"
-        ]
-      }
-    },
-    "/api/v1/billing/wallet": {
-      "get": {
-        "operationId": "BillingController_wallet",
-        "summary": "当前 Workspace 钱包余额",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "billing"
-        ]
-      }
-    },
-    "/api/v1/billing/ledger": {
-      "get": {
-        "operationId": "BillingController_ledger",
-        "summary": "当前 Workspace 的余额流水（Workspace 隔离）",
-        "parameters": [
-          {
-            "name": "limit",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "tags": [
-          "billing"
         ]
       }
     },
@@ -877,7 +1061,7 @@
     "/api/v1/admin/settings/{key}": {
       "patch": {
         "operationId": "SettingsAdminController_update",
-        "summary": "更新单个动态配置（实时生效）",
+        "summary": "更新单个动态配置（CAS + history + 实时生效）",
         "parameters": [
           {
             "name": "key",
@@ -905,6 +1089,922 @@
         },
         "tags": [
           "admin/settings"
+        ]
+      }
+    },
+    "/api/v1/admin/settings/batch": {
+      "post": {
+        "operationId": "SettingsAdminController_batchUpdate",
+        "summary": "批量原子更新配置（同组一致性，Secret 留空=保持不变）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchUpdateSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/settings"
+        ]
+      }
+    },
+    "/api/v1/admin/settings/{key}/secret": {
+      "delete": {
+        "operationId": "SettingsAdminController_clearSecret",
+        "summary": "清除 Secret 配置",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/settings"
+        ]
+      }
+    },
+    "/api/v1/admin/settings/{key}/history": {
+      "get": {
+        "operationId": "SettingsAdminController_history",
+        "summary": "查看配置变更历史（Secret 脱敏）",
+        "parameters": [
+          {
+            "name": "key",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/settings"
+        ]
+      }
+    },
+    "/api/v1/admin/orders": {
+      "get": {
+        "operationId": "OrdersAdminController_list",
+        "summary": "订单列表（可按 status / orderType 过滤）",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "PENDING",
+                "SUCCEEDED",
+                "FAILED",
+                "REFUNDED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "orderType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "RECHARGE",
+                "PLAN",
+                "CREDIT_PACK"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/orders"
+        ]
+      }
+    },
+    "/api/v1/admin/orders/{id}": {
+      "get": {
+        "operationId": "OrdersAdminController_detail",
+        "summary": "订单详情（含 payment transactions / fulfillment / ledger）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/orders"
+        ]
+      }
+    },
+    "/api/v1/admin/orders/{id}/fulfillment/retry": {
+      "post": {
+        "operationId": "OrdersAdminController_retryFulfillment",
+        "summary": "重试订单履约（幂等）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/orders"
+        ]
+      }
+    },
+    "/api/v1/admin/orders/{id}/close": {
+      "post": {
+        "operationId": "OrdersAdminController_closeOrder",
+        "summary": "关闭未支付订单",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/orders"
+        ]
+      }
+    },
+    "/api/v1/admin/orders/{id}/manual-refund": {
+      "post": {
+        "operationId": "OrdersAdminController_recordManualRefund",
+        "summary": "记录人工退款处理结果（非自动退款）：管理员在渠道商户平台完成退款后，在此记录处理结果 + 回收 credits",
+        "description": "此接口不调用渠道退款 API，不改变 orders.status，仅为内部登记和审计。",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordManualRefundDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/orders"
+        ]
+      }
+    },
+    "/api/v1/admin/orders/{id}/manual-refund/credits-retry": {
+      "post": {
+        "operationId": "OrdersAdminController_retryCreditsRevocation",
+        "summary": "补扣 Credits（仅 CREDITS_PENDING 状态）：不重新退款，只再次尝试 Credits 冲正",
+        "description": "此接口不调用渠道退款 API，不重新创建现金退款记录，不重复取消订阅。",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/orders"
+        ]
+      }
+    },
+    "/api/v1/admin/orders/anomalies": {
+      "post": {
+        "operationId": "OrdersAdminController_listAnomalies",
+        "summary": "查询异常订单（支付成功但履约失败/待处理）",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/orders"
+        ]
+      }
+    },
+    "/api/v1/admin/generations": {
+      "get": {
+        "operationId": "GenerationsAdminController_list",
+        "summary": "生成任务列表（可按 status / workspaceId 过滤）",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "PENDING",
+                "QUEUED",
+                "RUNNING",
+                "SUCCEEDED",
+                "FAILED",
+                "CANCELED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "workspaceId",
+            "required": false,
+            "in": "query",
+            "description": "按 workspace 过滤",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/generations"
+        ]
+      }
+    },
+    "/api/v1/admin/generations/{id}": {
+      "get": {
+        "operationId": "GenerationsAdminController_detail",
+        "summary": "生成任务详情（含 quote / reservation / attempts / outbox / usage）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/generations"
+        ]
+      }
+    },
+    "/api/v1/admin/generations/{id}/force-fail": {
+      "post": {
+        "operationId": "GenerationsAdminController_forceFail",
+        "summary": "强制失败并释放 reservation（运营救援）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForceFailJobDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/generations"
+        ]
+      }
+    },
+    "/api/v1/admin/generations/{id}/outbox/replay": {
+      "post": {
+        "operationId": "GenerationsAdminController_replayOutbox",
+        "summary": "重置 outbox 触发重新投递（运营救援）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/generations"
+        ]
+      }
+    },
+    "/api/v1/admin/pricing/rules": {
+      "get": {
+        "operationId": "PricingAdminController_listRules",
+        "summary": "定价规则列表",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          },
+          {
+            "name": "generationType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "provider",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "model",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "DRAFT",
+                "PUBLISHED",
+                "ARCHIVED"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/pricing"
+        ]
+      },
+      "post": {
+        "operationId": "PricingAdminController_createRule",
+        "summary": "创建定价规则",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePricingRuleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/pricing/rules/{id}": {
+      "patch": {
+        "operationId": "PricingAdminController_updateRule",
+        "summary": "更新定价规则（不影响已发布 version 和历史 job）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePricingRuleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/pricing/versions": {
+      "get": {
+        "operationId": "PricingAdminController_listVersions",
+        "summary": "定价版本列表（含历史，不可变）",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          },
+          {
+            "name": "generationType",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "provider",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "model",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "DRAFT",
+                "PUBLISHED",
+                "ARCHIVED"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/pricing/versions/publish": {
+      "post": {
+        "operationId": "PricingAdminController_publishVersion",
+        "summary": "发布新定价版本（不可变，发布后不可修改）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishPricingVersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/pricing/versions/{id}/archive": {
+      "post": {
+        "operationId": "PricingAdminController_archiveVersion",
+        "summary": "归档定价版本（禁止删除）",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/pricing/quote/preview": {
+      "post": {
+        "operationId": "PricingAdminController_previewQuote",
+        "summary": "预览报价（不创建 PriceQuote 行）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewQuoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/pricing"
+        ]
+      }
+    },
+    "/api/v1/admin/customers/{userId}/360": {
+      "get": {
+        "operationId": "CustomersAdminController_getCustomer360",
+        "summary": "Customer 360 视图（用户 / 工作区 / 钱包 / 订阅 / reservation / ledger / generations / payments / usage / audit）",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/customers"
+        ]
+      }
+    },
+    "/api/v1/admin/analytics/dashboard": {
+      "get": {
+        "operationId": "AnalyticsAdminController_dashboard",
+        "summary": "经营看板：Revenue/COGS/Margin/Jobs/Users/SuccessRate/Provider·Model·Cost-Status",
+        "parameters": [
+          {
+            "name": "range",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timezone",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startAt",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endAt",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/analytics"
+        ]
+      }
+    },
+    "/api/v1/admin/analytics/export.csv": {
+      "get": {
+        "operationId": "AnalyticsAdminController_exportCsv",
+        "summary": "看板 CSV 导出（基础能力）",
+        "parameters": [
+          {
+            "name": "range",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timezone",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startAt",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endAt",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/analytics"
+        ]
+      }
+    },
+    "/api/v1/admin/rbac/roles": {
+      "get": {
+        "operationId": "RbacAdminController_listRoles",
+        "summary": "列出所有角色",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-rbac"
+        ]
+      }
+    },
+    "/api/v1/admin/rbac/users/{userId}/roles": {
+      "get": {
+        "operationId": "RbacAdminController_getUserRoles",
+        "summary": "查看用户角色",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-rbac"
+        ]
+      },
+      "post": {
+        "operationId": "RbacAdminController_assignRole",
+        "summary": "分配角色",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-rbac"
+        ]
+      }
+    },
+    "/api/v1/admin/rbac/users/{userId}/roles/{role}": {
+      "delete": {
+        "operationId": "RbacAdminController_removeRole",
+        "summary": "撤销角色",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "role",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin-rbac"
         ]
       }
     },
@@ -1054,6 +2154,131 @@
         ]
       }
     },
+    "/api/v1/admin/email/test": {
+      "post": {
+        "operationId": "EmailAdminController_sendTestEmail",
+        "summary": "发送测试邮件（验证 SMTP 配置）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestEmailDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/email"
+        ]
+      }
+    },
+    "/api/v1/admin/email/check": {
+      "post": {
+        "operationId": "EmailAdminController_checkConfig",
+        "summary": "检查邮件配置状态",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/email"
+        ]
+      }
+    },
+    "/api/v1/admin/ops/metrics": {
+      "get": {
+        "operationId": "OpsMonitoringController_getMetrics",
+        "summary": "获取运营监控指标（DB/Redis/队列/支付/生成/告警）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/ops"
+        ]
+      }
+    },
+    "/api/v1/admin/ops/alerts": {
+      "get": {
+        "operationId": "OpsMonitoringController_getAlerts",
+        "summary": "获取当前告警列表",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/ops"
+        ]
+      }
+    },
+    "/api/v1/admin/ops/health": {
+      "get": {
+        "operationId": "OpsMonitoringController_getHealth",
+        "summary": "获取系统健康状态（DB + Redis）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/ops"
+        ]
+      }
+    },
+    "/api/v1/payment/plans": {
+      "get": {
+        "operationId": "PaymentController_listPlans",
+        "summary": "列出可售卖的 Plan（enabled=true）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "payment"
+        ]
+      }
+    },
+    "/api/v1/payment/plan/checkout": {
+      "post": {
+        "operationId": "PaymentController_createPlanOrder",
+        "summary": "购买 Plan（创建 PLAN 订单并返回支付参数）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePlanOrderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "payment"
+        ]
+      }
+    },
     "/api/v1/payment/recharge": {
       "post": {
         "operationId": "PaymentController_createRecharge",
@@ -1126,6 +2351,85 @@
           "payment"
         ]
       }
+    },
+    "/api/v1/public/login-agreement": {
+      "get": {
+        "operationId": "PublicLoginAgreementController_getConfig",
+        "summary": "返回公开登录条款配置（无需登录）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/api/v1/public/legal/{slug}": {
+      "get": {
+        "operationId": "PublicLoginAgreementController_getLegalDocument",
+        "summary": "返回公开法律文档 Markdown（无需登录）",
+        "parameters": [
+          {
+            "name": "slug",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/api/v1/setup/status": {
+      "get": {
+        "operationId": "SetupController_status",
+        "summary": "返回是否需要首启初始化管理员",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/api/v1/setup/init": {
+      "post": {
+        "operationId": "SetupController_init",
+        "summary": "创建首个管理员并登录（仅当尚无管理员时可用）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupInitDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "setup"
+        ]
+      }
     }
   },
   "info": {
@@ -1158,6 +2462,10 @@
           "turnstileToken": {
             "type": "string",
             "description": "Cloudflare Turnstile 验证码 token（启用时必填）"
+          },
+          "agreementRevision": {
+            "type": "string",
+            "description": "用户同意的登录条款 revision；启用条款时必填"
           }
         },
         "required": [
@@ -1178,11 +2486,74 @@
           "turnstileToken": {
             "type": "string",
             "description": "Cloudflare Turnstile 验证码 token（启用时必填）"
+          },
+          "agreementRevision": {
+            "type": "string",
+            "description": "用户同意的登录条款 revision；启用条款时必填"
           }
         },
         "required": [
           "email",
           "password"
+        ]
+      },
+      "ChangePasswordDto": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "description": "当前密码"
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ]
+      },
+      "ForgotPasswordDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "注册邮箱"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "ResetPasswordDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "重置 token（从邮件获取）"
+          },
+          "newPassword": {
+            "type": "string",
+            "description": "新密码"
+          }
+        },
+        "required": [
+          "token",
+          "newPassword"
+        ]
+      },
+      "VerifyEmailDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "邮箱验证 token"
+          }
+        },
+        "required": [
+          "token"
         ]
       },
       "CreateConversationDto": {
@@ -1441,10 +2812,230 @@
             "type": "string",
             "example": "100",
             "description": "字符串形式的新值"
+          },
+          "expectedVersion": {
+            "type": "number",
+            "description": "CAS 乐观并发版本号（可选）"
           }
         },
         "required": [
           "value"
+        ]
+      },
+      "BatchSettingItemDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "payment.alipayAppId"
+          },
+          "value": {
+            "type": "string",
+            "example": "2021000...",
+            "description": "字符串形式的新值；Secret 留空=保持不变"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ]
+      },
+      "BatchUpdateSettingsDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "批量更新项（同组配置原子更新）",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchSettingItemDto"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "RecordManualRefundDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "example": "用户投诉，已通过支付宝商户后台退款"
+          },
+          "refundChannel": {
+            "type": "string",
+            "enum": [
+              "ALIPAY",
+              "WECHAT"
+            ],
+            "description": "退款渠道"
+          },
+          "channelRefundNo": {
+            "type": "string",
+            "example": "2026081322001400001234567890",
+            "description": "渠道商户平台退款流水号（必填，trim 后非空）"
+          },
+          "refundAmountCents": {
+            "type": "number",
+            "example": 5000,
+            "description": "退款金额（分），不填则全额退款"
+          },
+          "reviewNote": {
+            "type": "string",
+            "example": "已核实订单，渠道退款已完成",
+            "description": "审核备注"
+          },
+          "externalRefundedAt": {
+            "type": "string",
+            "description": "渠道实际退款时间（ISO 8601，必填）",
+            "example": "2026-08-13T10:30:00.000Z"
+          }
+        },
+        "required": [
+          "reason",
+          "refundChannel",
+          "channelRefundNo",
+          "externalRefundedAt"
+        ]
+      },
+      "ForceFailJobDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "example": "worker 挂死，手动救援"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "CreatePricingRuleDto": {
+        "type": "object",
+        "properties": {
+          "generationType": {
+            "type": "string",
+            "enum": [
+              "IMAGE",
+              "VIDEO",
+              "AUDIO",
+              "UPSCALE",
+              "LIPSYNC",
+              "IMAGE_TO_VIDEO",
+              "VIDEO_TO_VIDEO"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "example": "agnes"
+          },
+          "model": {
+            "type": "string",
+            "example": "kling-v2"
+          },
+          "credits": {
+            "type": "number",
+            "example": 100
+          },
+          "pricingJson": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "generationType",
+          "provider",
+          "model",
+          "credits"
+        ]
+      },
+      "UpdatePricingRuleDto": {
+        "type": "object",
+        "properties": {
+          "credits": {
+            "type": "number",
+            "example": 100
+          },
+          "pricingJson": {
+            "type": "object"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          }
+        }
+      },
+      "PublishPricingVersionDto": {
+        "type": "object",
+        "properties": {
+          "generationType": {
+            "type": "string",
+            "enum": [
+              "IMAGE",
+              "VIDEO",
+              "AUDIO",
+              "UPSCALE",
+              "LIPSYNC",
+              "IMAGE_TO_VIDEO",
+              "VIDEO_TO_VIDEO"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "example": "agnes"
+          },
+          "model": {
+            "type": "string",
+            "example": "kling-v2"
+          },
+          "credits": {
+            "type": "number",
+            "example": 120
+          },
+          "pricingJson": {
+            "type": "object"
+          },
+          "dimensionsJson": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "generationType",
+          "provider",
+          "model",
+          "credits"
+        ]
+      },
+      "PreviewQuoteDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "IMAGE",
+              "VIDEO",
+              "AUDIO",
+              "UPSCALE",
+              "LIPSYNC",
+              "IMAGE_TO_VIDEO",
+              "VIDEO_TO_VIDEO"
+            ]
+          },
+          "provider": {
+            "type": "string",
+            "example": "agnes"
+          },
+          "model": {
+            "type": "string",
+            "example": "kling-v2"
+          },
+          "dimensions": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "type",
+          "provider",
+          "model"
         ]
       },
       "UpdateVersionDto": {
@@ -1467,6 +3058,28 @@
           }
         }
       },
+      "TestEmailDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreatePlanOrderDto": {
+        "type": "object",
+        "properties": {
+          "planId": {
+            "type": "string",
+            "description": "要购买的 Plan id",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          },
+          "couponCode": {
+            "type": "string",
+            "description": "优惠码（可选，P1-8）",
+            "example": "WELCOME10"
+          }
+        },
+        "required": [
+          "planId"
+        ]
+      },
       "CreateRechargeDto": {
         "type": "object",
         "properties": {
@@ -1475,10 +3088,34 @@
             "description": "充值金额（分，人民币），需不小于最小充值金额",
             "example": 1000,
             "minimum": 1
+          },
+          "couponCode": {
+            "type": "string",
+            "description": "优惠码（可选，P1-8）",
+            "example": "WELCOME10"
           }
         },
         "required": [
           "amountCents"
+        ]
+      },
+      "SetupInitDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "admin@example.com"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128,
+            "description": "管理员密码"
+          }
+        },
+        "required": [
+          "email",
+          "password"
         ]
       }
     }

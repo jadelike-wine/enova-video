@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { authApi, setupApi, turnstileApi, type TurnstileConfig } from '../../../lib/api'
 import { BRAND } from '../../../lib/brand'
 import { formatErrorMessage } from '../../../lib/errorMessage'
 import TurnstileWidget, { type TurnstileHandle } from '../../../components/auth/TurnstileWidget'
+import LoginAgreementGate, { type LoginAgreementGateState } from '../../../components/auth/LoginAgreementGate'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -17,7 +18,17 @@ export default function RegisterPage() {
   const [busy, setBusy] = useState(false)
   const [turnstile, setTurnstile] = useState<TurnstileConfig>({ enabled: false, siteKey: '' })
   const [turnstileToken, setTurnstileToken] = useState('')
+  const [agreement, setAgreement] = useState<LoginAgreementGateState>({
+    ready: false,
+    enabled: false,
+    accepted: false,
+    revision: '',
+  })
   const turnstileRef = useRef<TurnstileHandle>(null)
+
+  const handleAgreementStateChange = useCallback((state: LoginAgreementGateState) => {
+    setAgreement(state)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -53,6 +64,10 @@ export default function RegisterPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (!agreement.ready || (agreement.enabled && !agreement.accepted)) {
+      setError('请先阅读并同意登录条款')
+      return
+    }
     if (password.length < 8) {
       setError('密码至少 8 位')
       return
@@ -67,7 +82,7 @@ export default function RegisterPage() {
     }
     setBusy(true)
     try {
-      await authApi.register(email, password, turnstile.enabled ? turnstileToken : undefined)
+      await authApi.register(email, password, turnstile.enabled ? turnstileToken : undefined, agreement.revision)
       router.replace('/app/chat')
       router.refresh()
     } catch (err) {
@@ -138,9 +153,11 @@ export default function RegisterPage() {
           </div>
         )}
 
+        <LoginAgreementGate onStateChange={handleAgreementStateChange} />
+
         {error && <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-400/30 rounded-xl px-3 py-2">{error}</p>}
 
-        <button type="submit" disabled={busy} className="btn-primary w-full">
+        <button type="submit" disabled={busy || !agreement.ready || (agreement.enabled && !agreement.accepted)} className="btn-primary w-full">
           {busy ? '注册中…' : '注册'}
         </button>
       </form>

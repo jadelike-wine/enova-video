@@ -4,10 +4,10 @@ import { Button, Input, InputNumber, Switch } from 'antd'
 import type { ReactNode } from 'react'
 
 import type { SettingView } from '../../../lib/api'
-import { GENERAL_SECTIONS, settingBelongsToSection, type SettingsSectionDef } from './settings-tabs.js'
-import CustomEndpointEditor from './CustomEndpointEditor.js'
-import CustomMenuEditor from './CustomMenuEditor.js'
-import LogoUploader from './LogoUploader.js'
+import { GENERAL_SECTIONS, settingBelongsToSection, type SettingsSectionDef } from './settings-tabs'
+import CustomEndpointEditor from './CustomEndpointEditor'
+import CustomMenuEditor from './CustomMenuEditor'
+import LogoUploader from './LogoUploader'
 
 export interface GeneralSettingsPanelProps {
   settings: SettingView[]
@@ -47,7 +47,7 @@ function Field({
       <Switch checked={value === 'true'} onChange={(checked) => onChange(checked ? 'true' : 'false')} aria-label={setting.label} />
     </div>
   ) : setting.valueType === 'number' ? (
-    <InputNumber value={value} onChange={(next) => onChange(String(next ?? ''))} min={setting.min} max={setting.max} className="w-full" aria-label={setting.label} />
+    <InputNumber value={value === '' ? undefined : Number(value)} onChange={(next) => onChange(String(next ?? ''))} min={setting.min} max={setting.max} className="w-full" aria-label={setting.label} />
   ) : (
     <Input value={value} onChange={(event) => onChange(event.target.value)} type={setting.isSecret ? 'password' : 'text'} aria-label={setting.label} className="w-full" />
   )

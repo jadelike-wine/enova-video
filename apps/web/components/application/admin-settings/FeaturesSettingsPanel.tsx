@@ -2,15 +2,15 @@
 
 import { Input } from 'antd'
 
-import CustomMenuEditor from './CustomMenuEditor.js'
+import CustomMenuEditor from './CustomMenuEditor'
 import {
   SettingGrid,
   SettingsSaveFooter,
   SettingsSection,
   settingValue,
   settingsDirty,
-} from './SettingsPanelPrimitives.js'
-import type { SettingsPanelProps } from './SettingsPanelPrimitives.js'
+} from './SettingsPanelPrimitives'
+import type { SettingsPanelProps } from './SettingsPanelPrimitives'
 
 export default function FeaturesSettingsPanel({ settings, drafts, onDraftChange, onBatchSave, saving, saved }: SettingsPanelProps) {
   const find = (key: string) => settings.find((setting) => setting.key === key)

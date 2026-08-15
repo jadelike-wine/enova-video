@@ -2,16 +2,15 @@
 
 import { Button, Input, Segmented, Switch } from 'antd'
 
-import AgreementDocumentsEditor from '../AgreementDocumentsEditor.js'
-import { AGREEMENT_DOCUMENTS_KEY } from './settings-tabs.js'
+import AgreementDocumentsEditor from '../AgreementDocumentsEditor'
+import { AGREEMENT_DOCUMENTS_KEY } from './settings-tabs'
 import {
-  SettingGrid,
   SettingsSaveFooter,
   SettingsSection,
   settingValue,
   settingsDirty,
-} from './SettingsPanelPrimitives.js'
-import type { SettingsPanelProps } from './SettingsPanelPrimitives.js'
+} from './SettingsPanelPrimitives'
+import type { SettingsPanelProps } from './SettingsPanelPrimitives'
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 

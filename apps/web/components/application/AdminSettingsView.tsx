@@ -16,14 +16,14 @@ import { formatErrorMessage } from '../../lib/errorMessage'
 import { ContentLoading } from './admin/AdminUi'
 import { normalizeDocumentsJson } from './AgreementDocumentsEditor'
 import EmailSettingsPanel from './admin/EmailSettingsPanel'
-import AgreementSettingsPanel from './admin-settings/AgreementSettingsPanel.js'
-import BackupSettingsPanel from './admin-settings/BackupSettingsPanel.js'
-import FeaturesSettingsPanel from './admin-settings/FeaturesSettingsPanel.js'
-import GatewaySettingsPanel from './admin-settings/GatewaySettingsPanel.js'
-import GeneralSettingsPanel from './admin-settings/GeneralSettingsPanel.js'
-import PaymentSettingsPanel from './admin-settings/PaymentSettingsPanel.js'
-import SecuritySettingsPanel from './admin-settings/SecuritySettingsPanel.js'
-import UserDefaultsSettingsPanel from './admin-settings/UserDefaultsSettingsPanel.js'
+import AgreementSettingsPanel from './admin-settings/AgreementSettingsPanel'
+import BackupSettingsPanel from './admin-settings/BackupSettingsPanel'
+import FeaturesSettingsPanel from './admin-settings/FeaturesSettingsPanel'
+import GatewaySettingsPanel from './admin-settings/GatewaySettingsPanel'
+import GeneralSettingsPanel from './admin-settings/GeneralSettingsPanel'
+import PaymentSettingsPanel from './admin-settings/PaymentSettingsPanel'
+import SecuritySettingsPanel from './admin-settings/SecuritySettingsPanel'
+import UserDefaultsSettingsPanel from './admin-settings/UserDefaultsSettingsPanel'
 import {
   AGREEMENT_DOCUMENTS_KEY,
   SETTINGS_TABS,
@@ -31,7 +31,7 @@ import {
   isTabKey,
   type SettingsTabDef,
   type SettingsTabKey,
-} from './admin-settings/settings-tabs.js'
+} from './admin-settings/settings-tabs'
 
 /** 多 group 的 Tab（如「安全与认证」「网关服务」「功能开关」）在面板头部展示的分组元信息。 */
 const GROUP_PANEL_META: Record<string, { title: string; description?: string; danger?: boolean }> = {
@@ -360,6 +360,7 @@ function SettingRow({
 
 function AdminSettingsInner() {
   const t = useTranslations('admin.settings')
+  const translateDynamic = (key: string) => t(key as never)
   const { alert, confirm } = useDialog()
   const { user } = useSession()
   const router = useRouter()
@@ -864,7 +865,7 @@ function AdminSettingsInner() {
       <div className="space-y-4">
         {/* Tab 描述 + 批量保存按钮 */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="max-w-2xl text-sm text-gray-500">{t(`tabDescriptions.${tab.key}`)}</p>
+          <p className="max-w-2xl text-sm text-gray-500">{translateDynamic(`tabDescriptions.${tab.key}`)}</p>
           <div className="flex flex-wrap items-center gap-2">
             {isGatewayTab && storageProvider !== 'none' && (
               <>
@@ -906,15 +907,15 @@ function AdminSettingsInner() {
                 <header className="border-b border-gray-100 px-5 py-4 sm:px-6">
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-semibold text-gray-900">
-                      {meta ? t(`groupMeta.${panel.group}.title`) : t(`tabs.${tab.key}`)}
+                      {meta ? translateDynamic(`groupMeta.${panel.group}.title`) : translateDynamic(`tabs.${tab.key}`)}
                     </h3>
                     {danger && <MetaBadge tone="red">高风险</MetaBadge>}
                   </div>
                   {(() => {
                     const panelDescription = meta
-                      ? t(`groupMeta.${panel.group}.description`)
+                      ? translateDynamic(`groupMeta.${panel.group}.description`)
                       : panels.length > 1
-                        ? t(`tabDescriptions.${tab.key}`)
+                        ? translateDynamic(`tabDescriptions.${tab.key}`)
                         : undefined
                     return panelDescription ? (
                       <p className="mt-0.5 text-xs text-gray-500">{panelDescription}</p>
@@ -980,7 +981,7 @@ function AdminSettingsInner() {
                 <span className="settings-tab-icon">
                   <SettingsTabIcon tabKey={tab.key} />
                 </span>
-                <span className="settings-tab-label">{t(`tabs.${tab.key}`)}</span>
+                <span className="settings-tab-label">{translateDynamic(`tabs.${tab.key}`)}</span>
                 {isTabDirty && (
                   <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
                 )}

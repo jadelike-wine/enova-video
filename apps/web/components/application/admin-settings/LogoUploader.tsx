@@ -49,6 +49,7 @@ export default function LogoUploader({ value, onChange }: LogoUploaderProps) {
         <div className="flex h-16 w-24 items-center justify-center overflow-hidden rounded-xl border border-dashed border-gray-200 bg-gray-50">
           {value ? (
             // The configured value may be a remote URL or a data URI from the existing setting.
+            // eslint-disable-next-line @next/next/no-img-element -- arbitrary configured/data URI previews are not Next Image assets.
             <img src={value} alt="当前 Logo" className="max-h-full max-w-full object-contain" />
           ) : (
             <span className="text-xs text-gray-400">暂无 Logo</span>

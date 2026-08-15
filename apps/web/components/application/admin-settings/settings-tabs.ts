@@ -185,19 +185,6 @@ export const GENERAL_SECTIONS: readonly SettingsSectionDef[] = [
   },
 ]
 
-/** Tab icon names remain centralized so the view does not carry tab metadata. */
-export const TAB_ICONS: Readonly<Record<SettingsTabKey, string>> = {
-  general: '🏠',
-  agreement: '📄',
-  features: '⚡',
-  security: '🛡️',
-  users: '👤',
-  gateway: '🖥️',
-  payment: '💳',
-  email: '✉️',
-  backup: '🗄️',
-}
-
 export function isTabKey(value: string | null | undefined): value is SettingsTabKey {
   return typeof value === 'string' && TAB_KEYS.has(value)
 }

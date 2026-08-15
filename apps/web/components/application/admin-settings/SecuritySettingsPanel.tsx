@@ -5,8 +5,8 @@ import {
   SettingsSaveFooter,
   SettingsSection,
   settingsDirty,
-} from './SettingsPanelPrimitives.js'
-import type { SettingsPanelProps } from './SettingsPanelPrimitives.js'
+} from './SettingsPanelPrimitives'
+import type { SettingsPanelProps } from './SettingsPanelPrimitives'
 
 export default function SecuritySettingsPanel({ settings, drafts, onDraftChange, onBatchSave, saving, saved }: SettingsPanelProps) {
   const auth = settings.filter((setting) => setting.group === 'auth')

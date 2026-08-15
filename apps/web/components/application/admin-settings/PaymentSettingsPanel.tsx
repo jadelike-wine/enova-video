@@ -1,7 +1,7 @@
 'use client'
 
-import { SettingGrid, SettingsSaveFooter, SettingsSection, settingsDirty } from './SettingsPanelPrimitives.js'
-import type { SettingsPanelProps } from './SettingsPanelPrimitives.js'
+import { SettingGrid, SettingsSaveFooter, SettingsSection, settingsDirty } from './SettingsPanelPrimitives'
+import type { SettingsPanelProps } from './SettingsPanelPrimitives'
 
 export default function PaymentSettingsPanel({ settings, drafts, onDraftChange, onBatchSave, saving, saved }: SettingsPanelProps) {
   const common = settings.filter((setting) => ['payment.mode', 'payment.creditsPerCny', 'payment.minRechargeCents', 'payment.returnBaseUrl', 'payment.notifyUrl'].includes(setting.key))

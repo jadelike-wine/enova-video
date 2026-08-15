@@ -8,8 +8,8 @@ import {
   SettingsSection,
   settingValue,
   settingsDirty,
-} from './SettingsPanelPrimitives.js'
-import type { SettingsPanelProps } from './SettingsPanelPrimitives.js'
+} from './SettingsPanelPrimitives'
+import type { SettingsPanelProps } from './SettingsPanelPrimitives'
 
 const AWS_KEYS = new Set(['storage.awsRegion', 'storage.awsS3Bucket', 'storage.awsS3Prefix', 'storage.awsS3PublicBaseUrl', 'storage.awsS3EndpointUrl', 'storage.awsAccessKeyId', 'storage.awsSecretAccessKey', 'storage.awsSessionToken'])
 const QINIU_KEYS = new Set(['storage.qiniuAccessKey', 'storage.qiniuSecretKey', 'storage.qiniuBucket', 'storage.qiniuDomain', 'storage.qiniuRegion'])

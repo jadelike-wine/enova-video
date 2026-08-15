@@ -508,7 +508,7 @@ export class SettingsAdminService {
         if (record.enabled !== undefined && typeof record.enabled !== 'boolean') {
           throw new Error('Each menu item enabled value must be boolean');
         }
-        if (record.sortOrder !== undefined && (!Number.isInteger(record.sortOrder) || record.sortOrder < 1 || record.sortOrder > MAX_SORT_ORDER)) {
+        if (record.sortOrder !== undefined && (typeof record.sortOrder !== 'number' || !Number.isInteger(record.sortOrder) || record.sortOrder < 1 || record.sortOrder > MAX_SORT_ORDER)) {
           throw new Error(`Each menu item sortOrder must be an integer from 1 to ${MAX_SORT_ORDER}`);
         }
         if (record.visibility !== 'user' && record.visibility !== 'admin') {
@@ -554,7 +554,7 @@ export class SettingsAdminService {
         if (record.description !== undefined && (typeof record.description !== 'string' || record.description.length > 1000)) {
           throw new Error('Each endpoint description must be a string of at most 1000 characters');
         }
-        if (record.sortOrder !== undefined && (!Number.isInteger(record.sortOrder) || record.sortOrder < 1 || record.sortOrder > MAX_SORT_ORDER)) {
+        if (record.sortOrder !== undefined && (typeof record.sortOrder !== 'number' || !Number.isInteger(record.sortOrder) || record.sortOrder < 1 || record.sortOrder > MAX_SORT_ORDER)) {
           throw new Error(`Each endpoint sortOrder must be an integer from 1 to ${MAX_SORT_ORDER}`);
         }
         await this.validateHttpUrl(`customEndpoints[${index}].url`, record.url);

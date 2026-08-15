@@ -2,10 +2,9 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Button, Checkbox, Input, InputNumber, Modal, Segmented, Select, Skeleton, Switch, Tag } from 'antd'
+import { Button, Checkbox, Input, InputNumber, Modal, Select, Skeleton, Switch, Tag } from 'antd'
 import {
   settingsApi,
   type SettingView,
@@ -15,9 +14,16 @@ import { useDialog } from './DialogProvider'
 import { useSession } from '../../lib/auth'
 import { formatErrorMessage } from '../../lib/errorMessage'
 import { ContentLoading } from './admin/AdminUi'
-import AgreementDocumentsEditor, { normalizeDocumentsJson } from './AgreementDocumentsEditor'
+import { normalizeDocumentsJson } from './AgreementDocumentsEditor'
 import EmailSettingsPanel from './admin/EmailSettingsPanel'
+import AgreementSettingsPanel from './admin-settings/AgreementSettingsPanel.js'
+import BackupSettingsPanel from './admin-settings/BackupSettingsPanel.js'
+import FeaturesSettingsPanel from './admin-settings/FeaturesSettingsPanel.js'
+import GatewaySettingsPanel from './admin-settings/GatewaySettingsPanel.js'
 import GeneralSettingsPanel from './admin-settings/GeneralSettingsPanel.js'
+import PaymentSettingsPanel from './admin-settings/PaymentSettingsPanel.js'
+import SecuritySettingsPanel from './admin-settings/SecuritySettingsPanel.js'
+import UserDefaultsSettingsPanel from './admin-settings/UserDefaultsSettingsPanel.js'
 import {
   AGREEMENT_DOCUMENTS_KEY,
   SETTINGS_TABS,
@@ -97,8 +103,6 @@ function enumLabel(value: string): string {
       return value
   }
 }
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 // ---------------------------------------------------------------------------
 // 基础 UI 组件
@@ -735,11 +739,6 @@ function AdminSettingsInner() {
     const isGatewayTab = tab.key === 'gateway'
     const visibleItems = isGatewayTab ? filterStorageItems(items) : items
 
-    // 「登录条款」使用定制页面
-    if (tab.key === 'agreement') {
-      return renderAgreementTab(items, tabDirty, batchId)
-    }
-
     // 「通用设置」使用结构化业务面板，复杂 JSON 仅在面板内编辑。
     if (tab.key === 'general') {
       return (
@@ -754,30 +753,89 @@ function AdminSettingsInner() {
       )
     }
 
-    // 「数据备份」Tab：展示备份说明和运维入口（预留）
-    if (tab.key === 'backup') {
+    if (tab.key === 'agreement') {
       return (
-        <div className="space-y-4">
-          <p className="max-w-2xl text-sm text-gray-500">{t(`tabDescriptions.${tab.key}`)}</p>
-          <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
-            <header className="border-b border-gray-100 px-5 py-4 sm:px-6">
-              <h3 className="text-sm font-semibold text-gray-900">数据库备份与恢复</h3>
-            </header>
-            <div className="px-5 py-10 text-center sm:px-6">
-              <p className="text-sm text-gray-500">
-                备份配置通过环境变量管理（<code className="rounded border border-gray-100 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">BACKUP_DIR</code>、
-                <code className="rounded border border-gray-100 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">BACKUP_RETENTION_DAYS</code>、
-                <code className="rounded border border-gray-100 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">BACKUP_S3_BUCKET</code> 等），
-                请参考 <code className="rounded border border-gray-100 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">docs/BACKUP.md</code> 文档进行配置。
-              </p>
-              <p className="mt-4 text-xs text-gray-400">
-                手动备份：<code className="rounded border border-gray-100 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">./scripts/backup.sh</code>
-                ，系统更新入口：<Link href="/app/admin/system-update" className="text-primary-600 hover:underline">系统更新</Link>
-              </p>
-            </div>
-          </section>
-        </div>
+        <AgreementSettingsPanel
+          settings={items}
+          drafts={drafts}
+          onDraftChange={(key, value) => setDrafts((p) => ({ ...p, [key]: value }))}
+          onBatchSave={(keys) => void handleBatchSave('agreement', keys)}
+          saving={Boolean(saving[batchId])}
+          saved={Boolean(justSaved[batchId])}
+          onShowHistory={(key, label) => void loadHistory(key, label)}
+        />
       )
+    }
+
+    if (tab.key === 'features') {
+      return (
+        <FeaturesSettingsPanel
+          settings={items}
+          drafts={drafts}
+          onDraftChange={(key, value) => setDrafts((p) => ({ ...p, [key]: value }))}
+          onBatchSave={(keys) => void handleBatchSave('features', keys)}
+          saving={Boolean(saving[batchId])}
+          saved={Boolean(justSaved[batchId])}
+        />
+      )
+    }
+
+    if (tab.key === 'security') {
+      return (
+        <SecuritySettingsPanel
+          settings={items}
+          drafts={drafts}
+          onDraftChange={(key, value) => setDrafts((p) => ({ ...p, [key]: value }))}
+          onBatchSave={(keys) => void handleBatchSave('security', keys)}
+          saving={Boolean(saving[batchId])}
+          saved={Boolean(justSaved[batchId])}
+        />
+      )
+    }
+
+    if (tab.key === 'users') {
+      return (
+        <UserDefaultsSettingsPanel
+          settings={items}
+          drafts={drafts}
+          onDraftChange={(key, value) => setDrafts((p) => ({ ...p, [key]: value }))}
+          onBatchSave={(keys) => void handleBatchSave('users', keys)}
+          saving={Boolean(saving[batchId])}
+          saved={Boolean(justSaved[batchId])}
+        />
+      )
+    }
+
+    if (tab.key === 'gateway') {
+      return (
+        <GatewaySettingsPanel
+          settings={items}
+          drafts={drafts}
+          onDraftChange={(key, value) => setDrafts((p) => ({ ...p, [key]: value }))}
+          onBatchSave={(keys) => void handleBatchSave('gateway', keys)}
+          saving={Boolean(saving[batchId]) || Boolean(saving['storage:test'])}
+          saved={Boolean(justSaved[batchId])}
+          onStorageTest={() => void handleStorageTest()}
+        />
+      )
+    }
+
+    if (tab.key === 'payment') {
+      return (
+        <PaymentSettingsPanel
+          settings={items}
+          drafts={drafts}
+          onDraftChange={(key, value) => setDrafts((p) => ({ ...p, [key]: value }))}
+          onBatchSave={(keys) => void handleBatchSave('payment', keys)}
+          saving={Boolean(saving[batchId])}
+          saved={Boolean(justSaved[batchId])}
+        />
+      )
+    }
+
+    // 「数据备份」Tab：只展示真实环境变量、脚本和文档入口
+    if (tab.key === 'backup') {
+      return <BackupSettingsPanel />
     }
 
     // 「邮件设置」使用专门的邮件设置面板
@@ -874,136 +932,6 @@ function AdminSettingsInner() {
           )
         })}
       </div>
-    )
-  }
-
-  const renderAgreementTab = (items: SettingView[], tabDirty: boolean, batchId: string) => {
-    const agreementKeys = items.map((s) => s.key)
-    const enabled = drafts['general.loginAgreementEnabled'] === 'true'
-    const mode = drafts['general.loginAgreementMode'] ?? 'modal'
-    const updatedAt = drafts['general.loginAgreementUpdatedAt'] ?? ''
-    const useDateInput = updatedAt === '' || DATE_PATTERN.test(updatedAt)
-
-    const historyLink = (key: string, label: string) => (
-      <Button
-        type="link"
-        size="small"
-        className="!px-0 !text-xs !text-gray-400 hover:!text-gray-600"
-        onClick={() => void loadHistory(key, label)}
-      >
-        查看历史
-      </Button>
-    )
-
-    const findByKey = (key: string) => items.find((s) => s.key === key)
-
-    return (
-      <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
-        <header className="flex flex-col gap-4 border-b border-gray-100 px-5 py-5 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-gray-900">登录条款</h3>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-gray-500">
-              控制登录和注册时是否要求用户阅读并同意服务条款、隐私政策及其他 Markdown 文档。
-            </p>
-          </div>
-          <div className="flex flex-shrink-0 items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-medium text-gray-900">启用登录条款</p>
-              <p className={`text-xs ${enabled ? 'text-emerald-600' : 'text-gray-400'}`}>
-                {enabled ? '已启用' : '未启用'}
-              </p>
-            </div>
-            <ToggleSwitch
-              checked={enabled}
-              onChange={(next) =>
-                setDrafts((p) => ({ ...p, ['general.loginAgreementEnabled']: next ? 'true' : 'false' }))
-              }
-              ariaLabel="启用登录条款"
-            />
-          </div>
-        </header>
-
-        <div className="space-y-8 p-5 sm:p-6">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px]">
-            <div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-gray-900">条款展示形式</span>
-                {findByKey('general.loginAgreementMode') && historyLink('general.loginAgreementMode', '条款展示形式')}
-              </div>
-              <div className="mt-2">
-                <Segmented
-                  value={mode}
-                  onChange={(val) => setDrafts((p) => ({ ...p, ['general.loginAgreementMode']: val as string }))}
-                  options={[
-                    { value: 'modal', label: '弹窗' },
-                    { value: 'checkbox', label: '复选框' },
-                  ]}
-                />
-              </div>
-              <p className="mt-2 text-xs leading-relaxed text-gray-500">
-                {mode === 'checkbox'
-                  ? '复选框显示在登录按钮下方，未勾选时所有登录 / 注册入口不可用。'
-                  : '登录页将弹出条款窗口，用户确认后才能登录或注册。'}
-              </p>
-            </div>
-
-            <div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-gray-900">条款更新日期</span>
-                {findByKey('general.loginAgreementUpdatedAt') && historyLink('general.loginAgreementUpdatedAt', '条款更新日期')}
-              </div>
-              {useDateInput ? (
-                <Input
-                  type="date"
-                  className="mt-2 w-full"
-                  value={updatedAt}
-                  onChange={(e) => setDrafts((p) => ({ ...p, ['general.loginAgreementUpdatedAt']: e.target.value }))}
-                  aria-label="条款更新日期"
-                />
-              ) : (
-                <Input
-                  className="mt-2 w-full"
-                  value={updatedAt}
-                  placeholder="YYYY-MM-DD"
-                  onChange={(e) => setDrafts((p) => ({ ...p, ['general.loginAgreementUpdatedAt']: e.target.value }))}
-                  aria-label="条款更新日期"
-                />
-              )}
-              <p className="mt-2 text-xs leading-relaxed text-gray-500">日期或文档内容变化后，用户需要重新同意。</p>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h4 className="text-sm font-semibold text-gray-900">协议文档</h4>
-                  {findByKey(AGREEMENT_DOCUMENTS_KEY) && historyLink(AGREEMENT_DOCUMENTS_KEY, '协议文档')}
-                </div>
-                <p className="mt-1 text-xs text-gray-500">
-                  文档名称可自定义，内容按 Markdown 保存。可参考：服务条款、隐私政策、使用政策。
-                </p>
-              </div>
-            </div>
-            <div className="mt-4">
-              <AgreementDocumentsEditor
-                value={drafts[AGREEMENT_DOCUMENTS_KEY] ?? '[]'}
-                onChange={(value) => setDrafts((p) => ({ ...p, [AGREEMENT_DOCUMENTS_KEY]: value }))}
-              />
-            </div>
-          </div>
-        </div>
-
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/60 px-5 py-4 sm:px-6">
-          <p className="text-xs text-gray-400">保存后立即生效；条款版本变化后，用户下次登录需重新确认。</p>
-          <SaveButton
-            dirty={tabDirty}
-            saving={Boolean(saving[batchId])}
-            saved={Boolean(justSaved[batchId])}
-            onClick={() => void handleBatchSave('agreement', agreementKeys)}
-          />
-        </footer>
-      </section>
     )
   }
 

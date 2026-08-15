@@ -873,10 +873,11 @@ export default function EmailSettingsPanel({
   }, [settings, drafts])
 
   return (
-    <div className="space-y-6">
+    <div data-testid="email-settings-panel" className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-sm text-gray-500">SMTP 发信服务、邮件模板与通知配置。</p>
         <Button
+          data-testid="email-settings-save"
           type="primary"
           size="small"
           loading={saving}

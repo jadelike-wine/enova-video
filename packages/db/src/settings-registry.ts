@@ -89,7 +89,7 @@ const STORAGE_GROUP_KEYS = [
   'storage.qiniuRegion',
 ];
 
-/** 邮件组（SMTP 与邮件模板配置必须一起更新）。 */
+/** 邮件组（SMTP 与邮件通知配置必须一起更新）。 */
 const EMAIL_GROUP_KEYS = [
   'email.smtpHost',
   'email.smtpPort',
@@ -100,6 +100,12 @@ const EMAIL_GROUP_KEYS = [
   'email.smtpFromEmail',
   'email.passwordResetUrl',
   'email.emailVerifyUrl',
+  'email.subscriptionExpiryNotifyEnabled',
+  'email.balanceLowNotifyEnabled',
+  'email.balanceLowNotifyThreshold',
+  'email.balanceLowNotifyRechargeUrl',
+  'email.accountQuotaNotifyEnabled',
+  'email.accountQuotaNotifyEmails',
 ];
 
 export const SETTINGS: SettingDef[] = [
@@ -714,6 +720,56 @@ export const SETTINGS: SettingDef[] = [
     envKey: 'APP_EMAIL_VERIFY_URL',
     envDefault: 'http://localhost:3000/auth/verify-email',
     groupKeys: EMAIL_GROUP_KEYS,
+  },
+  // ---- 邮件通知 ----
+  {
+    key: 'email.subscriptionExpiryNotifyEnabled',
+    valueType: 'boolean',
+    group: 'email',
+    label: '启用订阅到期提醒',
+    description: '开启后，系统会在订阅到期前 7 天、3 天、1 天各发送一次提醒邮件。',
+    envDefault: 'false',
+  },
+  {
+    key: 'email.balanceLowNotifyEnabled',
+    valueType: 'boolean',
+    group: 'email',
+    label: '启用余额不足提醒',
+    description: '开启后，用户余额低于阈值时发送提醒邮件。',
+    envDefault: 'false',
+  },
+  {
+    key: 'email.balanceLowNotifyThreshold',
+    valueType: 'number',
+    group: 'email',
+    label: '余额提醒阈值',
+    description: '用户余额低于此值时触发提醒（单位：元）。',
+    envDefault: '0',
+    min: 0,
+  },
+  {
+    key: 'email.balanceLowNotifyRechargeUrl',
+    valueType: 'string',
+    group: 'email',
+    label: '充值页面地址',
+    description: '余额不足提醒邮件中引导用户充值的链接。',
+    envDefault: '',
+  },
+  {
+    key: 'email.accountQuotaNotifyEnabled',
+    valueType: 'boolean',
+    group: 'email',
+    label: '启用账号限额通知',
+    description: '开启后，系统在特定条件下向管理员通知邮箱发送限额告警。',
+    envDefault: 'false',
+  },
+  {
+    key: 'email.accountQuotaNotifyEmails',
+    valueType: 'string',
+    group: 'email',
+    label: '管理员通知邮箱',
+    description: '接收账号限额告警的管理员邮箱列表，JSON 数组格式。',
+    envDefault: '[]',
   },
   // ---- 安全 / 限流 ----
   {

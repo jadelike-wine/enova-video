@@ -730,6 +730,30 @@ export const settingsHistory = pgTable('settings_history', {
 ]);
 
 // ---------------------------------------------------------------------------
+// Email Templates (管理员可编辑的事务邮件模板)
+// ---------------------------------------------------------------------------
+export const emailTemplates = pgTable('email_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** 邮件事件标识，如 auth.verify_code / auth.password_reset / balance.low 等。 */
+  event: varchar('event', { length: 120 }).notNull(),
+  /** 语言标识，如 zh / en。 */
+  locale: varchar('locale', { length: 10 }).notNull(),
+  /** 邮件主题，支持模板变量如 {{site_name}}。 */
+  subject: text('subject').notNull(),
+  /** HTML 正文，支持模板变量。 */
+  html: text('html').notNull(),
+  /** 是否为自定义模板（false = 官方默认）。 */
+  isCustom: boolean('is_custom').notNull().default(false),
+  /** 修改者。 */
+  updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('email_templates_event_locale_idx').on(t.event, t.locale),
+  index('email_templates_event_idx').on(t.event),
+]);
+
+// ---------------------------------------------------------------------------
 // RBAC (P1-5: roles / permissions / role_permissions / user_role_assignments)
 // ---------------------------------------------------------------------------
 export const roles = pgTable('roles', {

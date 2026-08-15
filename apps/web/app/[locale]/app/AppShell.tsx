@@ -81,7 +81,7 @@ function NavLink({ item, pathname }: { item: { path: string; labelKey: string; i
     >
       <span
         className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg ${
-          active ? 'bg-gradient-to-br from-[#7C3AED] to-[#06B6D4]' : 'bg-gray-100'
+          active ? 'bg-gradient-to-br from-primary-500 to-primary-600' : 'bg-gray-100'
         }`}
       >
         {item.icon}
@@ -108,7 +108,7 @@ function CustomMenuLink({ item, pathname }: { item: CustomMenuItem; pathname: st
     >
       <span
         className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg ${
-          active ? 'bg-gradient-to-br from-[#7C3AED] to-[#06B6D4]' : 'bg-gray-100'
+          active ? 'bg-gradient-to-br from-primary-500 to-primary-600' : 'bg-gray-100'
         }`}
       >
         🔗
@@ -131,7 +131,7 @@ function SiteLogo({ logoUrl, fallbackMark, size = 'w-12 h-12' }: { logoUrl: stri
     )
   }
   return (
-    <div className={`${size} rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center text-xl font-extrabold text-white`}>
+    <div className={`${size} rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-xl font-extrabold text-white`}>
       {fallbackMark}
     </div>
   )
@@ -177,8 +177,8 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
-        <Link href="/" className="p-6 border-b border-gray-200 block">
+      <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col">
+        <Link href="/" className="p-6 border-b border-gray-100 block">
           <div className="flex items-center gap-4">
             <SiteLogo logoUrl={siteConfig.siteLogo} fallbackMark={BRAND.logoMarkZh} />
             <div>
@@ -258,15 +258,15 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           )}
         </nav>
 
-        <div className="p-5 border-t border-gray-200 space-y-3">
+        <div className="p-5 border-t border-gray-100 space-y-3">
           {/* 余额 */}
           <Link
             href="/app/wallet"
-            className="flex items-center justify-between bg-white border border-gray-200 rounded-2xl px-4 py-3 hover:border-gray-300 transition-colors"
+            className="flex items-center justify-between bg-white border border-gray-100 rounded-2xl px-4 py-3 hover:border-gray-200 transition-colors"
           >
             <div>
               <p className="text-xs text-gray-500">{t('appShell.balance')}</p>
-              <p className="font-bold text-[#06B6D4]">
+              <p className="font-bold text-primary-600">
                 {balance.toLocaleString()} <span className="text-xs font-normal text-gray-500">Credits</span>
               </p>
             </div>
@@ -288,8 +288,8 @@ function ShellInner({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-hidden bg-[#F7F7F8]">
-        <div className="relative h-full m-4 bg-white rounded-2xl border border-gray-200 overflow-hidden" style={{ boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)' }}>
+      <main className="flex-1 overflow-hidden bg-slate-50">
+        <div className="relative h-full m-4 bg-white rounded-2xl border border-gray-100 overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06)' }}>
           {children}
           {routePending && (
             <div className="absolute inset-0 z-10 bg-white">

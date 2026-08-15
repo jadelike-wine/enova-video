@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Button, Checkbox, Input, InputNumber, Modal, Segmented, Select, Skeleton, Switch, Tabs, Tag } from 'antd'
+import { Button, Checkbox, Input, InputNumber, Modal, Segmented, Select, Skeleton, Switch, Tag } from 'antd'
 import {
   settingsApi,
   type SettingView,
@@ -43,6 +43,22 @@ type SettingsTabKey =
   | 'email'
   | 'log'
   | 'other'
+
+/** Tab 图标，复刻 sub2api 的 settings tab icon 风格 */
+const TAB_ICONS: Record<string, string> = {
+  general: '🏠',
+  customization: '📝',
+  table: '📊',
+  agreement: '📄',
+  billing: '💳',
+  auth: '🔒',
+  queue: '⚙️',
+  storage: '📦',
+  payment: '💰',
+  email: '✉️',
+  log: '📋',
+  other: '📦',
+}
 
 interface SettingsTabDef {
   key: SettingsTabKey
@@ -234,7 +250,7 @@ const BADGE_TONE_CLASS: Record<BadgeTone, string> = {
   amber: 'bg-amber-50 text-amber-600 border-amber-100',
   blue: 'bg-blue-50 text-blue-600 border-blue-100',
   red: 'bg-red-50 text-red-600 border-red-100',
-  gray: 'bg-gray-50 text-gray-500 border-gray-200',
+  gray: 'bg-gray-50 text-gray-500 border-gray-100',
 }
 
 function MetaBadge({ tone, children }: { tone: BadgeTone; children: React.ReactNode }) {
@@ -293,7 +309,7 @@ function SaveButton({
 }
 
 // ---------------------------------------------------------------------------
-// 单个配置项行
+// 单个配置项行 — 复刻 sub2api 两栏布局：左侧 label+description，右侧控件
 // ---------------------------------------------------------------------------
 
 interface SettingRowProps {
@@ -333,7 +349,7 @@ function SettingRow({
     if (setting.valueType === 'boolean') {
       const checked = draft === 'true'
       return (
-        <div className="flex min-h-[44px] items-center justify-between rounded-xl border border-gray-200 bg-white px-4">
+        <div className="flex min-h-[40px] items-center justify-between rounded-xl border border-gray-100 bg-white px-4">
           <span className="text-sm text-gray-600">{checked ? '已启用' : '已禁用'}</span>
           <ToggleSwitch checked={checked} onChange={(next) => onDraftChange(next ? 'true' : 'false')} ariaLabel={setting.label} />
         </div>
@@ -387,7 +403,8 @@ function SettingRow({
   })()
 
   return (
-    <div className="flex flex-col gap-3 px-5 py-5 sm:px-6 lg:flex-row lg:items-start lg:gap-8">
+    <div className="flex flex-col gap-2 px-5 py-4 sm:px-6 lg:flex-row lg:items-start lg:gap-8">
+      {/* 左侧：label + description */}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-gray-900">{setting.label}</span>
@@ -401,7 +418,7 @@ function SettingRow({
           {setting.restartRequired && <MetaBadge tone="blue">需重启生效</MetaBadge>}
           {setting.permission === 'settings.security_write' && <MetaBadge tone="red">需超管权限</MetaBadge>}
         </div>
-        {setting.description && <p className="mt-1 text-xs leading-relaxed text-gray-500">{setting.description}</p>}
+        {setting.description && <p className="mt-0.5 text-xs leading-relaxed text-gray-500">{setting.description}</p>}
         {setting.isSecret && (
           <p className="mt-1 text-[11px] text-amber-600">
             {setting.configured ? '已加密存储：留空保持不变，输入新值覆盖' : '敏感字段，AES-GCM 加密存储'}
@@ -417,6 +434,7 @@ function SettingRow({
         )}
       </div>
 
+      {/* 右侧：控件 + 操作按钮 */}
       <div className="w-full flex-shrink-0 space-y-2 lg:w-80">
         {control}
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -830,6 +848,7 @@ function AdminSettingsInner() {
 
     return (
       <div className="space-y-4">
+        {/* Tab 描述 + 批量保存按钮 */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-2xl text-sm text-gray-500">{tab.description}</p>
           <div className="flex flex-wrap items-center gap-2">
@@ -859,6 +878,7 @@ function AdminSettingsInner() {
           </div>
         </div>
 
+        {/* 设置面板 — 复刻 sub2api card 样式 */}
         {panels.map((panel) => {
           const meta = GROUP_PANEL_META[panel.group]
           const showPanelHeader = panels.length > 1 || isStorageTab || meta?.danger
@@ -867,7 +887,7 @@ function AdminSettingsInner() {
             <section
               key={panel.group}
               className={`overflow-hidden rounded-2xl border bg-white shadow-card ${
-                danger ? 'border-red-200' : 'border-gray-200'
+                danger ? 'border-red-200' : 'border-gray-100'
               }`}
             >
               {showPanelHeader && (
@@ -918,7 +938,7 @@ function AdminSettingsInner() {
     const findByKey = (key: string) => items.find((s) => s.key === key)
 
     return (
-      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card">
+      <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
         <header className="flex flex-col gap-4 border-b border-gray-100 px-5 py-5 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h3 className="text-base font-semibold text-gray-900">登录条款</h3>
@@ -1027,12 +1047,69 @@ function AdminSettingsInner() {
     )
   }
 
+  // ---- 自定义 Tab 导航 — 复刻 sub2api settings-tabs 风格 ----
+  const renderSettingsTabs = () => (
+    <div className="settings-tabs-shell mb-4">
+      <nav
+        className="settings-tabs-scroll"
+        role="tablist"
+        aria-label="系统设置"
+      >
+        <div className="settings-tabs">
+          {visibleTabs.map((tab) => {
+            const isActive = activeTab === tab.key
+            const tabItems = itemsForTab(tab, settings)
+            const isTabDirty = hasDirtyKeys(tabItems.map((s) => s.key))
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
+                className={`settings-tab ${isActive ? 'settings-tab-active' : ''}`}
+                onClick={() => selectTab(tab.key)}
+                onKeyDown={(event) => {
+                  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                  event.preventDefault()
+                  const currentIndex = visibleTabs.findIndex((item) => item.key === tab.key)
+                  if (currentIndex < 0) return
+                  const nextIndex = event.key === 'Home'
+                    ? 0
+                    : event.key === 'End'
+                      ? visibleTabs.length - 1
+                      : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + visibleTabs.length) % visibleTabs.length
+                  const nextTab = visibleTabs[nextIndex]
+                  selectTab(nextTab.key)
+                  const nextButton = event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(
+                    `[data-settings-tab="${nextTab.key}"]`,
+                  )
+                  nextButton?.focus()
+                }}
+                data-settings-tab={tab.key}
+              >
+                <span className="settings-tab-icon">
+                  <span className="text-base">{TAB_ICONS[tab.key] ?? '📦'}</span>
+                </span>
+                <span className="settings-tab-label">{tab.label}</span>
+                {isTabDirty && (
+                  <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </nav>
+    </div>
+  )
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <header className="flex-shrink-0 flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 px-6 py-5 sm:px-8">
+      {/* 页面标题区 */}
+      <header className="flex-shrink-0 flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 px-6 py-4 sm:px-8">
         <div>
-          <h2 className="text-xl font-bold text-gray-900">系统配置</h2>
-          <p className="mt-1 text-sm text-gray-500">动态配置保存后立即生效；未修改的项使用环境变量或默认值。</p>
+          <h2 className="text-lg font-bold text-gray-900">系统配置</h2>
+          <p className="mt-0.5 text-sm text-gray-500">动态配置保存后立即生效；未修改的项使用环境变量或默认值。</p>
         </div>
         <div className="flex flex-shrink-0 items-center gap-4">
           <Checkbox
@@ -1048,8 +1125,9 @@ function AdminSettingsInner() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto bg-[#FAFAFB]">
-        <div className="mx-auto max-w-5xl px-4 pb-16 sm:px-8">
+      {/* 内容区 */}
+      <div className="flex-1 overflow-y-auto bg-slate-50">
+        <div className="mx-auto max-w-5xl px-4 pb-16 pt-4 sm:px-8">
           {loading && <Skeleton active paragraph={{ rows: 6 }} className="py-12" />}
 
           {!loading && loadFailed && settings.length === 0 && (
@@ -1065,31 +1143,18 @@ function AdminSettingsInner() {
 
           {!loading && visibleTabs.length > 0 && (
             <>
-              <Tabs
-                activeKey={activeTab}
-                onChange={(key) => {
-                  if (isTabKey(key)) selectTab(key)
-                }}
-                type="card"
-                className="settings-tabs"
-                items={visibleTabs.map((tab) => ({
-                  key: tab.key,
-                  label: (
-                    <span className="flex items-center gap-1.5">
-                      {tab.label}
-                      {hasDirtyKeys(itemsForTab(tab, settings).map((s) => s.key)) && (
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
-                      )}
-                    </span>
-                  ),
-                  children: renderTabContent(tab),
-                }))}
-              />
+              {renderSettingsTabs()}
+              {visibleTabs.map((tab) => (
+                <div key={tab.key} hidden={tab.key !== activeTab}>
+                  {renderTabContent(tab)}
+                </div>
+              ))}
             </>
           )}
         </div>
       </div>
 
+      {/* 历史记录 Modal */}
       <Modal
         open={!!historyFor}
         title={`变更历史：${historyFor?.label ?? ''}`}
@@ -1109,7 +1174,7 @@ function AdminSettingsInner() {
         ) : (
           <div className="max-h-[60vh] overflow-y-auto space-y-2">
             {history.map((h) => (
-              <div key={h.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+              <div key={h.id} className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-800">v{h.version}</span>
                   <span className="text-[10px] text-gray-400">{new Date(h.createdAt).toLocaleString()}</span>
@@ -1126,6 +1191,8 @@ function AdminSettingsInner() {
           </div>
         )}
       </Modal>
+
+      {/* settings-tabs CSS 在 globals.css 中定义 */}
     </div>
   )
 }

@@ -95,7 +95,7 @@ export default function LoginAgreementGate({ onStateChange }: LoginAgreementGate
                   href={`/legal/${encodeURIComponent(document.slug)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[#7C3AED] hover:underline"
+                  className="text-[#0d9488] hover:underline"
                 >
                   {document.title}
                 </Link>
@@ -138,7 +138,7 @@ export default function LoginAgreementGate({ onStateChange }: LoginAgreementGate
               href={`/legal/${encodeURIComponent(document.slug)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded-lg border border-gray-200 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50"
+              className="rounded-lg border border-gray-100 px-3 py-2 text-sm text-violet-700 hover:bg-violet-50"
             >
               {document.title} ↗
             </Link>

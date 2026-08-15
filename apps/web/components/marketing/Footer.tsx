@@ -11,7 +11,7 @@ export default function MarketingFooter() {
         <div className="flex justify-center">
           <div className="max-w-md text-center">
             <div className="flex items-center justify-center gap-3 mb-3">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center text-base font-extrabold text-white">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-base font-extrabold text-white">
                 {BRAND.logoMarkZh}
               </div>
               <span className="font-bold text-[#111827]">{BRAND.nameZh}</span>

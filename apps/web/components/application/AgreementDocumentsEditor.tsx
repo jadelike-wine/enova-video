@@ -64,7 +64,7 @@ export default function AgreementDocumentsEditor({ value, onChange }: AgreementD
       )}
 
       {documents.map((document, index) => (
-        <div key={index} className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div key={index} className="space-y-3 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs font-semibold text-gray-500">文档 {index + 1}</span>
             <Button

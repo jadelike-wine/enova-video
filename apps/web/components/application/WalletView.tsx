@@ -134,7 +134,7 @@ export default function WalletView() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <header className="flex-shrink-0 px-8 py-6 border-b border-gray-200 flex items-center justify-between">
+      <header className="flex-shrink-0 px-8 py-6 border-b border-gray-100 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold bg-gradient-to-r from-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
             {t('title')}
@@ -159,21 +159,21 @@ export default function WalletView() {
             <Skeleton active paragraph={{ rows: 2 }} />
           ) : (
             <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
+              <div className="rounded-2xl border border-gray-100 bg-gray-100 p-5">
                 <p className="text-xs text-gray-400 mb-1">{t('availableBalance')}</p>
                 <p className="text-3xl font-extrabold text-cyan-600">
                   {balance.toLocaleString()}
                   <span className="text-sm font-normal text-gray-500 ml-1">Credits</span>
                 </p>
               </div>
-              <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
+              <div className="rounded-2xl border border-gray-100 bg-gray-100 p-5">
                 <p className="text-xs text-gray-400 mb-1">{t('reservedBalance')}</p>
                 <p className="text-3xl font-extrabold text-amber-600">
                   {reservedBalance.toLocaleString()}
                   <span className="text-sm font-normal text-gray-500 ml-1">Credits</span>
                 </p>
               </div>
-              <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
+              <div className="rounded-2xl border border-gray-100 bg-gray-100 p-5">
                 <p className="text-xs text-gray-400 mb-1">{t('totalBalance')}</p>
                 <p className="text-3xl font-extrabold text-gray-900">
                   {(balance + reservedBalance).toLocaleString()}
@@ -228,7 +228,7 @@ export default function WalletView() {
           </div>
 
           {rechargeResult && (
-            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5 space-y-4">
+            <div className="rounded-2xl border border-gray-100 bg-gray-100 p-5 space-y-4">
               <p className="text-sm text-gray-800">
                 {t('orderCreated', { orderId: rechargeResult.orderId.slice(0, 8), credits: Number(rechargeResult.credits).toLocaleString() })}
               </p>
@@ -246,7 +246,7 @@ export default function WalletView() {
                     width={160}
                     height={160}
                     preview={false}
-                    className="rounded-xl border border-gray-200 bg-white"
+                    className="rounded-xl border border-gray-100 bg-white"
                   />
                 </div>
               )}
@@ -281,7 +281,7 @@ export default function WalletView() {
                 return (
                   <div
                     key={entry.id}
-                    className="flex items-center justify-between gap-4 rounded-2xl border border-gray-200 bg-white/[0.03] px-4 py-3"
+                    className="flex items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-white/[0.03] px-4 py-3"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
@@ -325,7 +325,7 @@ export default function WalletView() {
               {t('contactEmail')}
               <a
                 href={`mailto:${supportEmail}`}
-                className="text-[#7C3AED] underline decoration-[#7C3AED]/40 hover:text-[#6D28D9] ml-1"
+                className="text-[#0d9488] underline decoration-[#0d9488]/40 hover:text-[#0f766e] ml-1"
               >
                 {supportEmail}
               </a>

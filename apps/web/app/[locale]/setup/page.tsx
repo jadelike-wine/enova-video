@@ -72,7 +72,7 @@ export default function SetupPage() {
   return (
     <div className="glass-card p-8">
       <div className="flex flex-col items-center mb-8">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center text-2xl font-extrabold text-white mb-4">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-2xl font-extrabold text-white mb-4">
           {BRAND.logoMarkZh}
         </div>
         <h1 className="text-2xl font-bold">{t('title')}</h1>

@@ -452,8 +452,8 @@ export default function VideoView() {
   return (
     <div className="flex h-full">
       {/* Task list sidebar */}
-      <div className="w-96 border-r border-gray-200 flex flex-col bg-gray-50">
-        <div className="p-4 border-b border-gray-200">
+      <div className="w-96 border-r border-gray-100 flex flex-col bg-gray-50">
+        <div className="p-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-bold text-gray-900">{t('taskList')}</h3>
             {activeTasks.length > 0 && (
@@ -474,7 +474,7 @@ export default function VideoView() {
                 className={`group p-4 rounded-2xl cursor-pointer transition-all duration-200 border ${
                   isSelected
                     ? 'bg-gradient-to-r from-fuchsia-500/20 to-cyan-400/10 border-gray-300'
-                    : 'border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                    : 'border-gray-100 hover:bg-gray-100 hover:border-gray-300'
                 }`}
               >
                 <div className="flex gap-2">
@@ -510,7 +510,7 @@ export default function VideoView() {
                             width={40}
                             height={40}
                             preview={false}
-                            className="object-cover rounded-lg border border-gray-200"
+                            className="object-cover rounded-lg border border-gray-100"
                           />
                         ))}
                       </div>
@@ -631,7 +631,7 @@ export default function VideoView() {
                               width={80}
                               height={80}
                               preview={false}
-                              className="object-cover rounded-2xl border border-gray-200"
+                              className="object-cover rounded-2xl border border-gray-100"
                             />
                             <button
                               onClick={() => removeImage(i)}
@@ -735,7 +735,7 @@ export default function VideoView() {
                         <video
                           src={displayUrl(selectedTask)}
                           controls
-                          className="w-full rounded-2xl border border-gray-200"
+                          className="w-full rounded-2xl border border-gray-100"
                         />
                         <div className="mt-3 text-xs text-gray-500 flex flex-wrap gap-4">
                           <span>{formatResolution(selectedTask)}</span>
@@ -753,7 +753,7 @@ export default function VideoView() {
                                   width={80}
                                   height={80}
                                   preview={{ mask: false }}
-                                  className="object-cover rounded-xl border border-gray-200"
+                                  className="object-cover rounded-xl border border-gray-100"
                                 />
                               ))}
                             </div>
@@ -776,7 +776,7 @@ export default function VideoView() {
                                   width={80}
                                   height={80}
                                   preview={{ mask: false }}
-                                  className="object-cover rounded-xl border border-gray-200"
+                                  className="object-cover rounded-xl border border-gray-100"
                                 />
                               ))}
                             </div>
@@ -802,7 +802,7 @@ export default function VideoView() {
                           </Button>
                         )}
                       </div>
-                      <div className="glass px-4 py-3 rounded-2xl border border-gray-200 space-y-2 text-sm">
+                      <div className="glass px-4 py-3 rounded-2xl border border-gray-100 space-y-2 text-sm">
                         <div>
                           <span className="text-gray-400 text-xs">{t('positivePrompt')}</span>
                           <p className="text-gray-800 mt-0.5 leading-relaxed">
@@ -856,7 +856,7 @@ export default function VideoView() {
                   </div>
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                    <div className="w-20 h-20 rounded-3xl bg-cyan-100 flex items-center justify-center text-4xl mb-4 border border-gray-200">
+                    <div className="w-20 h-20 rounded-3xl bg-cyan-100 flex items-center justify-center text-4xl mb-4 border border-gray-100">
                       🎬
                     </div>
                     <p>{t('selectOrCreate')}</p>

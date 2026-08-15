@@ -264,7 +264,7 @@ export default function AdminSystemUpdateView() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <header className="flex-shrink-0 px-8 py-6 border-b border-gray-200 flex items-center justify-between gap-4">
+      <header className="flex-shrink-0 px-8 py-6 border-b border-gray-100 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold bg-gradient-to-r from-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">系统更新</h2>
         </div>
@@ -353,7 +353,7 @@ export default function AdminSystemUpdateView() {
               ) : (
                 <div className="space-y-2">
                   {versions.map((item) => (
-                    <div key={item.version} className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-100 px-4 py-3">
+                    <div key={item.version} className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-100 px-4 py-3">
                       <div>
                         <code className="text-gray-800">{item.version}</code>
                         <p className="text-xs text-gray-400 mt-1">{dateText(item.published_at)}</p>

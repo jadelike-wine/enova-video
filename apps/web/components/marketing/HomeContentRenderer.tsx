@@ -80,7 +80,7 @@ function CompactHome() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoUrl} alt={siteName} className="w-20 h-20 rounded-2xl object-cover" />
           ) : (
-            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center text-3xl font-extrabold text-white">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-3xl font-extrabold text-white">
               {BRAND.logoMarkZh}
             </div>
           )}

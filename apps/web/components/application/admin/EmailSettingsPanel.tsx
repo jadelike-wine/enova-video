@@ -121,7 +121,7 @@ function SmtpSettingsCard({
   }, [alert, getDraft])
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card">
+    <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
       <header className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
         <div>
           <h3 className="text-lg font-semibold text-gray-900">SMTP 配置</h3>
@@ -242,7 +242,7 @@ function TestEmailCard() {
   }, [testEmail, alert])
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card">
+    <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
       <header className="border-b border-gray-100 px-6 py-4">
         <h3 className="text-lg font-semibold text-gray-900">发送测试邮件</h3>
         <p className="mt-1 text-sm text-gray-500">使用当前保存的 SMTP 配置发送测试邮件，验证配置是否正确。</p>
@@ -286,7 +286,7 @@ function SubscriptionExpiryCard({
   const enabled = drafts['email.subscriptionExpiryNotifyEnabled'] === 'true'
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card">
+    <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
       <header className="border-b border-gray-100 px-6 py-4">
         <h3 className="text-base font-medium text-gray-900">订阅到期提醒</h3>
         <p className="mt-1 text-sm text-gray-500">开启后，系统在订阅到期前 7 天、3 天、1 天发送提醒邮件。</p>
@@ -321,7 +321,7 @@ function BalanceLowCard({
   const enabled = drafts['email.balanceLowNotifyEnabled'] === 'true'
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card">
+    <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
       <header className="border-b border-gray-100 px-6 py-4">
         <h3 className="text-base font-medium text-gray-900">余额不足提醒</h3>
         <p className="mt-1 text-sm text-gray-500">用户余额低于阈值时发送提醒邮件。</p>
@@ -398,7 +398,7 @@ function AccountQuotaCard({
   }
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card">
+    <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
       <header className="border-b border-gray-100 px-6 py-4">
         <h3 className="text-base font-medium text-gray-900">账号限额通知</h3>
         <p className="mt-1 text-sm text-gray-500">特定条件下向管理员通知邮箱发送限额告警。</p>
@@ -652,7 +652,7 @@ function EmailTemplateEditor() {
   }, [alert])
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card">
+    <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
       {/* 顶部操作区 */}
       <header className="flex flex-col gap-3 border-b border-gray-100 px-6 py-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
@@ -731,7 +731,7 @@ function EmailTemplateEditor() {
 
             {/* 模板信息提示区域 */}
             {selectedEventMeta && (
-              <div className="rounded-lg border border-purple-100 bg-purple-50/70 p-4">
+              <div className="rounded-lg border border-primary-100 bg-primary-50/70 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <div className="text-sm font-semibold text-gray-900">
                     {EVENT_DISPLAY_META[selectedEventMeta.event]?.label ?? selectedEventMeta.label}
@@ -789,14 +789,14 @@ function EmailTemplateEditor() {
                       value={html}
                       onChange={(e) => setHtml(e.target.value)}
                       rows={18}
-                      className="w-full min-h-[28rem] resize-y rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm leading-6 focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-100"
+                      className="w-full min-h-[28rem] resize-y rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm leading-6 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
                       disabled={loadingTemplate}
                       placeholder="在此编辑 HTML 模板内容…"
                     />
                   </div>
 
                   {/* 可用占位符 */}
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
                     <div className="text-sm font-medium text-gray-900">可用占位符</div>
                     <p className="mt-1 text-xs text-gray-500">点击占位符可复制到剪贴板，粘贴到模板中使用。</p>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -804,7 +804,7 @@ function EmailTemplateEditor() {
                         <button
                           key={placeholder}
                           type="button"
-                          className="rounded-full border border-gray-200 bg-white px-3 py-1 font-mono text-xs text-gray-700 transition-colors hover:border-purple-300 hover:text-purple-600"
+                          className="rounded-full border border-gray-100 bg-white px-3 py-1 font-mono text-xs text-gray-700 transition-colors hover:border-primary-300 hover:text-primary-600"
                           onClick={() => void copyPlaceholder(placeholder)}
                         >
                           {placeholder}
@@ -816,7 +816,7 @@ function EmailTemplateEditor() {
 
                 {/* 右侧：实时预览 */}
                 <div className="space-y-4">
-                  <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                  <div className="overflow-hidden rounded-lg border border-gray-100 bg-white">
                     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                       <div>
                         <div className="text-sm font-medium text-gray-900">实时预览</div>
@@ -825,14 +825,14 @@ function EmailTemplateEditor() {
                         </div>
                       </div>
                       {isCustom && (
-                        <span className="rounded-full bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700">
+                        <span className="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700">
                           已自定义
                         </span>
                       )}
                     </div>
                     <div className="bg-gray-100 p-3">
                       <iframe
-                        className="h-[36rem] w-full rounded-md border border-gray-200 bg-white"
+                        className="h-[36rem] w-full rounded-md border border-gray-100 bg-white"
                         sandbox=""
                         srcDoc={previewHtml}
                         title="邮件预览"
@@ -906,7 +906,7 @@ export default function EmailSettingsPanel({
       <AccountQuotaCard drafts={drafts} onDraftChange={onDraftChange} />
 
       {/* 密码重置地址和邮箱验证地址 */}
-      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card">
+      <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
         <header className="border-b border-gray-100 px-6 py-4">
           <h3 className="text-lg font-semibold text-gray-900">邮件链接地址</h3>
           <p className="mt-1 text-sm text-gray-500">邮件中使用的密码重置和邮箱验证链接地址。</p>
@@ -917,7 +917,7 @@ export default function EmailSettingsPanel({
             <Input
               value={drafts['email.passwordResetUrl'] ?? ''}
               onChange={(e) => onDraftChange('email.passwordResetUrl', e.target.value)}
-              placeholder="https://example.com/auth/reset-password"
+              placeholder="https://example.com/zh-CN/auth/reset-password"
             />
             <p className="mt-1 text-xs text-gray-500">邮件中密码重置链接的基础地址。</p>
           </div>
@@ -926,7 +926,7 @@ export default function EmailSettingsPanel({
             <Input
               value={drafts['email.emailVerifyUrl'] ?? ''}
               onChange={(e) => onDraftChange('email.emailVerifyUrl', e.target.value)}
-              placeholder="https://example.com/auth/verify-email"
+              placeholder="https://example.com/zh-CN/auth/verify-email"
             />
             <p className="mt-1 text-xs text-gray-500">邮件中邮箱验证链接的基础地址。</p>
           </div>

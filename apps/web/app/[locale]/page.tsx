@@ -47,7 +47,7 @@ export default async function HomePage({
           {/* Hero */}
           <section className="bg-white">
             <div className="max-w-6xl mx-auto px-6 pt-24 pb-20 text-center">
-              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium text-[#7C3AED] bg-[#7C3AED]/10 border border-[#7C3AED]/20 mb-6">
+              <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium text-[#0d9488] bg-[#0d9488]/10 border border-[#0d9488]/20 mb-6">
                 ✨ {BRAND.taglineEn}
               </span>
               <h1 className="text-4xl md:text-6xl font-bold leading-tight text-[#111827] tracking-tight">
@@ -93,7 +93,7 @@ export default async function HomePage({
                     >
                       {feature.icon}
                     </div>
-                    <h3 className="text-lg font-bold text-[#111827] mb-2 group-hover:text-[#7C3AED] transition-colors">
+                    <h3 className="text-lg font-bold text-[#111827] mb-2 group-hover:text-[#0d9488] transition-colors">
                       {feature.title}
                     </h3>
                     <p className="text-sm text-[#6B7280] leading-relaxed">{feature.desc}</p>

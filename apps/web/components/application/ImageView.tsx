@@ -315,8 +315,8 @@ export default function ImageView() {
   return (
     <div className="flex h-full">
       {/* Task list sidebar */}
-      <div className="w-96 border-r border-gray-200 flex flex-col bg-gray-50">
-        <div className="p-4 border-b border-gray-200">
+      <div className="w-96 border-r border-gray-100 flex flex-col bg-gray-50">
+        <div className="p-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-bold text-gray-900">{t('history')}</h3>
             {generating && <Tag color="processing">{t('generating')}</Tag>}
@@ -335,11 +335,11 @@ export default function ImageView() {
                 className={`group p-3 rounded-2xl cursor-pointer transition-all duration-200 border ${
                   isSelected
                     ? 'bg-gradient-to-r from-pink-500/20 to-orange-400/10 border-gray-300'
-                    : 'border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                    : 'border-gray-100 hover:bg-gray-100 hover:border-gray-300'
                 }`}
               >
                 <div className="flex gap-3">
-                  <div className="w-16 h-16 rounded-xl flex-shrink-0 overflow-hidden bg-gray-50 border border-gray-200 flex items-center justify-center">
+                  <div className="w-16 h-16 rounded-xl flex-shrink-0 overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center">
                     {displayUrl(task) ? (
                       <AntdImage
                         src={displayUrl(task)}
@@ -473,7 +473,7 @@ export default function ImageView() {
                               width={80}
                               height={80}
                               preview={false}
-                              className="object-cover rounded-2xl border border-gray-200"
+                              className="object-cover rounded-2xl border border-gray-100"
                             />
                             <button
                               onClick={() => removeInputImage(i)}
@@ -543,7 +543,7 @@ export default function ImageView() {
                           src={displayUrl(selectedTask)}
                           alt={selectedTask.prompt || t('generatedImage')}
                           width="100%"
-                          className="rounded-2xl border border-gray-200 object-contain max-h-[360px] bg-gray-100 cursor-zoom-in hover:opacity-90 transition-opacity"
+                          className="rounded-2xl border border-gray-100 object-contain max-h-[360px] bg-gray-100 cursor-zoom-in hover:opacity-90 transition-opacity"
                           preview={{ mask: false }}
                         />
                         <div className="mt-3 text-xs text-gray-500 flex flex-wrap gap-4">
@@ -569,7 +569,7 @@ export default function ImageView() {
                           </Button>
                         )}
                       </div>
-                      <div className="glass px-4 py-3 rounded-2xl border border-gray-200 space-y-2 text-sm">
+                      <div className="glass px-4 py-3 rounded-2xl border border-gray-100 space-y-2 text-sm">
                         <div>
                           <span className="text-gray-400 text-xs">{t('prompt')}</span>
                           <p className="text-gray-800 mt-0.5 leading-relaxed">{selectedTask.prompt || '—'}</p>
@@ -593,7 +593,7 @@ export default function ImageView() {
                   </div>
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                    <div className="w-20 h-20 rounded-3xl bg-pink-100 flex items-center justify-center text-4xl mb-4 border border-gray-200">
+                    <div className="w-20 h-20 rounded-3xl bg-pink-100 flex items-center justify-center text-4xl mb-4 border border-gray-100">
                       🎨
                     </div>
                     <p>{t('selectOrCreate')}</p>

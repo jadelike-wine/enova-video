@@ -23,7 +23,7 @@ export default function LanguageSwitcher() {
     label: (
       <div className="flex items-center justify-between w-full">
         <span>{localeShortNames[l]}</span>
-        {l === locale && <CheckOutlined className="text-[#7C3AED]" />}
+        {l === locale && <CheckOutlined className="text-[#0d9488]" />}
       </div>
     ),
     onClick: () => switchTo(l),

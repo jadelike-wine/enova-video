@@ -613,7 +613,7 @@ function CredentialDrawer({
             {credentials.map((cred) => (
               <div
                 key={cred.id}
-                className="rounded-lg border border-gray-200 p-4 hover:border-gray-300 transition-colors"
+                className="rounded-lg border border-gray-100 p-4 hover:border-gray-300 transition-colors"
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">

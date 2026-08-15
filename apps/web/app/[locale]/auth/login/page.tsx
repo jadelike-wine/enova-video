@@ -94,7 +94,7 @@ export default function LoginPage() {
   return (
     <div className="glass-card p-8">
       <div className="flex flex-col items-center mb-8">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center text-2xl font-extrabold text-white mb-4">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-2xl font-extrabold text-white mb-4">
           {BRAND.logoMarkZh}
         </div>
         <h1 className="text-2xl font-bold">{t('loginTitle')}</h1>
@@ -163,7 +163,7 @@ export default function LoginPage() {
 
       <p className="mt-6 text-center text-sm text-gray-500">
         {t('noAccount')}{' '}
-        <Link href="/auth/register" className="text-[#7C3AED] hover:underline">
+        <Link href="/auth/register" className="text-[#0d9488] hover:underline">
           {t('registerNow')}
         </Link>
       </p>

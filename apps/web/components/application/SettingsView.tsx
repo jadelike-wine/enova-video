@@ -22,7 +22,7 @@ export default function SettingsView() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <header className="flex-shrink-0 px-8 py-6 border-b border-gray-200">
+      <header className="flex-shrink-0 px-8 py-6 border-b border-gray-100">
         <h2 className="text-2xl font-bold bg-gradient-to-r from-fuchsia-300 to-cyan-300 bg-clip-text text-transparent">
           {t('title')}
         </h2>
@@ -34,29 +34,29 @@ export default function SettingsView() {
         <section className="glass-card">
           <h3 className="text-lg font-bold text-gray-900 mb-4">{t('accountInfo')}</h3>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-4">
+            <div className="rounded-2xl border border-gray-100 bg-gray-100 p-4">
               <p className="text-xs text-gray-400 mb-1">{t('email')}</p>
               <p className="text-gray-800 font-medium break-all">{user ? maskEmail(user.email) : '—'}</p>
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-4">
+            <div className="rounded-2xl border border-gray-100 bg-gray-100 p-4">
               <p className="text-xs text-gray-400 mb-1">{t('role')}</p>
               <p className="text-gray-800 font-medium">
                 {user ? (t(`roles.${user.role}` as 'roles.USER' | 'roles.ADMIN') as string) || user.role : '—'}
               </p>
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-4">
+            <div className="rounded-2xl border border-gray-100 bg-gray-100 p-4">
               <p className="text-xs text-gray-400 mb-1">{t('accountStatus')}</p>
               <p className="text-gray-800 font-medium">
                 {user ? (t(`statuses.${user.status}` as 'statuses.ACTIVE') as string) || user.status : '—'}
               </p>
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-4">
+            <div className="rounded-2xl border border-gray-100 bg-gray-100 p-4">
               <p className="text-xs text-gray-400 mb-1">{t('userId')}</p>
               <p className="text-gray-800 font-mono text-sm break-all">
                 {user ? user.userId : '—'}
               </p>
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-4">
+            <div className="rounded-2xl border border-gray-100 bg-gray-100 p-4">
               <p className="text-xs text-gray-400 mb-1">{t('workspace')}</p>
               <p className="text-gray-800 font-mono text-sm">
                 {user ? user.workspaceId.slice(0, 8) : '—'}
@@ -74,21 +74,21 @@ export default function SettingsView() {
             </Link>
           </div>
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
+            <div className="rounded-2xl border border-gray-100 bg-gray-100 p-5">
               <p className="text-xs text-gray-400 mb-1">{t('availableBalance')}</p>
               <p className="text-3xl font-extrabold text-cyan-600">
                 {balance.toLocaleString()}
                 <span className="text-sm font-normal text-gray-500 ml-1">Credits</span>
               </p>
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
+            <div className="rounded-2xl border border-gray-100 bg-gray-100 p-5">
               <p className="text-xs text-gray-400 mb-1">{t('reservedBalance')}</p>
               <p className="text-3xl font-extrabold text-amber-600">
                 {reservedBalance.toLocaleString()}
                 <span className="text-sm font-normal text-gray-500 ml-1">Credits</span>
               </p>
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-100 p-5">
+            <div className="rounded-2xl border border-gray-100 bg-gray-100 p-5">
               <p className="text-xs text-gray-400 mb-1">{t('totalBalance')}</p>
               <p className="text-3xl font-extrabold text-gray-900">
                 {(balance + reservedBalance).toLocaleString()}
@@ -118,7 +118,7 @@ export default function SettingsView() {
               <p className="text-sm text-gray-700">
                 <a
                   href={contactInfo.includes('@') ? `mailto:${contactInfo}` : contactInfo}
-                  className="text-[#7C3AED] underline decoration-[#7C3AED]/40 hover:text-[#6D28D9]"
+                  className="text-[#0d9488] underline decoration-[#0d9488]/40 hover:text-[#0f766e]"
                 >
                   {contactInfo}
                 </a>

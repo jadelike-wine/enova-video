@@ -64,7 +64,7 @@ export const Card = CardWrapper
 
 export function PageHeader({ title }: { title: string }) {
   return (
-    <div className="p-5 border-b border-gray-200">
+    <div className="p-5 border-b border-gray-100">
       <h2 className="text-xl font-bold text-gray-900">{title}</h2>
     </div>
   )
@@ -82,13 +82,13 @@ export function Loading() {
 /**
  * 右侧 Content 区域统一的 Spinner Loading。
  * 仅在 AdminLayout 的 children 区域内显示，不覆盖 Sidebar。
- * 使用项目主色调 #7C3AED 作为 spinner 顶边颜色。
+ * 使用项目主色调 #0d9488 作为 spinner 顶边颜色。
  */
 export function ContentLoading() {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="flex flex-col items-center gap-3">
-        <div className="h-7 w-7 animate-spin rounded-full border-2 border-gray-200 border-t-[#7C3AED]" />
+        <div className="h-7 w-7 animate-spin rounded-full border-2 border-gray-100 border-t-[#0d9488]" />
         <span className="text-sm text-gray-400">加载中...</span>
       </div>
     </div>
@@ -97,7 +97,7 @@ export function ContentLoading() {
 
 export function AdminLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link href={href} className="text-[#7C3AED] hover:text-[#6D28D9] underline underline-offset-2">
+    <Link href={href} className="text-[#0d9488] hover:text-[#0f766e] underline underline-offset-2">
       {children}
     </Link>
   )

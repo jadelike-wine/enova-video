@@ -25,9 +25,15 @@ The production deployment model must:
 
 ### Release flow
 
-1. `git tag v1.4.0 && git push origin v1.4.0`
-2. GitHub Actions `release.yml`: tests → build & push 4 images (`linux/amd64`) → generate `release.json` → GitHub Release.
-3. `release.yml` **only** builds and publishes — it does **not** deploy to the server.
+1. Bump `VERSION` (e.g. `1.4.0`) and update `CHANGELOG.md`.
+2. Commit and push to `main`.
+3. `git tag v1.4.0 && git push origin v1.4.0`.
+4. GitHub Actions `release.yml`: verify VERSION matches tag → tests → build & push 4 images (`linux/amd64`) → generate `release.json` → GitHub Release.
+5. `release.yml` **only** builds and publishes — it does **not** deploy to the server.
+
+> The `release.yml` workflow's first step checks that `VERSION` matches the tag.
+> If you tag before bumping `VERSION`, the workflow fails immediately.
+> Fix by deleting the tag, bumping `VERSION`, committing, and re-tagging.
 
 ### Upgrade flow (`scripts/update.sh`)
 

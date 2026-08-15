@@ -216,6 +216,7 @@ Worker (ghcr.io/...-worker)
 ### 部署编排
 
 ```bash
+# 先按下方“发布一个版本”流程更新 VERSION、提交并推送 main，再打 tag
 git tag v1.2.0 && git push origin v1.2.0   # 触发 release.yml 构建并推送 GHCR 镜像
 ./scripts/update.sh v1.2.0                  # 在服务器上拉取并升级到指定版本
 ```
@@ -315,12 +316,32 @@ ghcr.io/jadelike-wine/enova-video-deploy-tool:1.2.0
 
 ### 发布一个版本
 
+> **顺序至关重要**：必须先 bump `VERSION` 并提交，确认 push 到远程后再打 tag。
+> `release.yml` 会校验 `VERSION` 文件与 tag 是否一致，不一致则立即失败。
+
 ```bash
+# 1. bump VERSION（必须与将要打的 tag 一致，不带 v 前缀）
+echo "1.2.0" > VERSION
+
+# 2. 更新 CHANGELOG.md（添加对应版本的变更记录）
+
+# 3. 提交并推送到 main
+git add VERSION CHANGELOG.md
+git commit -m "chore: bump VERSION to 1.2.0 and update changelog"
+git push origin main
+
+# 4. 打 tag 并推送（tag 指向已包含正确 VERSION 的 commit）
 git tag v1.2.0
 git push origin v1.2.0
 ```
 
-推送 `v*` tag 会触发 GitHub Actions `release.yml`：编译测试 → 登录 GHCR → 构建并推送 api / worker / web / deploy-tool（`linux/amd64`）→ 生成 `release.json`（版本 / Git SHA / 镜像 / digest）→ 创建 GitHub Release。
+推送 `v*` tag 会触发 GitHub Actions `release.yml`：校验 VERSION 与 tag 一致 → 编译测试 → 登录 GHCR → 构建并推送 api / worker / web / deploy-tool（`linux/amd64`）→ 生成 `release.json`（版本 / Git SHA / 镜像 / digest）→ 创建 GitHub Release。
+
+> 如果 release 因 VERSION 不匹配而失败，需要删除远程和本地 tag，修正 VERSION 后重新打 tag：
+> ```bash
+> git tag -d v1.2.0 && git push origin :refs/tags/v1.2.0
+> # 修正 VERSION 后重新提交、打 tag、推送
+> ```
 
 ### 检查更新（手动）
 

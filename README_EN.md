@@ -216,6 +216,7 @@ Worker (ghcr.io/...-worker)
 ### Deploy
 
 ```bash
+# First update VERSION, commit, and push main as described below, then create the tag.
 git tag v1.2.0 && git push origin v1.2.0   # triggers release.yml → builds & pushes GHCR images
 ./scripts/update.sh v1.2.0                  # on the server: pull and upgrade to the given version
 ```
@@ -310,12 +311,32 @@ ghcr.io/jadelike-wine/enova-video-deploy-tool:1.2.0
 
 ### Publish a version
 
+> **Order matters**: you must bump `VERSION` and commit first, push to main, then tag.
+> `release.yml` verifies that `VERSION` matches the tag and fails immediately if they differ.
+
 ```bash
+# 1. Bump VERSION (must match the tag without the v prefix)
+echo "1.2.0" > VERSION
+
+# 2. Update CHANGELOG.md with the version's changes
+
+# 3. Commit and push to main
+git add VERSION CHANGELOG.md
+git commit -m "chore: bump VERSION to 1.2.0 and update changelog"
+git push origin main
+
+# 4. Tag and push (the tag points to the commit with the correct VERSION)
 git tag v1.2.0
 git push origin v1.2.0
 ```
 
-Pushing a `v*` tag triggers `release.yml`: tests → GHCR login → build & push api / worker / web / deploy-tool (`linux/amd64`) → generate `release.json` → create a GitHub Release.
+Pushing a `v*` tag triggers `release.yml`: verify VERSION matches tag → tests → GHCR login → build & push api / worker / web / deploy-tool (`linux/amd64`) → generate `release.json` → create a GitHub Release.
+
+> If the release fails due to VERSION mismatch, delete the remote and local tag, fix VERSION, then re-tag:
+> ```bash
+> git tag -d v1.2.0 && git push origin :refs/tags/v1.2.0
+> # Fix VERSION, commit, push, then tag and push again
+> ```
 
 ### Upgrade
 

@@ -339,6 +339,130 @@ export const adminAuditApi = {
     json<AdminAuditView[]>(`/audit-logs?limit=${params.limit ?? 100}&offset=${params.offset ?? 0}`),
 }
 
+// ---------------------------------------------------------------------------
+// Provider & Credential 管理（与 providers.admin.service / credentials.admin.service 对齐）
+// ---------------------------------------------------------------------------
+
+/** 后端 ProviderView 对齐。 */
+export interface AdminProviderView {
+  id: string
+  code: string
+  name: string
+  baseUrl: string
+  status: string
+  config: Record<string, unknown> | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** 后端 CredentialView 对齐。不含 Secret 明文。 */
+export interface AdminCredentialView {
+  id: string
+  providerId: string
+  status: string
+  priority: number
+  weight: number
+  maxConcurrency: number
+  currentConcurrency: number
+  cooldownUntil: string | null
+  lastUsedAt: string | null
+  lastError: string | null
+  hasSecret: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateProviderInput {
+  code: string
+  name: string
+  baseUrl: string
+  status?: string
+  config?: Record<string, unknown>
+}
+
+export interface UpdateProviderInput {
+  name?: string
+  baseUrl?: string
+  status?: string
+  config?: Record<string, unknown>
+}
+
+export interface CreateCredentialInput {
+  secret: string
+  status?: string
+  priority?: number
+  weight?: number
+  maxConcurrency?: number
+}
+
+export interface UpdateCredentialInput {
+  secret?: string
+  status?: string
+  priority?: number
+  weight?: number
+  maxConcurrency?: number
+  clearBackoff?: boolean
+}
+
+/**
+ * 发送带 step-up password 的请求。
+ * Credential create/update/delete 需要管理员二次验证密码。
+ */
+async function jsonWithStepUp<T>(
+  url: string,
+  options: RequestInit & { stepUpPassword?: string } = {},
+): Promise<T> {
+  const headers = new Headers(options.headers || {})
+  if (!headers.has('X-Request-ID')) headers.set('X-Request-ID', newRequestId())
+  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  if (options.stepUpPassword) headers.set('x-step-up-password', options.stepUpPassword)
+  const resp = await fetch(`${BASE}${url}`, { ...options, headers })
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => undefined)
+    throw new AdminApiError(resp.status, body, resp.statusText)
+  }
+  return (await resp.json()) as Promise<T>
+}
+
+export const adminProvidersApi = {
+  list: (params: { limit?: number; offset?: number } = {}) =>
+    json<AdminProviderView[]>(`/providers?limit=${params.limit ?? 50}&offset=${params.offset ?? 0}`),
+  create: (input: CreateProviderInput) =>
+    json<AdminProviderView>('/providers', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  update: (id: string, input: UpdateProviderInput) =>
+    json<AdminProviderView>(`/providers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  delete: (id: string) =>
+    json<{ ok: true }>(`/providers/${id}`, { method: 'DELETE' }),
+}
+
+export const adminCredentialsApi = {
+  listByProvider: (providerId: string) =>
+    json<AdminCredentialView[]>(`/providers/${providerId}/credentials`),
+  create: (providerId: string, input: CreateCredentialInput, stepUpPassword: string) =>
+    jsonWithStepUp<AdminCredentialView>(`/providers/${providerId}/credentials`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+      stepUpPassword,
+    }),
+  update: (id: string, input: UpdateCredentialInput, stepUpPassword: string) =>
+    jsonWithStepUp<AdminCredentialView>(`/credentials/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+      stepUpPassword,
+    }),
+  delete: (id: string, stepUpPassword: string) =>
+    jsonWithStepUp<{ ok: true }>(`/credentials/${id}`, {
+      method: 'DELETE',
+      stepUpPassword,
+    }),
+}
+
 const adminApi = {
   adminStatsApi,
   adminUsersApi,
@@ -346,6 +470,8 @@ const adminApi = {
   adminOrdersApi,
   adminGenerationsApi,
   adminAuditApi,
+  adminProvidersApi,
+  adminCredentialsApi,
 }
 
 export default adminApi

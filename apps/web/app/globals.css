@@ -80,7 +80,8 @@
 
   /* 导航 */
   .nav-item {
-    @apply flex items-center gap-3 px-4 rounded-xl text-sm font-medium transition-all duration-300;
+    @apply flex items-center gap-3.5 px-4 rounded-xl text-sm font-medium transition-all duration-300
+      whitespace-nowrap overflow-hidden;
     min-height: 44px;
   }
 
@@ -90,6 +91,14 @@
 
   .nav-item-inactive {
     @apply text-gray-500 hover:bg-gray-100 hover:text-gray-900 border border-transparent;
+  }
+
+  /* 导航文字标签：防止截断，自适应宽度 */
+  .nav-item-label {
+    @apply flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
+    letter-spacing: 0.01em;
+    font-size: 14px;
+    line-height: 1.5;
   }
 
   /* 徽标 */
@@ -224,11 +233,42 @@
   border-radius: 999px;
 }
 
+/* ============ System Settings Workbench ============ */
+.admin-settings-page {
+  background: #fff;
+}
+
+.admin-settings-header {
+  min-height: 76px;
+  background: #fff;
+}
+
+.admin-settings-content {
+  background: #f8fafc;
+  overscroll-behavior: contain;
+}
+
+.admin-settings-content-inner {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+}
+
+.admin-settings-panel-region {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.admin-settings-tab-panel {
+  min-width: 0;
+}
+
 /* ============ Settings Tabs — 复刻 sub2api 风格 ============ */
 .settings-tabs-shell {
   position: sticky;
   top: 0;
   z-index: 20;
+  margin-bottom: 1.5rem;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.8);
   background: rgba(255, 255, 255, 0.9);
@@ -280,13 +320,12 @@
 @media (min-width: 768px) {
   .settings-tabs {
     min-width: 100%;
+    flex-wrap: nowrap;
   }
 
   .settings-tab {
-    min-width: 0;
-    flex: 1 1 0;
-    overflow: hidden;
-    padding: 0 8px;
+    flex: 0 1 auto;
+    padding: 0 10px;
     font-size: 13px;
   }
 
@@ -344,9 +383,20 @@
 }
 
 .settings-tab-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   line-height: 1;
+}
+
+@media (max-width: 767px) {
+  .admin-settings-header {
+    min-height: 72px;
+    padding-inline: 1rem;
+  }
+
+  .admin-settings-content-inner {
+    padding-inline: 1rem;
+  }
+
+  .settings-tabs-shell {
+    margin-inline: -0.25rem;
+  }
 }

@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { Button, Checkbox, Input, InputNumber, Modal, Segmented, Select, Skeleton, Switch, Tag } from 'antd'
 import {
   settingsApi,
@@ -19,7 +20,6 @@ import EmailSettingsPanel from './admin/EmailSettingsPanel'
 import {
   AGREEMENT_DOCUMENTS_KEY,
   SETTINGS_TABS,
-  TAB_ICONS,
   itemsForTab,
   isTabKey,
   type SettingsTabDef,
@@ -36,6 +36,10 @@ const GROUP_PANEL_META: Record<string, { title: string; description?: string; da
   },
   table: { title: '通用表格设置', description: '统一控制后台与用户侧表格组件的默认分页行为。' },
   customization: { title: '自定义页面设置', description: '首页内容、自定义菜单和功能开关。' },
+  log: { title: '日志与可观测性', description: '日志级别、格式与敏感内容开关。' },
+  queue: { title: '生成任务', description: '生成任务的并发、重试与轮询策略。' },
+  storage: { title: '对象存储', description: '生成结果的对象存储与媒体下载安全策略。' },
+  billing: { title: '用户默认值', description: '新用户注册赠金等用户默认策略。' },
 }
 
 const AWS_STORAGE_KEYS = new Set([
@@ -135,6 +139,35 @@ function ToggleSwitch({
   )
 }
 
+const SETTINGS_TAB_ICON_PATHS: Record<SettingsTabKey, string> = {
+  general: 'M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5M9 21v-6h6v6',
+  agreement: 'M6 3.5h9l3 3V21H6zM15 3.5V7h3M9 11h6M9 15h6',
+  features: 'm12 3 1.8 5.3L19 10l-5.2 1.7L12 17l-1.8-5.3L5 10l5.2-1.7zM19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z',
+  security: 'M12 3 19 6v5c0 4.7-3 8.2-7 10-4-1.8-7-5.3-7-10V6zM9 12l2 2 4-4',
+  users: 'M16 20v-1.5A3.5 3.5 0 0 0 12.5 15h-5A3.5 3.5 0 0 0 4 18.5V20M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M16 4.5a4 4 0 0 1 0 7.8M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.4',
+  gateway: 'M4 5h16v12H4zM8 21h8M12 17v4M8 9h8M8 12h5',
+  payment: 'M3 6h18v12H3zM3 10h18M7 15h3',
+  email: 'M3 5h18v14H3zM3 6l9 7 9-7',
+  backup: 'M4 6h16v12H4zM8 6V4h8v2M8 10h8M8 14h5',
+}
+
+function SettingsTabIcon({ tabKey }: { tabKey: SettingsTabKey }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.8"
+      viewBox="0 0 24 24"
+    >
+      <path d={SETTINGS_TAB_ICON_PATHS[tabKey]} />
+    </svg>
+  )
+}
+
 /**
  * 保存按钮统一状态：未修改「无需保存」（禁用）→ 有修改「保存修改」→
  * 保存中「保存中…」→ 保存成功短暂显示「已保存」。
@@ -150,7 +183,8 @@ function SaveButton({
   saved: boolean
   onClick: () => void
 }) {
-  const label = saving ? '保存中…' : saved ? '已保存' : dirty ? '保存修改' : '无需保存'
+  const t = useTranslations('admin.settings')
+  const label = saving ? t('saving') : saved ? t('saved') : dirty ? t('saveModified') : t('noSaveNeeded')
   return (
     <Button
       type="primary"
@@ -320,6 +354,7 @@ function SettingRow({
 // ---------------------------------------------------------------------------
 
 function AdminSettingsInner() {
+  const t = useTranslations('admin.settings')
   const { alert, confirm } = useDialog()
   const { user } = useSession()
   const router = useRouter()
@@ -450,6 +485,31 @@ function AdminSettingsInner() {
       router.replace(`${pathname}?${params.toString()}`, { scroll: false })
     }
   }, [visibleTabs, activeTab, searchParams, router, pathname])
+
+  // ---- Tab 滚动容器 ref（用于自动滚动到当前 Tab） ----
+  const tabsScrollRef = useRef<HTMLDivElement>(null)
+
+  /** 平滑滚动到指定 Tab，确保它完全可见。 */
+  const scrollToTab = useCallback(
+    (tabKey: SettingsTabKey) => {
+      const container = tabsScrollRef.current
+      if (!container) return
+      const button = container.querySelector<HTMLButtonElement>(`[data-settings-tab="${tabKey}"]`)
+      if (!button) return
+      const containerRect = container.getBoundingClientRect()
+      const buttonRect = button.getBoundingClientRect()
+      // 计算目标 scrollLeft，使按钮居中显示（优先）或至少完全可见
+      const buttonCenter = buttonRect.left + buttonRect.width / 2 - containerRect.left
+      const targetScroll = container.scrollLeft + buttonCenter - containerRect.width / 2
+      container.scrollTo({ left: targetScroll, behavior: 'smooth' })
+    },
+    [],
+  )
+
+  // 切换 Tab 时自动滚动
+  useEffect(() => {
+    scrollToTab(activeTab)
+  }, [activeTab, scrollToTab])
 
   // ---- 脏标记 ----
 
@@ -634,7 +694,7 @@ function AdminSettingsInner() {
   if (user && user.role !== 'ADMIN') {
     return (
       <div className="h-full flex items-center justify-center">
-        <p className="text-gray-500">仅管理员可访问系统配置</p>
+        <p className="text-gray-500">{t('adminOnly')}</p>
       </div>
     )
   }
@@ -683,7 +743,7 @@ function AdminSettingsInner() {
     if (tab.key === 'backup') {
       return (
         <div className="space-y-4">
-          <p className="max-w-2xl text-sm text-gray-500">{tab.description}</p>
+          <p className="max-w-2xl text-sm text-gray-500">{t(`tabDescriptions.${tab.key}`)}</p>
           <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
             <header className="border-b border-gray-100 px-5 py-4 sm:px-6">
               <h3 className="text-sm font-semibold text-gray-900">数据库备份与恢复</h3>
@@ -731,7 +791,7 @@ function AdminSettingsInner() {
       <div className="space-y-4">
         {/* Tab 描述 + 批量保存按钮 */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="max-w-2xl text-sm text-gray-500">{tab.description}</p>
+          <p className="max-w-2xl text-sm text-gray-500">{t(`tabDescriptions.${tab.key}`)}</p>
           <div className="flex flex-wrap items-center gap-2">
             {isGatewayTab && storageProvider !== 'none' && (
               <>
@@ -772,11 +832,17 @@ function AdminSettingsInner() {
               {showPanelHeader && (
                 <header className="border-b border-gray-100 px-5 py-4 sm:px-6">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-gray-900">{meta?.title ?? tab.label}</h3>
+                    <h3 className="text-sm font-semibold text-gray-900">
+                      {meta ? t(`groupMeta.${panel.group}.title`) : t(`tabs.${tab.key}`)}
+                    </h3>
                     {danger && <MetaBadge tone="red">高风险</MetaBadge>}
                   </div>
                   {(() => {
-                    const panelDescription = meta?.description ?? (panels.length > 1 ? tab.description : undefined)
+                    const panelDescription = meta
+                      ? t(`groupMeta.${panel.group}.description`)
+                      : panels.length > 1
+                        ? t(`tabDescriptions.${tab.key}`)
+                        : undefined
                     return panelDescription ? (
                       <p className="mt-0.5 text-xs text-gray-500">{panelDescription}</p>
                     ) : null
@@ -928,11 +994,12 @@ function AdminSettingsInner() {
 
   // ---- 自定义 Tab 导航 — 复刻 sub2api settings-tabs 风格 ----
   const renderSettingsTabs = () => (
-    <div className="settings-tabs-shell mb-4">
+    <div className="settings-tabs-shell">
       <nav
+        ref={tabsScrollRef}
         className="settings-tabs-scroll"
         role="tablist"
-        aria-label="系统设置"
+        aria-label={t('title')}
       >
         <div className="settings-tabs">
           {visibleTabs.map((tab) => {
@@ -968,9 +1035,9 @@ function AdminSettingsInner() {
                 data-settings-tab={tab.key}
               >
                 <span className="settings-tab-icon">
-                  <span className="text-base">{TAB_ICONS[tab.key] ?? '📦'}</span>
+                  <SettingsTabIcon tabKey={tab.key} />
                 </span>
-                <span className="settings-tab-label">{tab.label}</span>
+                <span className="settings-tab-label">{t(`tabs.${tab.key}`)}</span>
                 {isTabDirty && (
                   <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-amber-400" />
                 )}
@@ -983,12 +1050,15 @@ function AdminSettingsInner() {
   )
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="admin-settings-page flex h-full min-h-0 flex-col overflow-hidden" data-testid="admin-settings-page">
       {/* 页面标题区 */}
-      <header className="flex-shrink-0 flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 px-6 py-4 sm:px-8">
+      <header
+        className="admin-settings-header flex flex-shrink-0 flex-wrap items-center justify-between gap-4 border-b border-gray-100 px-6 py-4 sm:px-8"
+        data-testid="admin-settings-header"
+      >
         <div>
-          <h2 className="text-lg font-bold text-gray-900">系统配置</h2>
-          <p className="mt-0.5 text-sm text-gray-500">动态配置保存后立即生效；未修改的项使用环境变量或默认值。</p>
+          <h2 className="text-lg font-bold text-gray-900">{t('title')}</h2>
+          <p className="mt-0.5 text-sm text-gray-500">{t('subtitle')}</p>
         </div>
         <div className="flex flex-shrink-0 items-center gap-4">
           <Checkbox
@@ -996,38 +1066,40 @@ function AdminSettingsInner() {
             onChange={(e) => setShowKeys(e.target.checked)}
             className="hidden text-xs text-gray-400 sm:flex"
           >
-            显示配置 key
+            {t('showKeys')}
           </Checkbox>
           <Button size="small" onClick={() => void load()} disabled={loading}>
-            刷新
+            {t('refresh')}
           </Button>
         </div>
       </header>
 
       {/* 内容区 */}
-      <div className="flex-1 overflow-y-auto bg-slate-50">
-        <div className="mx-auto max-w-5xl px-4 pb-16 pt-4 sm:px-8">
+      <div className="admin-settings-content flex-1 overflow-y-auto bg-slate-50" data-testid="admin-settings-content">
+        <div className="admin-settings-content-inner px-6 pb-16 pt-4 sm:px-8">
           {loading && <Skeleton active paragraph={{ rows: 6 }} className="py-12" />}
 
           {!loading && loadFailed && settings.length === 0 && (
             <div className="py-24 text-center">
-              <p className="text-gray-500">配置加载失败</p>
-              <Button className="mt-4" size="small" onClick={() => void load()}>重试</Button>
+              <p className="text-gray-500">{t('loadFailed')}</p>
+              <Button className="mt-4" size="small" onClick={() => void load()}>{t('retry')}</Button>
             </div>
           )}
 
           {!loading && !loadFailed && settings.length === 0 && (
-            <div className="py-24 text-center text-gray-400">暂无配置项</div>
+            <div className="py-24 text-center text-gray-400">{t('noSettings')}</div>
           )}
 
           {!loading && visibleTabs.length > 0 && (
             <>
               {renderSettingsTabs()}
-              {visibleTabs.map((tab) => (
-                <div key={tab.key} hidden={tab.key !== activeTab}>
-                  {renderTabContent(tab)}
-                </div>
-              ))}
+              <div className="admin-settings-panel-region" data-testid="admin-settings-panel-region">
+                {visibleTabs.map((tab) => (
+                  <div key={tab.key} className="admin-settings-tab-panel" hidden={tab.key !== activeTab}>
+                    {renderTabContent(tab)}
+                  </div>
+                ))}
+              </div>
             </>
           )}
         </div>

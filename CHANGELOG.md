@@ -10,6 +10,16 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.1] — 2026-08-15
+
+### Added
+- Password reset and email verification pages (`/auth/reset-password`, `/auth/verify-email`) with forgot-password, reset, and verify API calls; email links derive from the site URL with a locale-aware path (`/zh-CN/...`) when dedicated URLs are not configured.
+
+### Changed
+- UI theme refreshed from violet to a teal primary palette (antd tokens, Tailwind primary/accent and shadows), lighter borders, and a rebuilt settings tabs UI with keyboard navigation.
+
+---
+
 ## [1.7.0] — 2026-08-15
 
 ### Added

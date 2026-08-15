@@ -80,13 +80,13 @@ function NavLink({ item, pathname }: { item: { path: string; labelKey: string; i
       className={`nav-item ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
     >
       <span
-        className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg ${
+        className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
           active ? 'bg-gradient-to-br from-primary-500 to-primary-600' : 'bg-gray-100'
         }`}
       >
         {item.icon}
       </span>
-      {t(item.labelKey)}
+      <span className="nav-item-label">{t(item.labelKey)}</span>
     </Link>
   )
 }
@@ -107,13 +107,13 @@ function CustomMenuLink({ item, pathname }: { item: CustomMenuItem; pathname: st
       className={`nav-item ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
     >
       <span
-        className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg ${
+        className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
           active ? 'bg-gradient-to-br from-primary-500 to-primary-600' : 'bg-gray-100'
         }`}
       >
         🔗
       </span>
-      {item.label}
+      <span className="nav-item-label">{item.label}</span>
     </Link>
   )
 }
@@ -177,7 +177,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col">
+      <aside className="w-80 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col">
         <Link href="/" className="p-6 border-b border-gray-100 block">
           <div className="flex items-center gap-4">
             <SiteLogo logoUrl={siteConfig.siteLogo} fallbackMark={BRAND.logoMarkZh} />
@@ -249,10 +249,10 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 rel="noopener noreferrer"
                 className="nav-item nav-item-inactive"
               >
-                <span className="w-9 h-9 rounded-xl flex items-center justify-center text-lg bg-gray-100">
+                <span className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 bg-gray-100">
                   📖
                 </span>
-                {t('navigation.documentation')}
+                <span className="nav-item-label">{t('navigation.documentation')}</span>
               </a>
             </div>
           )}

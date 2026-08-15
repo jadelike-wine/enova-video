@@ -1,19 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useRef } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Button } from 'antd'
 import { DialogProvider } from '@/components/application/DialogProvider'
 import { SessionProvider, useSession } from '@/lib/auth'
 import { BRAND } from '@/lib/brand'
-
-// 模块级变量：持久化侧边栏滚动位置。
-// AppShell 在每个页面组件内独立渲染，路由切换会重新挂载整个 ShellInner，
-// 因此不能用组件 state 保存滚动位置。模块作用域在同一个 SPA 会话内不会销毁，
-// 跨路由切换（图片/视频/钱包/设置等）可稳定保持滚动位置；
-// 刷新浏览器后模块重新加载并回到默认顶部，符合预期。
+import { ContentLoading } from '@/components/application/admin/AdminUi'
+import { SiteConfigProvider, useSiteConfig } from '@/lib/useSiteConfig'
+import type { CustomMenuItem } from '@/lib/api'
 
 // 普通用户（个人端）导航项
 const userNavItems = [
@@ -34,19 +31,51 @@ const adminNavItems = [
   { path: '/app/admin/system-update', labelKey: 'navigation.adminSystemUpdate', icon: '🔄' },
 ]
 
-type NavItemProps = {
-  item: { path: string; labelKey: string; icon: string }
-  pathname: string
-  onTabClick: (e: React.MouseEvent<HTMLAnchorElement>, href: string) => void
+// ---- 路由切换 pending 状态 ----
+// 点击导航 Link 时立即设为 true，pathname 变化后清除。
+// 在右侧 Content 区域覆盖 ContentLoading，不卸载 Sidebar。
+
+const RoutePendingContext = createContext<{ pending: boolean; trigger: () => void }>({
+  pending: false,
+  trigger: () => {},
+})
+const useRoutePending = () => useContext(RoutePendingContext)
+
+function RoutePendingProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname()
+  const [pending, setPending] = useState(false)
+  const prevPath = useRef(pathname)
+
+  // pathname 变化 → 路由已到达，清除 pending
+  useEffect(() => {
+    if (pathname !== prevPath.current) {
+      prevPath.current = pathname
+      setPending(false)
+    }
+  }, [pathname])
+
+  // 点击导航时调用：立即标记 pending
+  const trigger = () => setPending(true)
+
+  return (
+    <RoutePendingContext.Provider value={{ pending, trigger }}>
+      {children}
+    </RoutePendingContext.Provider>
+  )
 }
 
-function NavLink({ item, pathname, onTabClick }: NavItemProps) {
+function NavLink({ item, pathname }: { item: { path: string; labelKey: string; icon: string }; pathname: string }) {
   const t = useTranslations()
+  const { trigger } = useRoutePending()
   const active = pathname.startsWith(item.path)
   return (
     <Link
       href={item.path}
-      onClick={(e) => onTabClick(e, item.path)}
+      prefetch
+      onClick={() => {
+        if (active) return
+        trigger()
+      }}
       className={`nav-item ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
     >
       <span
@@ -61,6 +90,52 @@ function NavLink({ item, pathname, onTabClick }: NavItemProps) {
   )
 }
 
+/** 自定义菜单项导航链接。 */
+function CustomMenuLink({ item, pathname }: { item: CustomMenuItem; pathname: string }) {
+  const { trigger } = useRoutePending()
+  const customPath = `/app/custom/${item.id}`
+  const active = pathname === customPath
+  return (
+    <Link
+      href={customPath}
+      prefetch={false}
+      onClick={() => {
+        if (active) return
+        trigger()
+      }}
+      className={`nav-item ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
+    >
+      <span
+        className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg ${
+          active ? 'bg-gradient-to-br from-[#7C3AED] to-[#06B6D4]' : 'bg-gray-100'
+        }`}
+      >
+        🔗
+      </span>
+      {item.label}
+    </Link>
+  )
+}
+
+/** Logo 渲染：有配置 Logo 则用图片，否则用默认渐变占位。 */
+function SiteLogo({ logoUrl, fallbackMark, size = 'w-12 h-12' }: { logoUrl: string; fallbackMark: string; size?: string }) {
+  if (logoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={logoUrl}
+        alt="Logo"
+        className={`${size} rounded-2xl object-cover`}
+      />
+    )
+  }
+  return (
+    <div className={`${size} rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center text-xl font-extrabold text-white`}>
+      {fallbackMark}
+    </div>
+  )
+}
+
 // 模块级变量：保存侧边栏滚动位置，跨路由切换持续（见上方注释）
 let sidebarScrollTop = 0
 
@@ -69,31 +144,16 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { loading, user, balance, logout } = useSession()
+  const { config: siteConfig } = useSiteConfig()
   const navRef = useRef<HTMLElement>(null)
+  const { pending: routePending } = useRoutePending()
 
-  // 路由切换后 ShellInner 重新挂载，恢复侧边栏滚动位置。
-  // 依赖留空：仅在首次挂载（含每次切页后的重新挂载）时执行一次。
+  // Layout 级别：ShellInner 在路由切换时保持 mounted，不再重新挂载。
+  // sidebarScrollTop 仅在首次进入时恢复（浏览器硬刷新场景）。
   useEffect(() => {
     const nav = navRef.current
     if (nav) nav.scrollTop = sidebarScrollTop
   }, [])
-
-  // 平滑过渡：切换侧边栏 tab 时用 View Transitions API 做淡入淡出，
-  // 避免整页“闪一下”。不支持该 API 的浏览器会自动退化为普通导航。
-  const handleTabClick = useCallback(
-    (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-      if (href === pathname) return
-      const prefersReducedMotion =
-        typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      if (prefersReducedMotion || typeof document.startViewTransition !== 'function') return
-      e.preventDefault()
-      document.startViewTransition(() => {
-        router.push(href)
-      })
-    },
-    [pathname, router],
-  )
 
   // 鉴权守卫：未加载完成显示加载态；未登录重定向到登录页。
   if (loading) {
@@ -108,18 +168,23 @@ function ShellInner({ children }: { children: React.ReactNode }) {
     return null
   }
 
+  // 自定义菜单项：管理员可见所有，普通用户仅可见 visibility=user 的。
+  const visibleCustomMenuItems = user?.role === 'ADMIN'
+    ? siteConfig.customMenuItems
+    : siteConfig.customMenuItems.filter((m) => m.visibility === 'user')
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
       <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
         <Link href="/" className="p-6 border-b border-gray-200 block">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#06B6D4] flex items-center justify-center text-xl font-extrabold text-white">
-              {BRAND.logoMarkZh}
-            </div>
+            <SiteLogo logoUrl={siteConfig.siteLogo} fallbackMark={BRAND.logoMarkZh} />
             <div>
-              <h1 className="font-bold text-lg leading-tight text-[#111827]">{BRAND.nameZh}</h1>
-              <p className="text-xs text-gray-500 mt-0.5">{t('appShell.tagline')}</p>
+              <h1 className="font-bold text-lg leading-tight text-[#111827]">{siteConfig.siteName || BRAND.nameZh}</h1>
+              {siteConfig.siteSubtitle && (
+                <p className="text-xs text-gray-500 mt-0.5">{siteConfig.siteSubtitle}</p>
+              )}
             </div>
           </div>
         </Link>
@@ -136,7 +201,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               {/* 管理员后台 */}
               <div className="space-y-2">
                 {adminNavItems.map((item) => (
-                  <NavLink key={item.path} item={item} pathname={pathname} onTabClick={handleTabClick} />
+                  <NavLink key={item.path} item={item} pathname={pathname} />
                 ))}
               </div>
 
@@ -147,15 +212,47 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               </div>
               <div className="space-y-2">
                 {userNavItems.map((item) => (
-                  <NavLink key={item.path} item={item} pathname={pathname} onTabClick={handleTabClick} />
+                  <NavLink key={item.path} item={item} pathname={pathname} />
                 ))}
               </div>
             </>
           ) : (
             <div className="space-y-2">
               {userNavItems.map((item) => (
-                <NavLink key={item.path} item={item} pathname={pathname} onTabClick={handleTabClick} />
+                <NavLink key={item.path} item={item} pathname={pathname} />
               ))}
+            </div>
+          )}
+
+          {/* 自定义菜单页面 */}
+          {visibleCustomMenuItems.length > 0 && (
+            <>
+              <div className="mt-6 mb-2 flex items-center gap-3">
+                <span className="text-[11px] uppercase tracking-widest text-gray-400">{t('navigation.customPages')}</span>
+                <span className="h-px flex-1 bg-gray-200" />
+              </div>
+              <div className="space-y-2">
+                {visibleCustomMenuItems.map((item) => (
+                  <CustomMenuLink key={item.id} item={item} pathname={pathname} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* 文档链接 */}
+          {siteConfig.docUrl && (
+            <div className="mt-6 space-y-2">
+              <a
+                href={siteConfig.docUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="nav-item nav-item-inactive"
+              >
+                <span className="w-9 h-9 rounded-xl flex items-center justify-center text-lg bg-gray-100">
+                  📖
+                </span>
+                {t('navigation.documentation')}
+              </a>
             </div>
           )}
         </nav>
@@ -184,15 +281,20 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
           <p className="text-xs text-gray-400 text-center">
-            © {new Date().getFullYear()} {BRAND.nameZh} · {BRAND.name}
+            © {new Date().getFullYear()} {siteConfig.siteName || BRAND.nameZh} · {BRAND.name}
           </p>
         </div>
       </aside>
 
       {/* Main content */}
       <main className="flex-1 overflow-hidden bg-[#F7F7F8]">
-        <div className="h-full m-4 bg-white rounded-2xl border border-gray-200 overflow-hidden" style={{ boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)' }}>
+        <div className="relative h-full m-4 bg-white rounded-2xl border border-gray-200 overflow-hidden" style={{ boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)' }}>
           {children}
+          {routePending && (
+            <div className="absolute inset-0 z-10 bg-white">
+              <ContentLoading />
+            </div>
+          )}
         </div>
       </main>
     </div>
@@ -205,9 +307,13 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      <DialogProvider>
-        <ShellInner>{children}</ShellInner>
-      </DialogProvider>
+      <SiteConfigProvider>
+        <DialogProvider>
+          <RoutePendingProvider>
+            <ShellInner>{children}</ShellInner>
+          </RoutePendingProvider>
+        </DialogProvider>
+      </SiteConfigProvider>
     </SessionProvider>
   )
 }

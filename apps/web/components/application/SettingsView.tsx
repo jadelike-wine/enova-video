@@ -5,6 +5,7 @@ import { Button } from 'antd'
 import { useTranslations } from 'next-intl'
 import { useSession } from '../../lib/auth'
 import { BRAND } from '../../lib/brand'
+import { useSiteConfig } from '../../lib/useSiteConfig'
 
 function maskEmail(email: string): string {
   if (!email || !email.includes('@')) return email || '—'
@@ -16,6 +17,8 @@ function maskEmail(email: string): string {
 export default function SettingsView() {
   const t = useTranslations('settings')
   const { user, balance, reservedBalance, logout } = useSession()
+  const { config: siteConfig } = useSiteConfig()
+  const contactInfo = siteConfig.contactInfo || siteConfig.supportEmail || ''
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -109,6 +112,19 @@ export default function SettingsView() {
               {t('aboutPlatformItem3')}
             </li>
           </ul>
+          {contactInfo && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs text-gray-400 mb-1">{t('contactInfo')}</p>
+              <p className="text-sm text-gray-700">
+                <a
+                  href={contactInfo.includes('@') ? `mailto:${contactInfo}` : contactInfo}
+                  className="text-[#7C3AED] underline decoration-[#7C3AED]/40 hover:text-[#6D28D9]"
+                >
+                  {contactInfo}
+                </a>
+              </p>
+            </div>
+          )}
           <p className="text-xs text-gray-400 mt-4">
             {BRAND.nameZh} ({BRAND.name}) · {BRAND.taglineZh}
           </p>

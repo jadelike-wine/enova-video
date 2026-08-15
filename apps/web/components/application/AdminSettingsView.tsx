@@ -12,6 +12,7 @@ import {
 import { useDialog } from './DialogProvider'
 import { useSession } from '../../lib/auth'
 import { formatErrorMessage } from '../../lib/errorMessage'
+import { ContentLoading } from './admin/AdminUi'
 import AgreementDocumentsEditor, { normalizeDocumentsJson } from './AgreementDocumentsEditor'
 
 // ---------------------------------------------------------------------------
@@ -30,6 +31,8 @@ const AGREEMENT_DOCUMENTS_KEY = 'general.loginAgreementDocuments'
 
 type SettingsTabKey =
   | 'general'
+  | 'customization'
+  | 'table'
   | 'agreement'
   | 'billing'
   | 'auth'
@@ -56,9 +59,21 @@ const SETTINGS_TABS: SettingsTabDef[] = [
   {
     key: 'general',
     label: '通用设置',
-    description: '站点名称、访问地址与客服入口等基础信息。',
+    description: '站点名称、副标题、Logo、客服联系方式、文档链接等基础信息。',
     groups: ['general'],
     excludeKeys: AGREEMENT_KEYS,
+  },
+  {
+    key: 'customization',
+    label: '自定义页面',
+    description: '首页内容、简洁首页、隐藏 CCS 导入按钮和自定义菜单页面。',
+    groups: ['customization'],
+  },
+  {
+    key: 'table',
+    label: '表格设置',
+    description: '后台与用户侧表格组件的默认分页行为。',
+    groups: ['table'],
   },
   {
     key: 'agreement',
@@ -146,6 +161,8 @@ const GROUP_PANEL_META: Record<string, { title: string; description?: string; da
     description: '限流与 SSRF 防护策略。降低安全边界属于高风险操作。',
     danger: true,
   },
+  table: { title: '通用表格设置', description: '统一控制后台与用户侧表格组件的默认分页行为。' },
+  customization: { title: '自定义页面设置', description: '首页内容、自定义菜单和功能开关。' },
 }
 
 const AWS_STORAGE_KEYS = new Set([
@@ -292,6 +309,12 @@ interface SettingRowProps {
   onShowHistory: () => void
 }
 
+/** 需要 Textarea 渲染的配置 key 集合。 */
+const TEXTAREA_KEYS = new Set([
+  'general.homeContent',
+  'general.customMenuItems',
+])
+
 function SettingRow({
   setting,
   draft,
@@ -336,6 +359,17 @@ function SettingRow({
           placeholder={setting.isSecret && setting.configured ? '••••••（留空保持不变）' : ''}
           min={setting.min !== undefined ? String(setting.min) : undefined}
           max={setting.max !== undefined ? String(setting.max) : undefined}
+        />
+      )
+    }
+    if (TEXTAREA_KEYS.has(setting.key)) {
+      return (
+        <Input.TextArea
+          value={draft}
+          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => onDraftChange(e.target.value)}
+          className="w-full"
+          aria-label={setting.label}
+          autoSize={{ minRows: 3, maxRows: 12 }}
         />
       )
     }
@@ -1086,13 +1120,7 @@ function AdminSettingsInner() {
  */
 export default function AdminSettingsView() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex h-full items-center justify-center">
-          <div className="animate-pulse text-sm text-gray-400">加载中…</div>
-        </div>
-      }
-    >
+    <Suspense fallback={<ContentLoading />}>
       <AdminSettingsInner />
     </Suspense>
   )

@@ -6,9 +6,8 @@ import type { TableProps } from 'antd'
 import { adminAuditApi, type AdminAuditView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { PageHeader, fmtDate } from './AdminUi'
-
-const PAGE_SIZE = 50
+import { useTablePagination } from '../../../lib/useTablePagination'
+import { ContentLoading, PageHeader, fmtDate } from './AdminUi'
 
 export default function AdminAuditView() {
   const { alert } = useDialog()
@@ -16,20 +15,24 @@ export default function AdminAuditView() {
   const [loading, setLoading] = useState(true)
   const [offset, setOffset] = useState(0)
 
+  const { defaultPageSize } = useTablePagination()
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setLogs(await adminAuditApi.list({ limit: PAGE_SIZE, offset }))
+      setLogs(await adminAuditApi.list({ limit: defaultPageSize, offset }))
     } catch (e) {
       await alert({ title: '加载失败', message: formatErrorMessage(e) })
     } finally {
       setLoading(false)
     }
-  }, [offset, alert])
+  }, [offset, defaultPageSize, alert])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  if (loading && logs.length === 0) return <ContentLoading />
 
   const columns: TableProps<AdminAuditView>['columns'] = [
     { title: '时间', dataIndex: 'createdAt', key: 'createdAt', render: (v: string) => <span className="text-gray-500 whitespace-nowrap">{fmtDate(v)}</span> },
@@ -60,11 +63,11 @@ export default function AdminAuditView() {
             />
           </Skeleton>
           <div className="flex items-center justify-between pt-3">
-            <Button size="small" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
+            <Button size="small" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - defaultPageSize))}>
               上一页
             </Button>
             <span className="text-xs text-gray-400">offset {offset}</span>
-            <Button size="small" disabled={logs.length < PAGE_SIZE || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
+            <Button size="small" disabled={logs.length < defaultPageSize || loading} onClick={() => setOffset(offset + defaultPageSize)}>
               下一页
             </Button>
           </div>

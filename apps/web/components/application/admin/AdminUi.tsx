@@ -79,6 +79,22 @@ export function Loading() {
   return <Skeleton active paragraph={{ rows: 3 }} />
 }
 
+/**
+ * 右侧 Content 区域统一的 Spinner Loading。
+ * 仅在 AdminLayout 的 children 区域内显示，不覆盖 Sidebar。
+ * 使用项目主色调 #7C3AED 作为 spinner 顶边颜色。
+ */
+export function ContentLoading() {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-7 w-7 animate-spin rounded-full border-2 border-gray-200 border-t-[#7C3AED]" />
+        <span className="text-sm text-gray-400">加载中...</span>
+      </div>
+    </div>
+  )
+}
+
 export function AdminLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link href={href} className="text-[#7C3AED] hover:text-[#6D28D9] underline underline-offset-2">

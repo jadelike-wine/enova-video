@@ -6,9 +6,9 @@ import type { TableProps } from 'antd'
 import { adminOrdersApi, type AdminOrderView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { AdminLink, PageHeader, StatusBadge, fmtDate, fmtMoney } from './AdminUi'
+import { useTablePagination } from '../../../lib/useTablePagination'
+import { AdminLink, ContentLoading, PageHeader, StatusBadge, fmtDate, fmtMoney } from './AdminUi'
 
-const PAGE_SIZE = 50
 const STATUS_OPTIONS = ['', 'PENDING', 'SUCCEEDED', 'FAILED']
 const TYPE_OPTIONS = ['', 'RECHARGE', 'PLAN', 'CREDIT_PACK']
 
@@ -20,11 +20,13 @@ export default function AdminOrdersView() {
   const [status, setStatus] = useState('')
   const [orderType, setOrderType] = useState('')
 
+  const { defaultPageSize } = useTablePagination()
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const rows = await adminOrdersApi.list({
-        limit: PAGE_SIZE,
+        limit: defaultPageSize,
         offset,
         status: status || undefined,
         orderType: orderType || undefined,
@@ -35,11 +37,13 @@ export default function AdminOrdersView() {
     } finally {
       setLoading(false)
     }
-  }, [offset, status, orderType, alert])
+  }, [offset, status, orderType, defaultPageSize, alert])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  if (loading && orders.length === 0) return <ContentLoading />
 
   const columns: TableProps<AdminOrderView>['columns'] = [
     { title: '订单', dataIndex: 'id', key: 'id', render: (v: string) => <span className="text-gray-600">{v.slice(0, 8)}</span> },
@@ -90,11 +94,11 @@ export default function AdminOrdersView() {
             />
           </Skeleton>
           <div className="flex items-center justify-between pt-3">
-            <Button size="small" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
+            <Button size="small" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - defaultPageSize))}>
               上一页
             </Button>
             <span className="text-xs text-gray-400">offset {offset}</span>
-            <Button size="small" disabled={orders.length < PAGE_SIZE || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
+            <Button size="small" disabled={orders.length < defaultPageSize || loading} onClick={() => setOffset(offset + defaultPageSize)}>
               下一页
             </Button>
           </div>

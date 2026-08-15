@@ -1,12 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Card, Descriptions, Skeleton, Table } from 'antd'
+import { Button, Card, Descriptions, Table } from 'antd'
 import type { TableProps } from 'antd'
 import { adminOrdersApi, type AdminOrderDetailView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { BackLink, PageHeader, StatusBadge, fmtDate, fmtMoney } from './AdminUi'
+import { BackLink, ContentLoading, PageHeader, StatusBadge, fmtDate, fmtMoney } from './AdminUi'
 
 export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
   const { alert, confirm } = useDialog()
@@ -66,11 +66,7 @@ export default function AdminOrderDetailView({ orderId }: { orderId: string }) {
     }
   }
 
-  if (loading) return (
-    <div className="p-5">
-      <Skeleton active paragraph={{ rows: 8 }} />
-    </div>
-  )
+  if (loading) return <ContentLoading />
   if (!order) return <div className="p-10 text-center text-gray-400">订单不存在</div>
 
   type TxnItem = AdminOrderDetailView['paymentTransactions'][number]

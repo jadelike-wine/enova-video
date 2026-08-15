@@ -180,10 +180,30 @@ export const authApi = {
   me: () => json<AuthResult>('/auth/me'),
 }
 
+/** 自定义菜单项。 */
+export interface CustomMenuItem {
+  id: string
+  label: string
+  url: string
+  visibility: 'user' | 'admin'
+  sortOrder: number
+}
+
 export interface SiteConfig {
   siteUrl: string
   supportEmail: string
   appName: string
+  siteName: string
+  siteSubtitle: string
+  siteLogo: string
+  contactInfo: string
+  docUrl: string
+  homeContent: string
+  compactHomeEnabled: boolean
+  hideCcsImportButton: boolean
+  customMenuItems: CustomMenuItem[]
+  tableDefaultPageSize: number
+  tablePageSizeOptions: number[]
 }
 
 export const publicApi = {

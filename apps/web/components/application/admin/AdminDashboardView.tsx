@@ -1,11 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Card, Skeleton, Statistic } from 'antd'
+import { Card, Statistic } from 'antd'
 import { adminStatsApi, type AdminStatsView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { PageHeader } from './AdminUi'
+import { ContentLoading, PageHeader } from './AdminUi'
 
 export default function AdminDashboardView() {
   const { alert } = useDialog()
@@ -27,11 +27,7 @@ export default function AdminDashboardView() {
     void load()
   }, [load])
 
-  if (loading) return (
-    <div className="p-5">
-      <Skeleton active paragraph={{ rows: 8 }} />
-    </div>
-  )
+  if (loading) return <ContentLoading />
 
   const statCards: Array<{ label: string; value: number; unit?: string }> = [
     { label: '用户', value: stats?.users ?? 0 },

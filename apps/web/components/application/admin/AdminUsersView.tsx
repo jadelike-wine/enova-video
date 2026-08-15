@@ -5,9 +5,8 @@ import { App, Button, Form, Input, InputNumber, Modal, Space, Table, Tag } from 
 import type { TableProps } from 'antd'
 import { adminUsersApi, type AdminUserView } from '../../../lib/adminApi'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { AdminLink, Card, PageHeader, fmtDate } from './AdminUi'
-
-const PAGE_SIZE = 50
+import { useTablePagination } from '../../../lib/useTablePagination'
+import { AdminLink, Card, ContentLoading, PageHeader, fmtDate } from './AdminUi'
 
 interface AdjustCreditsFormValues {
   delta: number
@@ -28,11 +27,13 @@ export default function AdminUsersView() {
   const [adjustTarget, setAdjustTarget] = useState<AdminUserView | null>(null)
   const [adjusting, setAdjusting] = useState(false)
 
+  const { defaultPageSize } = useTablePagination()
+
   const load = useCallback(
     async (off: number) => {
       setLoading(true)
       try {
-        const rows = await adminUsersApi.list({ limit: PAGE_SIZE, offset: off })
+        const rows = await adminUsersApi.list({ limit: defaultPageSize, offset: off })
         setUsers(rows)
         setOffset(off)
       } catch (e) {
@@ -41,7 +42,7 @@ export default function AdminUsersView() {
         setLoading(false)
       }
     },
-    [message],
+    [message, defaultPageSize],
   )
 
   useEffect(() => {
@@ -83,9 +84,11 @@ export default function AdminUsersView() {
 
   const openAdjust = (u: AdminUserView) => {
     setAdjustTarget(u)
-    form.resetFields()
-    form.setFieldsValue({ delta: 0, reason: '' })
   }
+
+  // Modal 打开后（Form 已挂载）再重置表单，避免 useForm 实例未连接 Form 的 warning。
+  // 依赖 afterOpenChange 而非在 openAdjust 中直接调用 form API，
+  // 因为 destroyOnHidden 会在关闭时卸载 Form 组件。
 
   const submitAdjust = async (values: AdjustCreditsFormValues) => {
     if (!adjustTarget) return
@@ -106,6 +109,8 @@ export default function AdminUsersView() {
       setAdjusting(false)
     }
   }
+
+  if (loading && users.length === 0) return <ContentLoading />
 
   const columns: TableProps<AdminUserView>['columns'] = [
     {
@@ -194,13 +199,13 @@ export default function AdminUsersView() {
             locale={{ emptyText: '没有匹配的用户' }}
           />
           <div className="flex items-center justify-between pt-4">
-            <Button size="small" disabled={offset === 0 || loading} onClick={() => void load(Math.max(0, offset - PAGE_SIZE))}>
+            <Button size="small" disabled={offset === 0 || loading} onClick={() => void load(Math.max(0, offset - defaultPageSize))}>
               上一页
             </Button>
             <span className="text-xs text-gray-400">
               第 {offset + 1} - {offset + filtered.length} 条
             </span>
-            <Button size="small" disabled={users.length < PAGE_SIZE || loading} onClick={() => void load(offset + PAGE_SIZE)}>
+            <Button size="small" disabled={users.length < defaultPageSize || loading} onClick={() => void load(offset + defaultPageSize)}>
               下一页
             </Button>
           </div>
@@ -216,6 +221,13 @@ export default function AdminUsersView() {
         cancelText="取消"
         confirmLoading={adjusting}
         destroyOnHidden
+        afterOpenChange={(open) => {
+          // Modal 完全打开后 Form 组件已挂载，此时操作 form 实例才安全
+          if (open) {
+            form.resetFields()
+            form.setFieldsValue({ delta: 0, reason: '' })
+          }
+        }}
       >
         <Form
           form={form}

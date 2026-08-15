@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button, Empty, Image as AntdImage, InputNumber, Skeleton, Tag } from 'antd'
 import { useTranslations } from 'next-intl'
-import { billingApi, paymentApi, publicApi, type LedgerEntry, type RechargeResult } from '../../lib/api'
+import { billingApi, paymentApi, type LedgerEntry, type RechargeResult } from '../../lib/api'
+import { useSiteConfig } from '../../lib/useSiteConfig'
 import { useDialog } from './DialogProvider'
 import { useSession } from '../../lib/auth'
 import { formatErrorMessage } from '../../lib/errorMessage'
@@ -61,7 +62,8 @@ export default function WalletView() {
   const [recharging, setRecharging] = useState(false)
   const [rechargeResult, setRechargeResult] = useState<RechargeResult | null>(null)
   const [confirming, setConfirming] = useState(false)
-  const [supportEmail, setSupportEmail] = useState('support@example.com')
+  const { config: siteConfig } = useSiteConfig()
+  const supportEmail = siteConfig.contactInfo || siteConfig.supportEmail || 'support@example.com'
 
   const loadWallet = useCallback(async () => {
     try {
@@ -91,7 +93,6 @@ export default function WalletView() {
   useEffect(() => {
     void loadWallet()
     void loadLedger()
-    void publicApi.siteConfig().then((config) => setSupportEmail(config.supportEmail)).catch(() => undefined)
   }, [loadWallet, loadLedger])
 
   const effectiveCny =

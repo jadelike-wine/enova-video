@@ -1,12 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Card, Descriptions, Skeleton, Table } from 'antd'
+import { Card, Descriptions, Table } from 'antd'
 import type { TableProps } from 'antd'
 import { adminCustomersApi, type Customer360View } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { BackLink, PageHeader, StatusBadge, fmtDate, fmtMicrousd, fmtMoney } from './AdminUi'
+import { BackLink, ContentLoading, PageHeader, StatusBadge, fmtDate, fmtMicrousd, fmtMoney } from './AdminUi'
 
 export default function AdminCustomer360View({ userId }: { userId: string }) {
   const { alert } = useDialog()
@@ -28,11 +28,7 @@ export default function AdminCustomer360View({ userId }: { userId: string }) {
     void load()
   }, [load])
 
-  if (loading) return (
-    <div className="p-5">
-      <Skeleton active paragraph={{ rows: 10 }} />
-    </div>
-  )
+  if (loading) return <ContentLoading />
   if (!data) return <div className="p-10 text-center text-gray-400">无法加载用户数据</div>
 
   type ReservationItem = Customer360View['reservations'][number]

@@ -6,9 +6,9 @@ import type { TableProps } from 'antd'
 import { adminGenerationsApi, type AdminGenerationView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { AdminLink, PageHeader, StatusBadge, fmtDate } from './AdminUi'
+import { useTablePagination } from '../../../lib/useTablePagination'
+import { AdminLink, ContentLoading, PageHeader, StatusBadge, fmtDate } from './AdminUi'
 
-const PAGE_SIZE = 50
 const STATUS_OPTIONS = ['', 'PENDING', 'QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELED']
 
 export default function AdminGenerationsView() {
@@ -18,21 +18,25 @@ export default function AdminGenerationsView() {
   const [offset, setOffset] = useState(0)
   const [status, setStatus] = useState('')
 
+  const { defaultPageSize } = useTablePagination()
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const rows = await adminGenerationsApi.list({ limit: PAGE_SIZE, offset, status: status || undefined })
+      const rows = await adminGenerationsApi.list({ limit: defaultPageSize, offset, status: status || undefined })
       setJobs(rows)
     } catch (e) {
       await alert({ title: '加载失败', message: formatErrorMessage(e) })
     } finally {
       setLoading(false)
     }
-  }, [offset, status, alert])
+  }, [offset, status, defaultPageSize, alert])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  if (loading && jobs.length === 0) return <ContentLoading />
 
   const columns: TableProps<AdminGenerationView>['columns'] = [
     { title: 'Job', dataIndex: 'id', key: 'id', render: (v: string) => <span className="text-gray-600">{v.slice(0, 8)}</span> },
@@ -78,11 +82,11 @@ export default function AdminGenerationsView() {
             />
           </Skeleton>
           <div className="flex items-center justify-between pt-3">
-            <Button size="small" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>
+            <Button size="small" disabled={offset === 0 || loading} onClick={() => setOffset(Math.max(0, offset - defaultPageSize))}>
               上一页
             </Button>
             <span className="text-xs text-gray-400">offset {offset}</span>
-            <Button size="small" disabled={jobs.length < PAGE_SIZE || loading} onClick={() => setOffset(offset + PAGE_SIZE)}>
+            <Button size="small" disabled={jobs.length < defaultPageSize || loading} onClick={() => setOffset(offset + defaultPageSize)}>
               下一页
             </Button>
           </div>

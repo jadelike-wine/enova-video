@@ -1,12 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Card, Descriptions, Skeleton, Table } from 'antd'
+import { Button, Card, Descriptions, Table } from 'antd'
 import type { TableProps } from 'antd'
 import { adminGenerationsApi, type AdminGenerationDetailView } from '../../../lib/adminApi'
 import { useDialog } from '../DialogProvider'
 import { formatErrorMessage } from '../../../lib/errorMessage'
-import { BackLink, PageHeader, StatusBadge, fmtDate, fmtMicrousd } from './AdminUi'
+import { BackLink, ContentLoading, PageHeader, StatusBadge, fmtDate, fmtMicrousd } from './AdminUi'
 
 export default function AdminGenerationDetailView({ jobId }: { jobId: string }) {
   const { alert, confirm } = useDialog()
@@ -68,11 +68,7 @@ export default function AdminGenerationDetailView({ jobId }: { jobId: string }) 
     }
   }
 
-  if (loading) return (
-    <div className="p-5">
-      <Skeleton active paragraph={{ rows: 10 }} />
-    </div>
-  )
+  if (loading) return <ContentLoading />
   if (!job) return <div className="p-10 text-center text-gray-400">任务不存在</div>
 
   type AttemptItem = AdminGenerationDetailView['attempts'][number]

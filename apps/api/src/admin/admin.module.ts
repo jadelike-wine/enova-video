@@ -28,6 +28,8 @@ import { PricingAdminController } from './pricing.admin.controller.js';
 import { CustomersAdminController } from './customers.admin.controller.js';
 import { RbacAdminController } from './rbac.admin.controller.js';
 import { EmailAdminController } from './email.admin.controller.js';
+import { EmailTemplatesAdminController } from './email-templates.admin.controller.js';
+import { EmailTemplatesAdminService } from './email-templates.admin.service.js';
 import { OpsMonitoringService } from './ops-monitoring.service.js';
 import { OpsMonitoringController } from './ops-monitoring.controller.js';
 import { SettingsAdminService } from './settings.admin.service.js';
@@ -60,6 +62,7 @@ import { ENV } from '../config/config.module.js';
     RbacAdminController,
     SystemUpdateController,
     EmailAdminController,
+    EmailTemplatesAdminController,
     OpsMonitoringController,
   ],
   providers: [
@@ -81,6 +84,7 @@ import { ENV } from '../config/config.module.js';
     CustomersAdminService,
     AnalyticsAdminService,
     SettingsAdminService,
+    EmailTemplatesAdminService,
     SystemUpdateRedisShutdown,
     { provide: SYSTEM_UPDATE_REDIS, inject: [ENV], useFactory: createSystemUpdateRedis },
     GitHubReleaseClient,

@@ -1333,7 +1333,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 返回公开站点配置（站点 URL、客服邮箱和应用名称，无需登录） */
+        /** 返回公开站点配置（站点名称、Logo、客服联系方式、首页内容等，无需登录） */
         get: operations["PublicLoginAgreementController_getSiteConfig"];
         put?: never;
         post?: never;

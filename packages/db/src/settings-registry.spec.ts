@@ -53,4 +53,51 @@ describe('runtime settings registry', () => {
     });
     expect(SETTINGS_BY_KEY.get('security.rateLimitPrefix')?.envKey).toBe('RATE_LIMIT_PREFIX');
   });
+
+  it('registers the structured general settings consumed by the workbench', () => {
+    expect(SETTINGS_BY_KEY.get('general.apiBaseUrl')).toMatchObject({
+      valueType: 'string',
+      group: 'general',
+      envKey: 'API_BASE_URL',
+      envDefault: '',
+    });
+    expect(SETTINGS_BY_KEY.get('general.customEndpoints')).toMatchObject({
+      valueType: 'string',
+      group: 'general',
+      envKey: 'CUSTOM_ENDPOINTS',
+      envDefault: '[]',
+    });
+    expect(SETTINGS_BY_KEY.get('general.siteUrl')).toMatchObject({
+      valueType: 'string',
+      group: 'general',
+      envDefault: 'http://localhost:3000',
+    });
+    expect(SETTINGS_BY_KEY.get('general.siteLogo')).toMatchObject({
+      valueType: 'string',
+      group: 'general',
+      envDefault: '',
+    });
+    expect(SETTINGS_BY_KEY.get('general.customMenuItems')).toMatchObject({
+      valueType: 'string',
+      group: 'customization',
+      envDefault: '[]',
+    });
+    expect(SETTINGS_BY_KEY.get('table.defaultPageSize')).toMatchObject({
+      valueType: 'number',
+      group: 'table',
+      envDefault: '20',
+      min: 5,
+      max: 1000,
+    });
+    expect(SETTINGS_BY_KEY.get('table.pageSizeOptions')).toMatchObject({
+      valueType: 'string',
+      group: 'table',
+      envDefault: '10,20,50,100',
+    });
+  });
+
+  it('does not register gateway-only fields without an Enova consumer', () => {
+    expect(SETTINGS_BY_KEY.has('general.backendMode')).toBe(false);
+    expect(SETTINGS_BY_KEY.has('backend.mode')).toBe(false);
+  });
 });

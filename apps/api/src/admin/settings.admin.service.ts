@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { domainError, ERROR_CODES } from '@enova/contracts';
+import { DomainError, domainError, ERROR_CODES } from '@enova/contracts';
 import { isRegisteredSetting, SETTINGS_BY_KEY } from '@enova/db';
 import { createObjectStorage, validateFetchableUrl } from '@enova/provider';
 import { SettingsService, type SettingValueView } from '../settings/settings.service.js';
@@ -11,6 +11,17 @@ function maskSecret(value: string): string {
   if (value.length <= 8) return '••••••••';
   return `••••••••${value.slice(-4)}`;
 }
+
+const MAX_URL_LENGTH = 2048;
+const MAX_LOGO_LENGTH = 410_000;
+const MAX_LOGO_BYTES = 300 * 1024;
+const MAX_CUSTOM_MENU_ITEMS = 100;
+const MAX_CUSTOM_ENDPOINTS = 50;
+const MAX_SORT_ORDER = 10_000;
+const MAX_SETTING_ID_LENGTH = 128;
+const MAX_SETTING_LABEL_LENGTH = 200;
+
+type StructuredRecord = Record<string, unknown>;
 
 /**
  * 系统配置管理（Admin）：读取/更新动态配置。
@@ -137,7 +148,7 @@ export class SettingsAdminService {
     }
 
     // 通用配置校验：URL 格式、自定义菜单 JSON 等。
-    this.validateGeneralSetting(key, value);
+    await this.validateGeneralSetting(key, value);
 
     // P0: 生产环境动态配置安全守卫——拒绝危险值。
     this.validateProductionSetting(key, value);
@@ -155,7 +166,8 @@ export class SettingsAdminService {
     items: Array<{ key: string; value: string }>,
     opts: { updatedBy?: string; requestId?: string; reason?: string } = {},
   ): Promise<SettingValueView[]> {
-    const normalizedItems = items.map(({ key, value }) => {
+    const normalizedItems: Array<{ key: string; value: string }> = [];
+    for (const { key, value } of items) {
       if (!isRegisteredSetting(key)) {
         throw domainError(ERROR_CODES.VALIDATION_ERROR, `Unknown setting key: ${key}`, 400);
       }
@@ -182,10 +194,10 @@ export class SettingsAdminService {
       }
 
       // 通用配置校验。
-      this.validateGeneralSetting(key, normalized);
+      await this.validateGeneralSetting(key, normalized);
 
-      return { key, value: normalized };
-    });
+      normalizedItems.push({ key, value: normalized });
+    }
 
     // P0: 生产环境动态配置安全守卫。
     for (const { key, value } of normalizedItems) {
@@ -358,25 +370,20 @@ export class SettingsAdminService {
    * 通用配置校验：URL 格式、可选条数列表去重排序、自定义菜单 JSON 校验等。
    * 这些校验不区分生产/开发环境，始终生效。
    */
-  private validateGeneralSetting(key: string, value: string): void {
-    // 文档链接：如果非空，必须是 http/https URL。
-    if (key === 'general.docUrl' && value) {
-      if (!value.startsWith('http://') && !value.startsWith('https://')) {
-        throw domainError(ERROR_CODES.VALIDATION_ERROR, 'general.docUrl must be a valid http(s) URL', 400);
-      }
-      try {
-        // 验证 URL 可解析。
-        new URL(value);
-      } catch {
-        throw domainError(ERROR_CODES.VALIDATION_ERROR, 'general.docUrl is not a valid URL', 400);
-      }
+  private async validateGeneralSetting(key: string, value: string): Promise<void> {
+    const urlSettingKeys = new Set(['general.siteUrl', 'general.apiBaseUrl', 'general.docUrl']);
+    if (urlSettingKeys.has(key) && value) {
+      await this.validateHttpUrl(key, value);
     }
 
-    // 站点 Logo：如果非空，必须是 http/https URL 或 data URI。
+    // 站点 Logo：远程图片受 URL/SSRF 守卫保护，内嵌图片只允许受支持的图片 data URI。
     if (key === 'general.siteLogo' && value) {
-      if (!value.startsWith('http://') && !value.startsWith('https://') && !value.startsWith('data:')) {
-        throw domainError(ERROR_CODES.VALIDATION_ERROR, 'general.siteLogo must be a valid http(s) URL or data URI', 400);
-      }
+      await this.validateLogo(value);
+    }
+
+    // 自定义首页以 URL 开头时会被前端作为 iframe src 使用，同样不能绕过 URL 守卫。
+    if (key === 'general.homeContent' && /^https?:\/\//i.test(value.trim())) {
+      await this.validateHttpUrl('general.homeContent', value.trim());
     }
 
     // 可选每页条数列表：保存时自动去重、排序、过滤非法值。
@@ -392,8 +399,68 @@ export class SettingsAdminService {
 
     // 自定义菜单项 JSON 校验。
     if (key === 'general.customMenuItems' && value) {
-      this.validateCustomMenuItems(value);
+      await this.validateCustomMenuItems(value);
     }
+
+    // 自定义端点 JSON 校验。
+    if (key === 'general.customEndpoints' && value) {
+      await this.validateCustomEndpoints(value);
+    }
+  }
+
+  private async getUrlGuardOptions() {
+    const allowHttpSetting = await this.settings.getBoolean('ssrf.allowHttp');
+    const resolveDnsSetting = await this.settings.getBoolean('ssrf.resolveDns');
+    const allowHttp = process.env.NODE_ENV === 'production' ? false : (allowHttpSetting ?? false);
+    const resolveDns = process.env.NODE_ENV === 'production' ? true : (resolveDnsSetting ?? true);
+    const allowListRaw = process.env.NODE_ENV === 'production'
+      ? ''
+      : (await this.settings.getString('ssrf.devAllowList')) ?? '';
+
+    return {
+      allowHttp,
+      resolveDns,
+      devAllowlist: allowListRaw.split(',').map((host) => host.trim()).filter(Boolean),
+    };
+  }
+
+  private async validateHttpUrl(field: string, raw: string): Promise<void> {
+    const value = raw.trim();
+    if (value.length > MAX_URL_LENGTH) {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, `${field} must be at most ${MAX_URL_LENGTH} characters`, 400);
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, `${field} must be a valid http(s) URL`, 400);
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, `${field} must use http:// or https://`, 400);
+    }
+
+    await validateFetchableUrl(value, await this.getUrlGuardOptions());
+  }
+
+  private async validateLogo(value: string): Promise<void> {
+    if (value.length > MAX_LOGO_LENGTH) {
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, `general.siteLogo must be at most ${MAX_LOGO_LENGTH} characters`, 400);
+    }
+
+    if (/^data:/i.test(value)) {
+      const match = /^data:(image\/(?:png|jpeg|svg\+xml));base64,([A-Za-z0-9+/=]+)$/i.exec(value);
+      if (!match) {
+        throw domainError(ERROR_CODES.VALIDATION_ERROR, 'general.siteLogo must be a PNG, JPEG, or SVG base64 data URI', 400);
+      }
+      const decoded = Buffer.from(match[2], 'base64');
+      if (decoded.length > MAX_LOGO_BYTES) {
+        throw domainError(ERROR_CODES.VALIDATION_ERROR, 'general.siteLogo image must be at most 300KB', 400);
+      }
+      return;
+    }
+
+    await this.validateHttpUrl('general.siteLogo', value);
   }
 
   /** 规范化可选每页条数列表：去空、过滤非法值、去重、升序排序。 */
@@ -410,32 +477,92 @@ export class SettingsAdminService {
   }
 
   /** 校验自定义菜单项 JSON 格式。 */
-  private validateCustomMenuItems(raw: string): void {
+  private async validateCustomMenuItems(raw: string): Promise<void> {
     try {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) {
         throw new Error('customMenuItems must be a JSON array');
       }
-      for (const item of parsed) {
+      if (parsed.length > MAX_CUSTOM_MENU_ITEMS) {
+        throw new Error(`customMenuItems supports at most ${MAX_CUSTOM_MENU_ITEMS} items`);
+      }
+      const ids = new Set<string>();
+      for (const [index, item] of parsed.entries()) {
         if (!item || typeof item !== 'object') {
           throw new Error('Each menu item must be an object');
         }
-        if (typeof item.id !== 'string' || !item.id.trim()) {
+        const record = item as StructuredRecord;
+        if (typeof record.id !== 'string' || !record.id.trim() || record.id.length > MAX_SETTING_ID_LENGTH) {
           throw new Error('Each menu item must have a non-empty id');
         }
-        if (typeof item.label !== 'string' || !item.label.trim()) {
+        if (ids.has(record.id)) {
+          throw new Error(`Duplicate menu item id: ${record.id}`);
+        }
+        ids.add(record.id);
+        if (typeof record.label !== 'string' || !record.label.trim() || record.label.length > MAX_SETTING_LABEL_LENGTH) {
           throw new Error('Each menu item must have a non-empty label');
         }
-        if (typeof item.url !== 'string' || !(item.url.startsWith('http://') || item.url.startsWith('https://'))) {
-          throw new Error('Each menu item URL must start with http:// or https://');
+        if (typeof record.url !== 'string' || !record.url.trim()) {
+          throw new Error('Each menu item must have a URL');
         }
-        if (item.visibility !== 'user' && item.visibility !== 'admin') {
+        if (record.enabled !== undefined && typeof record.enabled !== 'boolean') {
+          throw new Error('Each menu item enabled value must be boolean');
+        }
+        if (record.sortOrder !== undefined && (!Number.isInteger(record.sortOrder) || record.sortOrder < 1 || record.sortOrder > MAX_SORT_ORDER)) {
+          throw new Error(`Each menu item sortOrder must be an integer from 1 to ${MAX_SORT_ORDER}`);
+        }
+        if (record.visibility !== 'user' && record.visibility !== 'admin') {
           throw new Error('Each menu item visibility must be user or admin');
         }
+        await this.validateHttpUrl(`customMenuItems[${index}].url`, record.url);
       }
     } catch (error) {
+      if (error instanceof DomainError) throw error;
       const message = error instanceof Error ? error.message : 'Invalid JSON';
       throw domainError(ERROR_CODES.VALIDATION_ERROR, `Invalid customMenuItems: ${message}`, 400);
+    }
+  }
+
+  private async validateCustomEndpoints(raw: string): Promise<void> {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        throw new Error('customEndpoints must be a JSON array');
+      }
+      if (parsed.length > MAX_CUSTOM_ENDPOINTS) {
+        throw new Error(`customEndpoints supports at most ${MAX_CUSTOM_ENDPOINTS} items`);
+      }
+      const ids = new Set<string>();
+      for (const [index, item] of parsed.entries()) {
+        if (!item || typeof item !== 'object') {
+          throw new Error('Each endpoint must be an object');
+        }
+        const record = item as StructuredRecord;
+        if (typeof record.id !== 'string' || !record.id.trim() || record.id.length > MAX_SETTING_ID_LENGTH) {
+          throw new Error('Each endpoint must have a non-empty id');
+        }
+        if (ids.has(record.id)) {
+          throw new Error(`Duplicate endpoint id: ${record.id}`);
+        }
+        ids.add(record.id);
+        if (typeof record.name !== 'string' || !record.name.trim() || record.name.length > MAX_SETTING_LABEL_LENGTH) {
+          throw new Error('Each endpoint must have a non-empty name');
+        }
+        if (typeof record.url !== 'string' || !record.url.trim()) {
+          throw new Error('Each endpoint must have a URL');
+        }
+        if (record.description !== undefined && (typeof record.description !== 'string' || record.description.length > 1000)) {
+          throw new Error('Each endpoint description must be a string of at most 1000 characters');
+        }
+        if (record.sortOrder !== undefined && (!Number.isInteger(record.sortOrder) || record.sortOrder < 1 || record.sortOrder > MAX_SORT_ORDER)) {
+          throw new Error(`Each endpoint sortOrder must be an integer from 1 to ${MAX_SORT_ORDER}`);
+        }
+        await this.validateHttpUrl(`customEndpoints[${index}].url`, record.url);
+      }
+    } catch (error) {
+      if (error instanceof DomainError) throw error;
+      const message = error instanceof Error ? error.message : 'Invalid JSON';
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, `Invalid customEndpoints: ${message}`, 400);
     }
   }
 

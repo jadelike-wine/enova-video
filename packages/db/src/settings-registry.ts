@@ -842,6 +842,15 @@ export const SETTINGS: SettingDef[] = [
     envDefault: 'http://localhost:3000',
   },
   {
+    key: 'general.apiBaseUrl',
+    valueType: 'string',
+    group: 'general',
+    label: 'API 基础地址',
+    description: '对外展示或集成使用的 API 基础地址。必须为完整的 http 或 https URL。',
+    envKey: 'API_BASE_URL',
+    envDefault: '',
+  },
+  {
     key: 'general.supportEmail',
     valueType: 'string',
     group: 'general',
@@ -938,6 +947,15 @@ export const SETTINGS: SettingDef[] = [
     label: '自定义菜单页面',
     description: 'JSON 数组，每项含 id、label、url、enabled、visibility（user/admin）、sortOrder。用于在侧边栏添加自定义 iframe 页面。',
     envKey: 'CUSTOM_MENU_ITEMS',
+    envDefault: '[]',
+  },
+  {
+    key: 'general.customEndpoints',
+    valueType: 'string',
+    group: 'general',
+    label: '自定义端点',
+    description: 'JSON 数组，每项含 id、name、url、description、sortOrder，用于展示可用的 API/站点端点。',
+    envKey: 'CUSTOM_ENDPOINTS',
     envDefault: '[]',
   },
   // ---- 通用表格设置 ----

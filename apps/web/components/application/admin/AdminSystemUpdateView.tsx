@@ -1,11 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Card, Skeleton, Tag } from 'antd'
+import { Alert, Button, Card, Skeleton, Tag, message } from 'antd'
 import { systemUpdateApi, type RollbackVersion, type SystemUpdateInfo, type SystemUpdateOperation } from '@/lib/api'
 import { useDialog } from '../DialogProvider'
 import { useSession } from '@/lib/auth'
 import { formatErrorMessage } from '@/lib/errorMessage'
+import { buildSuccessMessage } from '@/lib/system-update-logic'
 
 function dateText(value?: string): string {
   if (!value) return '—'
@@ -21,6 +22,29 @@ export default function AdminSystemUpdateView() {
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const logRef = useRef<HTMLPreElement | null>(null)
+  const successNotifiedRef = useRef(false)
+  // 当前操作的 action 类型，用于区分「更新」和「回滚」通知文案
+  const actionRef = useRef<'update' | 'rollback'>('update')
+
+  // ------------------------------------------------------------------
+  // 统一成功通知：根据 action 选择正确动词，避免回滚被误标为「更新」
+  // ------------------------------------------------------------------
+  const notifySuccess = useCallback((versionLabel?: string) => {
+    if (successNotifiedRef.current) return
+    successNotifiedRef.current = true
+    message.success(buildSuccessMessage(actionRef.current, versionLabel))
+  }, [])
+
+  // ------------------------------------------------------------------
+  // 日志自动滚动：operation.output 变化后将 <pre> 滚动到底部
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    const el = logRef.current
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [operation?.output])
 
   const load = useCallback(async (force = false) => {
     setLoading(true)
@@ -47,26 +71,106 @@ export default function AdminSystemUpdateView() {
     }
   }, [load])
 
+  // ------------------------------------------------------------------
+  // 更新成功后刷新版本信息（局部刷新，不 reload 整页）
+  // ------------------------------------------------------------------
+  const refreshAfterSuccess = useCallback(async (newVersion?: string) => {
+    try {
+      const fresh = await systemUpdateApi.check()
+      setInfo(fresh)
+      if (fresh.enabled) {
+        try {
+          const result = await systemUpdateApi.rollbackVersions()
+          setVersions(result.versions)
+        } catch {
+          // rollback-versions 失败不阻塞成功流程
+        }
+      }
+      // 如果通过版本号检测到操作成功，给用户明确提示
+      if (newVersion && fresh.current_version === newVersion) {
+        notifySuccess(fresh.current_version)
+      }
+    } catch {
+      // 版本刷新失败不影响 operation 状态判定
+    }
+  }, [notifySuccess])
+
+  // ------------------------------------------------------------------
+  // 通过版本号变化判断更新是否成功（服务重启后 operation 可能丢失）
+  // ------------------------------------------------------------------
+  const checkVersionSuccess = useCallback(async (prevVersion: string, targetVersion?: string): Promise<boolean> => {
+    try {
+      const fresh = await systemUpdateApi.check()
+      // 目标版本已知且当前版本已达到目标
+      if (targetVersion && fresh.current_version === targetVersion) {
+        setInfo(fresh)
+        if (fresh.enabled) {
+          try {
+            const result = await systemUpdateApi.rollbackVersions()
+            setVersions(result.versions)
+          } catch {
+            // ignore
+          }
+        }
+        notifySuccess(fresh.current_version)
+        return true
+      }
+      // 目标版本未知但版本号已变化
+      if (!targetVersion && fresh.current_version !== prevVersion) {
+        setInfo(fresh)
+        if (fresh.enabled) {
+          try {
+            const result = await systemUpdateApi.rollbackVersions()
+            setVersions(result.versions)
+          } catch {
+            // ignore
+          }
+        }
+        notifySuccess(fresh.current_version)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }, [notifySuccess])
+
+  // ------------------------------------------------------------------
+  // 停止轮询并清理
+  // ------------------------------------------------------------------
+  const stopPolling = useCallback(() => {
+    if (timer.current) {
+      clearInterval(timer.current)
+      timer.current = null
+    }
+    setWorking(false)
+  }, [])
+
+  // ------------------------------------------------------------------
+  // 轮询监听更新操作
+  // ------------------------------------------------------------------
   const watch = useCallback((started: SystemUpdateOperation) => {
     setOperation(started)
+    successNotifiedRef.current = false
+    actionRef.current = started.action || 'update'
     if (timer.current) clearInterval(timer.current)
     const prevVersion = info?.current_version
     const startedAt = Date.now()
+    const targetVersion = started.target
     // 轮询超时 15 分钟，与后端 UPDATE_EXEC_TIMEOUT_MS 保持一致
     const MAX_POLL_MS = 15 * 60 * 1000
     let consecutiveErrors = 0
+    // 连续检测到 running 状态的次数（用于触发版本号检测）
+    let runningSinceSuccess = 0
 
     const resolveStale = async () => {
-      if (timer.current) {
-        clearInterval(timer.current)
-        timer.current = null
-      }
-      setWorking(false)
+      stopPolling()
       try {
         const current = await systemUpdateApi.check()
         setInfo(current)
         if (current.current_version !== prevVersion) {
-          setOperation((prev) => (prev ? { ...prev, status: 'success', output: (prev.output || '') + '\n[auto-resolved] API 已重启，通过版本号变化确认更新成功' } : prev))
+          setOperation((prev) => (prev ? { ...prev, status: 'success', output: (prev.output || '') + '\n[auto-resolved] API 已重启，通过版本号变化确认操作成功' } : prev))
+          notifySuccess(current.current_version)
         } else {
           setOperation((prev) => (prev ? { ...prev, status: 'failed', output: (prev.output || '') + '\n[auto-resolved] 轮询超时，版本号未变化，更新可能未生效' } : prev))
           void alert({ title: '更新状态未知', message: '轮询超时，无法确认更新是否完成。请刷新页面检查当前版本。' })
@@ -85,12 +189,27 @@ export default function AdminSystemUpdateView() {
         .then((next) => {
           consecutiveErrors = 0
           setOperation(next)
-          if (next.status !== 'running' && timer.current) {
-            clearInterval(timer.current)
-            timer.current = null
-            setWorking(false)
-            if (next.status === 'failed') {
-              void alert({ title: '更新失败', message: next.output?.trim() || '操作未能完成，请检查服务端日志' })
+          if (next.status === 'success') {
+            stopPolling()
+            const versionLabel = targetVersion || next.target || info?.latest_version
+            notifySuccess(versionLabel)
+            // 局部刷新版本信息
+            void refreshAfterSuccess(targetVersion || next.target || undefined)
+          } else if (next.status === 'failed') {
+            stopPolling()
+            void alert({ title: '更新失败', message: next.output?.trim() || '操作未能完成，请检查服务端日志' })
+          } else if (next.status === 'running') {
+            // 后端仍为 running：累加计数，连续 10 次（约 20s）后尝试版本号检测
+            // 这覆盖 "API 重启导致 executor 被杀但脚本已成功" 的场景
+            runningSinceSuccess++
+            if (runningSinceSuccess >= 10) {
+              runningSinceSuccess = 0 // 避免重复触发，失败则继续等
+              void checkVersionSuccess(prevVersion || '', targetVersion).then((ok) => {
+                if (ok) {
+                  stopPolling()
+                  setOperation((prev) => (prev ? { ...prev, status: 'success', output: (prev.output || '') + '\n[auto-resolved] 通过版本号变化确认更新成功' } : prev))
+                }
+              })
             }
           }
         })
@@ -103,30 +222,41 @@ export default function AdminSystemUpdateView() {
           }
         })
     }, 2000)
-  }, [alert, info?.current_version])
+  }, [alert, info?.current_version, info?.latest_version, stopPolling, refreshAfterSuccess, checkVersionSuccess, notifySuccess])
 
   const runUpdate = useCallback(async (version?: string) => {
+    if (working) return // 防止连续点击
     const label = version ? `切换到版本 ${version}` : '更新到最新稳定版本'
     if (!await confirm({ title: '确认系统更新', message: `${label}。更新会重启 API、Worker 和 Web 容器，确定继续吗？`, confirmVariant: 'danger', confirmText: '开始更新' })) return
     setWorking(true)
+    successNotifiedRef.current = false
     try {
       watch(await systemUpdateApi.update(version))
     } catch (error) {
       setWorking(false)
       await alert({ title: '启动更新失败', message: formatErrorMessage(error) })
     }
-  }, [alert, confirm, watch])
+  }, [alert, confirm, watch, working])
 
   const runRollback = useCallback(async () => {
+    if (working) return // 防止连续点击
     if (!await confirm({ title: '确认回滚', message: '将回退到上一个成功版本，并重启服务。确定继续吗？', confirmVariant: 'danger', confirmText: '开始回滚' })) return
     setWorking(true)
+    successNotifiedRef.current = false
     try {
       watch(await systemUpdateApi.rollback())
     } catch (error) {
       setWorking(false)
       await alert({ title: '启动回滚失败', message: formatErrorMessage(error) })
     }
-  }, [alert, confirm, watch])
+  }, [alert, confirm, watch, working])
+
+  // 页面卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearInterval(timer.current)
+    }
+  }, [])
 
   if (user && user.role !== 'ADMIN') {
     return <div className="h-full flex items-center justify-center text-gray-500">仅管理员可访问系统更新</div>
@@ -204,7 +334,7 @@ export default function AdminSystemUpdateView() {
                 <p className="text-xs text-gray-400 mt-2">
                   {operation.action === 'rollback' ? '回滚' : '更新'} {operation.target || '最新版本'} · {dateText(operation.started_at)}
                 </p>
-                <pre className="mt-4 max-h-64 overflow-auto rounded-xl bg-gray-100 p-4 text-xs text-gray-600 whitespace-pre-wrap">
+                <pre ref={logRef} className="mt-4 max-h-64 overflow-auto rounded-xl bg-gray-100 p-4 text-xs text-gray-600 whitespace-pre-wrap">
                   {operation.output || '等待部署脚本输出…'}
                 </pre>
               </Card>

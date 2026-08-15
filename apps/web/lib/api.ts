@@ -331,6 +331,70 @@ export const settingsApi = {
 }
 
 // ---------------------------------------------------------------------------
+// 邮件模板（管理员）
+// ---------------------------------------------------------------------------
+
+export interface EmailEventMeta {
+  event: string
+  label: string
+  category: string
+  description: string
+  optional: boolean
+  placeholders: string[]
+}
+
+export interface EmailTemplateListResponse {
+  events: EmailEventMeta[]
+  locales: string[]
+  placeholders: string[]
+}
+
+export interface EmailTemplateDetail {
+  event: string
+  locale: string
+  subject: string
+  html: string
+  isCustom: boolean
+  updatedAt?: string
+  placeholders: string[]
+}
+
+export interface EmailTemplatePreview {
+  subject: string
+  html: string
+}
+
+export const emailApi = {
+  // 测试邮件
+  sendTestEmail: (to: string, subject?: string) =>
+    json<{ ok: true; message: string }>('/admin/email/test', {
+      method: 'POST',
+      body: JSON.stringify({ to, subject }),
+    }),
+  checkConfig: () =>
+    json<{ configured: boolean; sender: string }>('/admin/email/check', { method: 'POST' }),
+  // 邮件模板
+  getTemplateList: () =>
+    json<EmailTemplateListResponse>('/admin/settings/email-templates'),
+  getTemplate: (event: string, locale: string) =>
+    json<EmailTemplateDetail>(`/admin/settings/email-templates/${encodeURIComponent(event)}/${encodeURIComponent(locale)}`),
+  updateTemplate: (event: string, locale: string, data: { subject: string; html: string }) =>
+    json<EmailTemplateDetail>(`/admin/settings/email-templates/${encodeURIComponent(event)}/${encodeURIComponent(locale)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  restoreOfficial: (event: string, locale: string) =>
+    json<EmailTemplateDetail>(`/admin/settings/email-templates/${encodeURIComponent(event)}/${encodeURIComponent(locale)}/restore-official`, {
+      method: 'POST',
+    }),
+  previewTemplate: (data: { event: string; locale: string; subject: string; html: string }) =>
+    json<EmailTemplatePreview>('/admin/settings/email-templates/preview', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+}
+
+// ---------------------------------------------------------------------------
 // 系统更新（管理员）
 // ---------------------------------------------------------------------------
 

@@ -14,6 +14,7 @@ import { useSession } from '../../lib/auth'
 import { formatErrorMessage } from '../../lib/errorMessage'
 import { ContentLoading } from './admin/AdminUi'
 import AgreementDocumentsEditor, { normalizeDocumentsJson } from './AgreementDocumentsEditor'
+import EmailSettingsPanel from './admin/EmailSettingsPanel'
 
 // ---------------------------------------------------------------------------
 // Tab 定义与配置项映射
@@ -803,6 +804,20 @@ function AdminSettingsInner() {
     // 「登录条款」使用定制页面
     if (tab.key === 'agreement') {
       return renderAgreementTab(items, tabDirty, batchId)
+    }
+
+    // 「邮件设置」使用专门的邮件设置面板
+    if (tab.key === 'email') {
+      return (
+        <EmailSettingsPanel
+          settings={items}
+          drafts={drafts}
+          onDraftChange={(key, value) => setDrafts((p) => ({ ...p, [key]: value }))}
+          onBatchSave={(keys) => void handleBatchSave('email', keys)}
+          saving={Boolean(saving[batchId])}
+          saved={Boolean(justSaved[batchId])}
+        />
+      )
     }
 
     // 按 group 分组成面板（同 group 聚合到一个面板，避免被注册表顺序打散）

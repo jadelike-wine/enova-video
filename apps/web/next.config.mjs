@@ -10,6 +10,10 @@ const nextConfig = {
   // Standalone output: 生成最小化 Node Server，便于 Docker 化部署
   output: 'standalone',
   reactStrictMode: true,
+  // 开发模式按需编译优化：对 antd、dayjs 等大库按需引入，减少单路由编译模块数
+  experimental: {
+    optimizePackageImports: ['antd', '@ant-design/icons', 'dayjs', 'next-intl'],
+  },
   async redirects() {
     return [
       // Chat 功能已下线：旧的 /chat 链接统一导流到图片生成，避免 404

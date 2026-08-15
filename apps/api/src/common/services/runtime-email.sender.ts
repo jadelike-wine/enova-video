@@ -44,6 +44,7 @@ const EMAIL_SETTING_KEYS = [
   'email.passwordResetUrl',
   'email.emailVerifyUrl',
   'general.appName',
+  'general.siteUrl',
 ];
 
 const SSRF_SETTING_KEYS = [
@@ -183,10 +184,36 @@ export class RuntimeEmailSender implements EmailSender {
       password,
       fromName: get('email.smtpFromName', 'EnovaMotion'),
       fromEmail,
-      resetUrl: get('email.passwordResetUrl', 'http://localhost:3000/auth/reset-password'),
-      verifyUrl: get('email.emailVerifyUrl', 'http://localhost:3000/auth/verify-email'),
+      resetUrl: this.resolveEmailUrl(values, 'email.passwordResetUrl', '/zh-CN/auth/reset-password'),
+      verifyUrl: this.resolveEmailUrl(values, 'email.emailVerifyUrl', '/zh-CN/auth/verify-email'),
       appName: get('general.appName', 'EnovaMotion'),
     };
+  }
+
+  /**
+   * 解析邮件链接地址：优先使用单独配置的 URL，否则基于 general.siteUrl 自动生成。
+   */
+  private resolveEmailUrl(
+    values: Map<string, string | null>,
+    urlKey: string,
+    path: string,
+  ): string {
+    const configured = values.get(urlKey);
+    const configuredUrl = configured?.trim() ?? '';
+    const localDefault = `http://localhost:3000${path}`;
+    if (configuredUrl && configuredUrl !== localDefault) return configuredUrl;
+
+    // fallback 到 general.siteUrl
+    const siteUrl = (values.get('general.siteUrl') ?? '').trim();
+    if (siteUrl) {
+      const base = siteUrl.replace(/\/+$/, '');
+      return `${base}${path}`;
+    }
+
+    if (configuredUrl) return configuredUrl;
+
+    // 最终兜底（仅开发环境可能用到）
+    return `http://localhost:3000${path}`;
   }
 
   private isSmtpSender(sender: EmailSender): sender is SmtpSender {

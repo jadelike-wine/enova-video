@@ -18,8 +18,8 @@ const sharedProdEnv = {
   AWS_REGION: 'ap-southeast-1',
   AWS_S3_BUCKET: 'my-bucket',
   SUPPORT_EMAIL: 'support@enova-motion.com',
-  APP_PASSWORD_RESET_URL: 'https://app.example.com/auth/reset-password',
-  APP_EMAIL_VERIFY_URL: 'https://app.example.com/auth/verify-email',
+  APP_PASSWORD_RESET_URL: 'https://app.example.com/zh-CN/auth/reset-password',
+  APP_EMAIL_VERIFY_URL: 'https://app.example.com/zh-CN/auth/verify-email',
 };
 
 /** Full API production env (adds SMTP, payment, CORS, site URL). */

@@ -178,6 +178,21 @@ export const authApi = {
     }),
   logout: () => json<{ ok: true }>('/auth/logout', { method: 'POST' }),
   me: () => json<AuthResult>('/auth/me'),
+  forgotPassword: (email: string) =>
+    json<{ ok: true }>('/auth/password/forgot', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  resetPassword: (token: string, newPassword: string) =>
+    json<{ ok: true }>('/auth/password/reset', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    }),
+  verifyEmail: (token: string) =>
+    json<{ ok: true }>('/auth/email/verify', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
 }
 
 /** 自定义菜单项。 */

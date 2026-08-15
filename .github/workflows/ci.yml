@@ -64,8 +64,8 @@ jobs:
           SMTP_USER=test@example.com
           SMTP_PASSWORD=test-smtp-password
           SMTP_FROM_EMAIL=test@example.com
-          APP_PASSWORD_RESET_URL=http://localhost:3000/auth/reset-password
-          APP_EMAIL_VERIFY_URL=http://localhost:3000/auth/verify-email
+          APP_PASSWORD_RESET_URL=http://localhost:3000/zh-CN/auth/reset-password
+          APP_EMAIL_VERIFY_URL=http://localhost:3000/zh-CN/auth/verify-email
           APP_SITE_URL=http://localhost:3000
           CORS_ALLOWED_ORIGINS=http://localhost:3000
           NEXT_PUBLIC_SITE_URL=http://localhost:3000

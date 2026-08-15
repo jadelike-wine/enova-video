@@ -708,7 +708,7 @@ export const SETTINGS: SettingDef[] = [
     label: '密码重置地址',
     description: '邮件中密码重置链接的基础地址。',
     envKey: 'APP_PASSWORD_RESET_URL',
-    envDefault: 'http://localhost:3000/auth/reset-password',
+    envDefault: 'http://localhost:3000/zh-CN/auth/reset-password',
     groupKeys: EMAIL_GROUP_KEYS,
   },
   {
@@ -718,7 +718,7 @@ export const SETTINGS: SettingDef[] = [
     label: '邮箱验证地址',
     description: '邮件中邮箱验证链接的基础地址。',
     envKey: 'APP_EMAIL_VERIFY_URL',
-    envDefault: 'http://localhost:3000/auth/verify-email',
+    envDefault: 'http://localhost:3000/zh-CN/auth/verify-email',
     groupKeys: EMAIL_GROUP_KEYS,
   },
   // ---- 邮件通知 ----

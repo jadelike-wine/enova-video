@@ -59,6 +59,25 @@ describe('RuntimeEmailSender', () => {
     await expect(sender.isSmtpConfigured()).resolves.toBe(false);
   });
 
+  it('builds email URLs from the configured site URL when dedicated URLs are absent', async () => {
+    const settings: RuntimeEmailSettings = {
+      getMany: vi.fn(async () => completeSettings({
+        'email.passwordResetUrl': 'http://localhost:3000/zh-CN/auth/reset-password',
+        'email.emailVerifyUrl': 'http://localhost:3000/zh-CN/auth/verify-email',
+        'general.siteUrl': 'https://app.example.com///',
+      })),
+    };
+    const createSmtp = vi.fn(() => fakeSender());
+    const sender = new RuntimeEmailSender(settings, { NODE_ENV: 'production' }, createSmtp);
+
+    await sender.isSmtpConfigured();
+
+    expect(createSmtp).toHaveBeenCalledWith(expect.objectContaining({
+      resetUrl: 'https://app.example.com/zh-CN/auth/reset-password',
+      verifyUrl: 'https://app.example.com/zh-CN/auth/verify-email',
+    }));
+  });
+
   it('keeps development console behavior even when SMTP values exist', async () => {
     const settings: RuntimeEmailSettings = {
       getMany: vi.fn(async () => completeSettings()),

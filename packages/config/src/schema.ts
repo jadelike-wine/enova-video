@@ -98,9 +98,9 @@ export const envSchema = z.object({
 
   // ---- P0: 前端 URL（邮件链接/CORS）----
   /** 密码重置页面 URL（前端）。 */
-  APP_PASSWORD_RESET_URL: z.string().default('http://localhost:3000/auth/reset-password'),
+  APP_PASSWORD_RESET_URL: z.string().default('http://localhost:3000/zh-CN/auth/reset-password'),
   /** 邮箱验证页面 URL（前端）。 */
-  APP_EMAIL_VERIFY_URL: z.string().default('http://localhost:3000/auth/verify-email'),
+  APP_EMAIL_VERIFY_URL: z.string().default('http://localhost:3000/zh-CN/auth/verify-email'),
   /** 应用名称（邮件品牌/显示）。 */
   APP_NAME: z.string().default('EnovaMotion'),
   /** 站点对外访问的完整 URL（CORS 允许列表 + cookie secure 判断）。 */

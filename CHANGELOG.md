@@ -10,6 +10,20 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.4] — 2026-08-16
+
+### Added
+- Forgot-password flow and page (`/auth/forgot-password`): sends a password reset email and surfaces success/failure states.
+- Registration controls: open-registration toggle, email domain whitelist with per-domain cap, invitation code, and promo code are now enforced at registration and configurable via system settings.
+- Public `auth-config` endpoint exposing registration/verification/password-reset toggles to the web app.
+
+### Changed
+- Filled-in default login agreement documents (services terms, usage policy, supported regions, service-specific terms) as system-settings defaults.
+- Refined admin system settings panels (general, security, agreement) and the system update view; removed the custom-endpoint editor draft.
+- Renamed `APP_NAME` env to `SITE_NAME` for site/email branding; dropped the stale `general.appName` migration default.
+
+---
+
 ## [1.7.1] — 2026-08-15
 
 ### Added

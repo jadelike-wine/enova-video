@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
@@ -11,7 +11,7 @@ import { formatErrorMessage } from '@/lib/errorMessage'
 
 type Phase = 'verifying' | 'success' | 'error' | 'no-token'
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const t = useTranslations('auth')
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -121,5 +121,16 @@ export default function VerifyEmailPage() {
         </p>
       )}
     </div>
+  )
+}
+
+/**
+ * useSearchParams 需要 Suspense 边界（Next.js App Router 预渲染要求）。
+ */
+export default function VerifyEmailPage() {
+  return (
+    <Suspense>
+      <VerifyEmailContent />
+    </Suspense>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
@@ -16,7 +16,7 @@ interface ResetFormValues {
 
 type Phase = 'request' | 'reset' | 'done'
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const t = useTranslations('auth')
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -201,5 +201,16 @@ export default function ResetPasswordPage() {
         </p>
       )}
     </div>
+  )
+}
+
+/**
+ * useSearchParams 需要 Suspense 边界（Next.js App Router 预渲染要求）。
+ */
+export default function ResetPasswordPage() {
+  return (
+    <Suspense>
+      <ResetPasswordContent />
+    </Suspense>
   )
 }

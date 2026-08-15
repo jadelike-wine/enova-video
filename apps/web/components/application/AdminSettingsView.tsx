@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Button, Checkbox, Input, InputNumber, Modal, Segmented, Select, Skeleton, Switch, Tag } from 'antd'
 import {
@@ -15,162 +16,17 @@ import { formatErrorMessage } from '../../lib/errorMessage'
 import { ContentLoading } from './admin/AdminUi'
 import AgreementDocumentsEditor, { normalizeDocumentsJson } from './AgreementDocumentsEditor'
 import EmailSettingsPanel from './admin/EmailSettingsPanel'
+import {
+  AGREEMENT_DOCUMENTS_KEY,
+  SETTINGS_TABS,
+  TAB_ICONS,
+  itemsForTab,
+  isTabKey,
+  type SettingsTabDef,
+  type SettingsTabKey,
+} from './admin-settings/settings-tabs.js'
 
-// ---------------------------------------------------------------------------
-// Tab 定义与配置项映射
-// ---------------------------------------------------------------------------
-
-/** 登录条款相关配置 key（从「通用设置」中独立出来，形成单独的「登录条款」Tab）。 */
-const AGREEMENT_KEYS = [
-  'general.loginAgreementEnabled',
-  'general.loginAgreementMode',
-  'general.loginAgreementUpdatedAt',
-  'general.loginAgreementDocuments',
-] as const
-
-const AGREEMENT_DOCUMENTS_KEY = 'general.loginAgreementDocuments'
-
-type SettingsTabKey =
-  | 'general'
-  | 'customization'
-  | 'table'
-  | 'agreement'
-  | 'billing'
-  | 'auth'
-  | 'queue'
-  | 'storage'
-  | 'payment'
-  | 'email'
-  | 'log'
-  | 'other'
-
-/** Tab 图标，复刻 sub2api 的 settings tab icon 风格 */
-const TAB_ICONS: Record<string, string> = {
-  general: '🏠',
-  customization: '📝',
-  table: '📊',
-  agreement: '📄',
-  billing: '💳',
-  auth: '🔒',
-  queue: '⚙️',
-  storage: '📦',
-  payment: '💰',
-  email: '✉️',
-  log: '📋',
-  other: '📦',
-}
-
-interface SettingsTabDef {
-  key: SettingsTabKey
-  label: string
-  description: string
-  /** 该 Tab 覆盖的 settings group；other 为动态兜底。 */
-  groups: string[]
-  /** 仅包含这些 key（优先于 groups 过滤）。 */
-  onlyKeys?: readonly string[]
-  /** 从该 Tab 排除的 key。 */
-  excludeKeys?: readonly string[]
-}
-
-const SETTINGS_TABS: SettingsTabDef[] = [
-  {
-    key: 'general',
-    label: '通用设置',
-    description: '站点名称、副标题、Logo、客服联系方式、文档链接等基础信息。',
-    groups: ['general'],
-    excludeKeys: AGREEMENT_KEYS,
-  },
-  {
-    key: 'customization',
-    label: '自定义页面',
-    description: '首页内容、简洁首页、隐藏 CCS 导入按钮和自定义菜单页面。',
-    groups: ['customization'],
-  },
-  {
-    key: 'table',
-    label: '表格设置',
-    description: '后台与用户侧表格组件的默认分页行为。',
-    groups: ['table'],
-  },
-  {
-    key: 'agreement',
-    label: '登录条款',
-    description: '控制登录和注册时是否要求用户阅读并同意服务条款、隐私政策及其他 Markdown 文档。',
-    groups: ['general'],
-    onlyKeys: AGREEMENT_KEYS,
-  },
-  {
-    key: 'billing',
-    label: '基础业务',
-    description: '新用户注册赠金等计费基础策略。',
-    groups: ['billing'],
-  },
-  {
-    key: 'auth',
-    label: '认证与安全',
-    description: '登录注册的人机验证，以及限流、SSRF 防护等安全策略。',
-    groups: ['auth', 'security'],
-  },
-  {
-    key: 'queue',
-    label: '生成任务',
-    description: '生成任务的并发、重试与轮询策略。部分配置需要重启 Worker 进程后生效。',
-    groups: ['queue'],
-  },
-  {
-    key: 'storage',
-    label: '存储配置',
-    description: '生成结果的对象存储与媒体下载安全策略。',
-    groups: ['storage'],
-  },
-  {
-    key: 'payment',
-    label: '支付设置',
-    description: '充值渠道、兑换汇率与商户凭证。接入真实渠道需要商户账号。',
-    groups: ['payment'],
-  },
-  {
-    key: 'email',
-    label: '邮件设置',
-    description: 'SMTP 发信服务与邮件链接地址。',
-    groups: ['email'],
-  },
-  {
-    key: 'log',
-    label: '日志与可观测性',
-    description: '日志级别、格式与敏感内容开关。',
-    groups: ['log'],
-  },
-]
-
-/** 兜底 Tab：注册表新增 group 但未映射到上面任何 Tab 时，避免配置项被静默隐藏。 */
-const OTHER_TAB: SettingsTabDef = {
-  key: 'other',
-  label: '其他',
-  description: '未分类的配置项。',
-  groups: [],
-}
-
-const TAB_KEYS: readonly string[] = [...SETTINGS_TABS.map((t) => t.key), OTHER_TAB.key]
-
-function isTabKey(value: string | null | undefined): value is SettingsTabKey {
-  return typeof value === 'string' && TAB_KEYS.includes(value)
-}
-
-function itemsForTab(tab: SettingsTabDef, settings: SettingView[]): SettingView[] {
-  if (tab.key === 'other') {
-    const covered = new Set(SETTINGS_TABS.flatMap((t) => t.groups))
-    return settings.filter((s) => !covered.has(s.group))
-  }
-  return settings.filter((s) => {
-    if (!tab.groups.includes(s.group)) return false
-    if (tab.onlyKeys) return tab.onlyKeys.includes(s.key)
-    if (tab.excludeKeys?.includes(s.key)) return false
-    return true
-  })
-}
-
-/** 多 group 的 Tab（如「认证与安全」）在面板头部展示的分组元信息。 */
+/** 多 group 的 Tab（如「安全与认证」「网关服务」「功能开关」）在面板头部展示的分组元信息。 */
 const GROUP_PANEL_META: Record<string, { title: string; description?: string; danger?: boolean }> = {
   auth: { title: '登录认证', description: '登录 / 注册环节的人机验证。' },
   security: {
@@ -578,9 +434,8 @@ function AdminSettingsInner() {
 
   const visibleTabs = useMemo(() => {
     if (loading || settings.length === 0) return []
-    const tabs = SETTINGS_TABS.filter((t) => itemsForTab(t, settings).length > 0)
-    if (itemsForTab(OTHER_TAB, settings).length > 0) tabs.push(OTHER_TAB)
-    return tabs
+    // 所有 Tab 都保持可见（backup 作为预留 Tab，即使无配置项也展示空状态）
+    return SETTINGS_TABS
   }, [loading, settings])
 
   // 当前 Tab 无配置项（或加载后不存在）时回退
@@ -816,12 +671,38 @@ function AdminSettingsInner() {
     const tabKeys = items.map((s) => s.key)
     const tabDirty = hasDirtyKeys(tabKeys)
     const batchId = `batch:${tab.key}`
-    const isStorageTab = tab.key === 'storage'
-    const visibleItems = isStorageTab ? filterStorageItems(items) : items
+    const isGatewayTab = tab.key === 'gateway'
+    const visibleItems = isGatewayTab ? filterStorageItems(items) : items
 
     // 「登录条款」使用定制页面
     if (tab.key === 'agreement') {
       return renderAgreementTab(items, tabDirty, batchId)
+    }
+
+    // 「数据备份」Tab：展示备份说明和运维入口（预留）
+    if (tab.key === 'backup') {
+      return (
+        <div className="space-y-4">
+          <p className="max-w-2xl text-sm text-gray-500">{tab.description}</p>
+          <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-card">
+            <header className="border-b border-gray-100 px-5 py-4 sm:px-6">
+              <h3 className="text-sm font-semibold text-gray-900">数据库备份与恢复</h3>
+            </header>
+            <div className="px-5 py-10 text-center sm:px-6">
+              <p className="text-sm text-gray-500">
+                备份配置通过环境变量管理（<code className="rounded border border-gray-100 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">BACKUP_DIR</code>、
+                <code className="rounded border border-gray-100 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">BACKUP_RETENTION_DAYS</code>、
+                <code className="rounded border border-gray-100 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">BACKUP_S3_BUCKET</code> 等），
+                请参考 <code className="rounded border border-gray-100 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">docs/BACKUP.md</code> 文档进行配置。
+              </p>
+              <p className="mt-4 text-xs text-gray-400">
+                手动备份：<code className="rounded border border-gray-100 bg-gray-50 px-1.5 py-0.5 font-mono text-[10px] text-gray-400">./scripts/backup.sh</code>
+                ，系统更新入口：<Link href="/app/admin/system-update" className="text-primary-600 hover:underline">系统更新</Link>
+              </p>
+            </div>
+          </section>
+        </div>
+      )
     }
 
     // 「邮件设置」使用专门的邮件设置面板
@@ -852,21 +733,19 @@ function AdminSettingsInner() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-2xl text-sm text-gray-500">{tab.description}</p>
           <div className="flex flex-wrap items-center gap-2">
-            {isStorageTab && (
+            {isGatewayTab && storageProvider !== 'none' && (
               <>
                 <Tag color={storageConfigured ? 'success' : 'warning'}>
-                  {storageProvider === 'none' ? '未启用对象存储' : storageConfigured ? '对象存储已配置' : '请配置对象存储'}
+                  {storageConfigured ? '对象存储已配置' : '请配置对象存储'}
                 </Tag>
-                {storageProvider !== 'none' && (
-                  <Button
-                    size="small"
-                    loading={saving['storage:test']}
-                    disabled={!storageConfigured}
-                    onClick={() => void handleStorageTest()}
-                  >
-                    测试存储
-                  </Button>
-                )}
+                <Button
+                  size="small"
+                  loading={saving['storage:test']}
+                  disabled={!storageConfigured}
+                  onClick={() => void handleStorageTest()}
+                >
+                  测试存储
+                </Button>
               </>
             )}
             <SaveButton
@@ -881,7 +760,7 @@ function AdminSettingsInner() {
         {/* 设置面板 — 复刻 sub2api card 样式 */}
         {panels.map((panel) => {
           const meta = GROUP_PANEL_META[panel.group]
-          const showPanelHeader = panels.length > 1 || isStorageTab || meta?.danger
+          const showPanelHeader = panels.length > 1 || isGatewayTab || meta?.danger
           const danger = Boolean(meta?.danger)
           return (
             <section

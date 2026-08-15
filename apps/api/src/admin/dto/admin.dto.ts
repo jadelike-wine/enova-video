@@ -177,7 +177,9 @@ export class AdjustCreditsDto {
 export class UpdateSettingDto {
   @ApiProperty({ example: '100', description: '字符串形式的新值' })
   @IsString()
-  @MaxLength(4000)
+  // 上限覆盖所有合法设置值：siteLogo base64 (≤410K)、loginAgreementDocuments JSON
+  // (20 文档 × 500K 内容)、customMenuItems JSON 等。service 层有更精确的 per-setting 校验。
+  @MaxLength(10_000_000)
   value!: string;
 
   @ApiPropertyOptional({ description: 'CAS 乐观并发版本号（可选）' })
@@ -193,7 +195,9 @@ export class BatchSettingItemDto {
 
   @ApiProperty({ example: '2021000...', description: '字符串形式的新值；Secret 留空=保持不变' })
   @IsString()
-  @MaxLength(4000)
+  // 上限覆盖所有合法设置值：siteLogo base64 (≤410K)、loginAgreementDocuments JSON
+  // (20 文档 × 500K 内容)、customMenuItems JSON 等。service 层有更精确的 per-setting 校验。
+  @MaxLength(10_000_000)
   value!: string;
 }
 

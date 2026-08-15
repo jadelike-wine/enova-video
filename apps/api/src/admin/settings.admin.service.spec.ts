@@ -166,6 +166,38 @@ describe('SettingsAdminService login agreement validation', () => {
     expect(settings.update).not.toHaveBeenCalled();
   });
 
+  it('accepts a valid base64 logo that exceeds the old 4000-char DTO limit', async () => {
+    const settings = makeSettings();
+    settings.list = vi.fn(async () => [
+      { key: 'general.siteLogo', value: '', isSecret: false },
+    ]);
+    const service = new SettingsAdminService(settings as never);
+
+    // A small PNG base64 data URI (e.g. 5000 chars) should pass service-level validation.
+    const logoValue = `data:image/png;base64,${'A'.repeat(5000)}`;
+    await service.update('general.siteLogo', logoValue);
+    expect(settings.update).toHaveBeenCalledWith(
+      'general.siteLogo',
+      logoValue,
+      {},
+    );
+  });
+
+  it('accepts a valid base64 logo in batch update mode', async () => {
+    const settings = makeSettings();
+    settings.list = vi.fn(async () => [
+      { key: 'general.siteLogo', value: '', isSecret: false },
+    ]);
+    const service = new SettingsAdminService(settings as never);
+
+    const logoValue = `data:image/png;base64,${'A'.repeat(5000)}`;
+    await service.updateGroup([{ key: 'general.siteLogo', value: logoValue }]);
+    expect(settings.updateGroup).toHaveBeenCalledWith(
+      [{ key: 'general.siteLogo', value: logoValue }],
+      {},
+    );
+  });
+
   it('rejects invalid URL settings in a batch and preserves existing security guards', async () => {
     const settings = makeSettings();
     const service = new SettingsAdminService(settings as never);

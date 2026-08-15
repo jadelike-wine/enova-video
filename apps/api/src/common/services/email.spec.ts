@@ -37,7 +37,7 @@ describe('Email Templates', () => {
         email: 'user@example.com',
         resetToken: 'abc123',
         resetUrl: 'https://app.example.com/auth/reset-password',
-        appName: 'TestApp',
+        siteName: 'TestApp',
       });
       expect(result.subject).toContain('TestApp');
       expect(result.text).toContain('https://app.example.com/auth/reset-password?token=abc123');
@@ -49,7 +49,7 @@ describe('Email Templates', () => {
         email: 'user@example.com',
         resetToken: 'abc123',
         resetUrl: 'https://app.example.com/auth/reset-password',
-        appName: 'TestApp',
+        siteName: 'TestApp',
       });
       // The email must not contain API keys, session tokens, or provider secrets.
       // Note: 'reset-password' in the URL path is the route name, not a leaked credential.
@@ -66,7 +66,7 @@ describe('Email Templates', () => {
         email: 'user@example.com',
         resetToken: 'abc123',
         resetUrl: 'https://app.example.com/auth/reset-password',
-        appName: 'TestApp',
+        siteName: 'TestApp',
       });
       expect(result.text).toContain('30');
       expect(result.text).toContain('分钟');
@@ -79,7 +79,7 @@ describe('Email Templates', () => {
         email: 'user@example.com',
         verifyToken: 'xyz789',
         verifyUrl: 'https://app.example.com/auth/verify-email',
-        appName: 'TestApp',
+        siteName: 'TestApp',
       });
       expect(result.subject).toContain('TestApp');
       expect(result.text).toContain('https://app.example.com/auth/verify-email?token=xyz789');
@@ -91,7 +91,7 @@ describe('Email Templates', () => {
         email: 'user@example.com',
         verifyToken: 'xyz789',
         verifyUrl: 'https://app.example.com/auth/verify-email',
-        appName: 'TestApp',
+        siteName: 'TestApp',
       });
       expect(result.text).toContain('24');
       expect(result.text).toContain('小时');
@@ -100,7 +100,7 @@ describe('Email Templates', () => {
 
   describe('renderTestEmail', () => {
     it('should produce test email content', () => {
-      const result = renderTestEmail({ appName: 'TestApp' });
+      const result = renderTestEmail({ siteName: 'TestApp' });
       expect(result.subject).toContain('TestApp');
       expect(result.text).toContain('测试邮件');
     });

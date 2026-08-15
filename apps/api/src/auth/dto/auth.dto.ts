@@ -23,6 +23,18 @@ export class RegisterDto {
   @IsString()
   @MaxLength(64)
   agreementRevision?: string;
+
+  @ApiProperty({ required: false, description: '邀请码（启用邀请码注册时必填）' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  invitationCode?: string;
+
+  @ApiProperty({ required: false, description: '优惠码（启用优惠码时可选）' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  promoCode?: string;
 }
 
 export class LoginDto {

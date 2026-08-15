@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Alert, Button, Form, Input } from 'antd'
-import { authApi, setupApi, turnstileApi, type TurnstileConfig } from '@/lib/api'
+import { authApi, publicApi, setupApi, turnstileApi, type AuthConfig, type TurnstileConfig } from '@/lib/api'
 import { BRAND } from '@/lib/brand'
 import { formatErrorMessage } from '@/lib/errorMessage'
 import TurnstileWidget, { type TurnstileHandle } from '@/components/auth/TurnstileWidget'
@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false)
   const [turnstile, setTurnstile] = useState<TurnstileConfig>({ enabled: false, siteKey: '' })
   const [turnstileToken, setTurnstileToken] = useState('')
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null)
   const [agreement, setAgreement] = useState<LoginAgreementGateState>({
     ready: false,
     enabled: false,
@@ -45,6 +46,14 @@ export default function LoginPage() {
       })
       .catch(() => {
         /* 容错：配置获取失败则静默跳过验证码 */
+      })
+    publicApi
+      .authConfig()
+      .then((cfg) => {
+        if (active) setAuthConfig(cfg)
+      })
+      .catch(() => {
+        /* 容错 */
       })
     return () => {
       active = false
@@ -128,6 +137,14 @@ export default function LoginPage() {
             placeholder="••••••••"
           />
         </Form.Item>
+
+        {authConfig?.enablePasswordReset && (
+          <div className="flex justify-end mb-4">
+            <Link href="/auth/forgot-password" className="text-xs text-[#0d9488] hover:underline">
+              {t('forgotPassword')}
+            </Link>
+          </div>
+        )}
 
         {turnstile.enabled && turnstile.siteKey && (
           <Form.Item>

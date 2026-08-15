@@ -43,7 +43,7 @@ const EMAIL_SETTING_KEYS = [
   'email.smtpFromEmail',
   'email.passwordResetUrl',
   'email.emailVerifyUrl',
-  'general.appName',
+  'general.siteName',
   'general.siteUrl',
 ];
 
@@ -186,7 +186,7 @@ export class RuntimeEmailSender implements EmailSender {
       fromEmail,
       resetUrl: this.resolveEmailUrl(values, 'email.passwordResetUrl', '/zh-CN/auth/reset-password'),
       verifyUrl: this.resolveEmailUrl(values, 'email.emailVerifyUrl', '/zh-CN/auth/verify-email'),
-      appName: get('general.appName', 'EnovaMotion'),
+      siteName: get('general.siteName', 'EnovaMotion'),
     };
   }
 

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { Alert, Button, Form, Input } from 'antd'
-import { authApi, setupApi, turnstileApi, type TurnstileConfig } from '@/lib/api'
+import { authApi, publicApi, setupApi, turnstileApi, type AuthConfig, type TurnstileConfig } from '@/lib/api'
 import { BRAND } from '@/lib/brand'
 import { formatErrorMessage } from '@/lib/errorMessage'
 import TurnstileWidget, { type TurnstileHandle } from '@/components/auth/TurnstileWidget'
@@ -15,6 +15,8 @@ interface RegisterFormValues {
   email: string
   password: string
   confirm: string
+  invitationCode?: string
+  promoCode?: string
 }
 
 export default function RegisterPage() {
@@ -25,6 +27,7 @@ export default function RegisterPage() {
   const [busy, setBusy] = useState(false)
   const [turnstile, setTurnstile] = useState<TurnstileConfig>({ enabled: false, siteKey: '' })
   const [turnstileToken, setTurnstileToken] = useState('')
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null)
   const [agreement, setAgreement] = useState<LoginAgreementGateState>({
     ready: false,
     enabled: false,
@@ -47,11 +50,18 @@ export default function RegisterPage() {
       .catch(() => {
         /* 容错：配置获取失败则静默跳过验证码 */
       })
+    publicApi
+      .authConfig()
+      .then((cfg) => {
+        if (active) setAuthConfig(cfg)
+      })
+      .catch(() => {
+        /* 容错 */
+      })
     return () => {
       active = false
     }
   }, [])
-
   // 首启：系统尚无管理员时跳转到初始化向导
   useEffect(() => {
     let active = true
@@ -80,7 +90,14 @@ export default function RegisterPage() {
     setBusy(true)
     setError('')
     try {
-      await authApi.register(values.email, values.password, turnstile.enabled ? turnstileToken : undefined, agreement.revision)
+      await authApi.register(
+        values.email,
+        values.password,
+        turnstile.enabled ? turnstileToken : undefined,
+        agreement.revision,
+        authConfig?.requireInvitationCode ? values.invitationCode : undefined,
+        authConfig?.enablePromoCode ? values.promoCode : undefined,
+      )
       router.replace('/app/images')
       router.refresh()
     } catch (err) {
@@ -92,16 +109,41 @@ export default function RegisterPage() {
     }
   }
 
+  // 注册关闭时显示提示而非表单
+  if (authConfig && !authConfig.openRegistration) {
+    return (
+      <div className="glass-card p-8">
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-2xl font-extrabold text-white mb-4">
+            {BRAND.logoMarkZh}
+          </div>
+          <h1 className="text-2xl font-extrabold">{t('registerTitle')}</h1>
+        </div>
+        <Alert
+          message={t('registrationDisabled')}
+          description={t('registrationDisabledDescription')}
+          type="warning"
+          showIcon
+        />
+        <p className="mt-6 text-center text-sm text-gray-500">
+          {t('hasAccount')}{' '}
+          <Link href="/auth/login" className="text-[#0d9488] hover:underline">
+            {t('goLogin')}
+          </Link>
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="glass-card p-8">
       <div className="flex flex-col items-center mb-8">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-cyan-400 flex items-center justify-center text-2xl font-extrabold shadow-glow mb-4">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-2xl font-extrabold text-white mb-4">
           {BRAND.logoMarkZh}
         </div>
         <h1 className="text-2xl font-extrabold">{t('registerTitle')}</h1>
-        <p className="text-sm text-white/50 mt-1">{t('registerSubtitle')}</p>
+        <p className="text-sm text-gray-500 mt-1">{t('registerSubtitle')}</p>
       </div>
-
       <Form
         form={form}
         layout="vertical"
@@ -154,6 +196,31 @@ export default function RegisterPage() {
           />
         </Form.Item>
 
+        {authConfig?.requireInvitationCode && (
+          <Form.Item
+            name="invitationCode"
+            label={t('invitationCode')}
+            rules={[{ required: true, message: t('invitationCodeRequired') }]}
+          >
+            <Input
+              placeholder={t('invitationCodePlaceholder')}
+              autoComplete="off"
+            />
+          </Form.Item>
+        )}
+
+        {authConfig?.enablePromoCode && (
+          <Form.Item
+            name="promoCode"
+            label={t('promoCode')}
+          >
+            <Input
+              placeholder={t('promoCodePlaceholder')}
+              autoComplete="off"
+            />
+          </Form.Item>
+        )}
+
         {turnstile.enabled && turnstile.siteKey && (
           <Form.Item>
             <TurnstileWidget
@@ -172,7 +239,6 @@ export default function RegisterPage() {
             <Alert message={error} type="error" showIcon />
           </div>
         )}
-
         <Form.Item>
           <Button
             type="primary"
@@ -186,9 +252,9 @@ export default function RegisterPage() {
         </Form.Item>
       </Form>
 
-      <p className="mt-6 text-center text-sm text-white/50">
+      <p className="mt-6 text-center text-sm text-gray-500">
         {t('hasAccount')}{' '}
-        <Link href="/auth/login" className="text-cyan-300 hover:underline">
+        <Link href="/auth/login" className="text-[#0d9488] hover:underline">
           {t('goLogin')}
         </Link>
       </p>

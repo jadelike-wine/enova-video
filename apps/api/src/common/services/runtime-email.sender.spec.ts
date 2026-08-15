@@ -12,7 +12,7 @@ const completeSettings = (overrides: Record<string, string> = {}) => new Map<str
   ['email.smtpFromEmail', 'noreply@example.com'],
   ['email.passwordResetUrl', 'https://app.example.com/reset'],
   ['email.emailVerifyUrl', 'https://app.example.com/verify'],
-  ['general.appName', 'Enova Creator'],
+  ['general.siteName', 'Enova Creator'],
   ...Object.entries(overrides),
 ]);
 
@@ -34,7 +34,7 @@ describe('RuntimeEmailSender', () => {
     const sender = new RuntimeEmailSender(settings, { NODE_ENV: 'production' }, (opts) => {
       expect(opts.host).toBe(values.get('email.smtpHost'));
       expect(opts.port).toBe(Number(values.get('email.smtpPort')));
-      expect(opts.appName).toBe(values.get('general.appName'));
+      expect(opts.siteName).toBe(values.get('general.siteName'));
       const created = fakeSender();
       senders.push(created);
       return created;

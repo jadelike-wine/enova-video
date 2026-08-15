@@ -44,6 +44,8 @@ export class AuthController {
     const result = await this.auth.register(dto.email, dto.password, dto.turnstileToken, req.ip, {
       agreementRevision: dto.agreementRevision,
       userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+      invitationCode: dto.invitationCode,
+      promoCode: dto.promoCode,
     });
     this.setSessionCookie(res, result, req);
     return this.toPublic(result);

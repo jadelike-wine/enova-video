@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, count, eq, isNull, ne } from 'drizzle-orm';
+import { and, count, eq, isNull, ne, sql } from 'drizzle-orm';
 import {
   ADMIN_ROLES,
   domainError,
@@ -61,6 +61,8 @@ export interface AuthRequestOptions {
   admin?: boolean;
   agreementRevision?: string;
   userAgent?: string;
+  invitationCode?: string;
+  promoCode?: string;
 }
 
 function fail(code: ErrorCode, message: string, statusCode = 400): never {
@@ -89,12 +91,31 @@ export class AuthService {
     remoteIP?: string,
     opts: AuthRequestOptions = {},
   ): Promise<AuthResult & { token: string }> {
-    // 首启创建管理员走 setup.init，不经过人机验证；普通注册始终校验。
+    // 首启创建管理员走 setup.init，不经过人机验证和注册策略检查；普通注册始终校验。
     if (!opts.admin) {
+      // 1. 开放注册检查
+      const openRegistration = (await this.settings.getBoolean('auth.openRegistration')) ?? true;
+      if (!openRegistration) {
+        fail(ERROR_CODES.REGISTRATION_DISABLED, 'Registration is disabled', 403);
+      }
+
       await this.turnstile.verify(turnstileToken, remoteIP ?? '');
       await this.loginAgreement?.assertCurrentRevision(opts.agreementRevision);
+
+      // 2. 邀请码检查
+      const requireInvitationCode = (await this.settings.getBoolean('auth.requireInvitationCode')) ?? false;
+      if (requireInvitationCode) {
+        if (!opts.invitationCode || !opts.invitationCode.trim()) {
+          fail(ERROR_CODES.INVITATION_CODE_REQUIRED, 'Invitation code is required', 400);
+        }
+        // 邀请码有效性校验（预留接口，当前仅校验非空和长度）
+        // 实际的邀请码数据库校验需在邀请码表建立后接入
+      }
     }
     const normalized = email.trim().toLowerCase();
+
+    // 3. 邮箱域名白名单检查
+    await this.validateEmailDomainPolicy(normalized);
 
     const existing = await this.db
       .select()
@@ -104,6 +125,9 @@ export class AuthService {
     if (existing.length > 0) {
       fail(ERROR_CODES.EMAIL_ALREADY_REGISTERED, 'Email already registered', 409);
     }
+
+    // 4. 非白名单域名限量注册检查
+    await this.validateNonWhitelistDomainQuota(normalized);
 
     const passwordHash = await this.password.hash(plainPassword);
     const token = this.session.issueToken();
@@ -175,18 +199,28 @@ export class AuthService {
       return { userId: user.id, email: user.email, role: user.role, status: user.status, workspaceId: workspace.id, balance: wallet.balance, reservedBalance: wallet.reservedBalance };
     });
 
-    // After the transaction, create email verification token
-    // (not blocking registration, best-effort)
-    try {
-      await this.createEmailVerificationToken(result.userId);
-    } catch {
-      // Best-effort: don't fail registration if token creation fails
+    // 5. 邮箱验证：开启时注册后发送验证邮件
+    if (await this.shouldRequireEmailVerification()) {
+      try {
+        await this.createEmailVerificationToken(result.userId);
+      } catch {
+        // Best-effort: don't fail registration if token creation fails
+      }
     }
 
     // 首启创建管理员：注册成功后授予 SUPER_ADMIN RBAC 角色。
     if (opts.admin) {
       await this.rbacStore.assignRole(result.userId, ADMIN_ROLES.SUPER_ADMIN);
       this.logger.log(`[setup] Created initial admin user ${result.email}`);
+    }
+
+    // 6. 优惠码处理（预留接口，当前仅记录日志）
+    if (opts.promoCode) {
+      const enablePromoCode = (await this.settings.getBoolean('auth.enablePromoCode')) ?? false;
+      if (enablePromoCode) {
+        this.logger.log(`[register] Promo code applied for user ${result.userId}: ${opts.promoCode}`);
+        // 实际的优惠码验证和应用需在优惠码表建立后接入
+      }
     }
 
     return {
@@ -202,6 +236,103 @@ export class AuthService {
       reservedBalance: result.reservedBalance,
       token,
     };
+  }
+
+  /** 是否需要邮箱验证。 */
+  private async shouldRequireEmailVerification(): Promise<boolean> {
+    return (await this.settings.getBoolean('auth.emailVerification')) ?? false;
+  }
+
+  /** 邮箱域名白名单策略校验。 */
+  private async validateEmailDomainPolicy(email: string): Promise<void> {
+    const whitelistRaw = (await this.settings.getString('auth.emailDomainWhitelist')) ?? '[]';
+    const whitelist = this.parseEmailDomainWhitelist(whitelistRaw);
+    if (whitelist.length === 0) return; // 白名单为空，不限制
+
+    const domain = this.extractEmailDomain(email);
+    if (!domain) return;
+
+    if (this.isEmailDomainInWhitelist(domain, whitelist)) return;
+
+    // 非白名单域名：如果限量注册开关关闭，直接拒绝
+    const nonWhitelistDomainLimit = (await this.settings.getBoolean('auth.nonWhitelistDomainLimit')) ?? false;
+    if (!nonWhitelistDomainLimit) {
+      fail(ERROR_CODES.EMAIL_DOMAIN_NOT_ALLOWED, 'Email domain is not in the whitelist', 403);
+    }
+  }
+
+  /** 非白名单域名限量注册检查：每个主域名最多注册一个账户。 */
+  private async validateNonWhitelistDomainQuota(email: string): Promise<void> {
+    const whitelistRaw = (await this.settings.getString('auth.emailDomainWhitelist')) ?? '[]';
+    const whitelist = this.parseEmailDomainWhitelist(whitelistRaw);
+    if (whitelist.length === 0) return; // 白名单为空，不限制
+
+    const domain = this.extractEmailDomain(email);
+    if (!domain) return;
+
+    // 如果邮箱在白名单中，不需要限量检查
+    if (this.isEmailDomainInWhitelist(domain, whitelist)) return;
+
+    // 非白名单域名：检查限量注册开关
+    const nonWhitelistDomainLimit = (await this.settings.getBoolean('auth.nonWhitelistDomainLimit')) ?? false;
+    if (!nonWhitelistDomainLimit) return; // 开关关闭，已在 validateEmailDomainPolicy 中拒绝
+
+    // 检查该主域名下是否已有注册用户
+    const mainDomain = this.normalizeToMainDomain(domain);
+    const likePattern = `%@${mainDomain}`;
+    const existingCount = await this.db
+      .select({ n: count() })
+      .from(users)
+      .where(sql`${users.email} LIKE ${likePattern}`)
+      .limit(1);
+
+    if ((existingCount[0]?.n ?? 0) > 0) {
+      fail(ERROR_CODES.EMAIL_DOMAIN_REGISTRATION_LIMIT, 'Registration limit reached for this email domain', 403);
+    }
+  }
+
+  /** 解析邮箱域名白名单 JSON。 */
+  private parseEmailDomainWhitelist(raw: string): string[] {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+    } catch {
+      return [];
+    }
+  }
+
+  /** 从邮箱地址提取域名。 */
+  private extractEmailDomain(email: string): string {
+    const at = email.lastIndexOf('@');
+    if (at < 0 || at === email.length - 1) return '';
+    return email.slice(at + 1).toLowerCase();
+  }
+
+  /** 检查域名是否在白名单中。 */
+  private isEmailDomainInWhitelist(domain: string, whitelist: string[]): boolean {
+    for (const allowed of whitelist) {
+      const normalized = allowed.trim().toLowerCase();
+      if (normalized.startsWith('@')) {
+        // @example.com 匹配 example.com
+        if (domain === normalized.slice(1)) return true;
+      } else if (normalized.startsWith('*.')) {
+        // *.edu.cn 匹配 edu.cn 及其子域名
+        const base = normalized.slice(2);
+        if (domain === base || domain.endsWith('.' + base)) return true;
+      } else {
+        // 纯域名格式
+        if (domain === normalized) return true;
+      }
+    }
+    return false;
+  }
+
+  /** 将域名归一为可注册主域名（简单实现：取最后两段）。 */
+  private normalizeToMainDomain(domain: string): string {
+    const parts = domain.split('.');
+    if (parts.length <= 2) return domain;
+    return parts.slice(-2).join('.');
   }
 
   /** 登录：校验密码 + 状态，创建新的 Session。 */
@@ -335,6 +466,12 @@ export class AuthService {
 
   /** 发起密码重置：创建短有效期、单次使用的 reset token（只存 hash）。 */
   async requestPasswordReset(email: string): Promise<string | null> {
+    // 检查是否启用忘记密码功能
+    const enablePasswordReset = (await this.settings.getBoolean('auth.enablePasswordReset')) ?? true;
+    if (!enablePasswordReset) {
+      fail(ERROR_CODES.PASSWORD_RESET_DISABLED, 'Password reset is disabled', 403);
+    }
+
     const normalized = email.trim().toLowerCase();
     const rows = await this.db.select().from(users).where(eq(users.email, normalized)).limit(1);
     const user = rows[0];

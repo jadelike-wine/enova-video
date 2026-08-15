@@ -23,7 +23,7 @@ import {
  * - SMTP_FROM_EMAIL: From email address
  * - APP_PASSWORD_RESET_URL: Frontend URL for password reset
  * - APP_EMAIL_VERIFY_URL: Frontend URL for email verification
- * - APP_NAME: Application name for email branding
+ * - SITE_NAME: Site name for email branding
  *
  * Security:
  * - SMTP credentials are NEVER logged.
@@ -40,7 +40,7 @@ export interface SmtpEmailOptions {
   fromEmail: string;
   resetUrl: string;
   verifyUrl: string;
-  appName: string;
+  siteName: string;
 }
 
 @Injectable()
@@ -51,7 +51,7 @@ export class SmtpEmailSender implements EmailSender {
   private readonly fromEmail: string;
   private readonly resetUrl: string;
   private readonly verifyUrl: string;
-  private readonly appName: string;
+  private readonly siteName: string;
 
   constructor(opts: SmtpEmailOptions) {
     this.transporter = createTransport({
@@ -67,7 +67,7 @@ export class SmtpEmailSender implements EmailSender {
     this.fromEmail = opts.fromEmail;
     this.resetUrl = opts.resetUrl;
     this.verifyUrl = opts.verifyUrl;
-    this.appName = opts.appName;
+    this.siteName = opts.siteName;
   }
 
   async sendPasswordReset(opts: { email: string; resetToken: string }): Promise<void> {
@@ -75,7 +75,7 @@ export class SmtpEmailSender implements EmailSender {
       email: opts.email,
       resetToken: opts.resetToken,
       resetUrl: this.resetUrl,
-      appName: this.appName,
+      siteName: this.siteName,
     });
     await this.send(opts.email, tpl);
   }
@@ -85,14 +85,14 @@ export class SmtpEmailSender implements EmailSender {
       email: opts.email,
       verifyToken: opts.verifyToken,
       verifyUrl: this.verifyUrl,
-      appName: this.appName,
+      siteName: this.siteName,
     });
     await this.send(opts.email, tpl);
   }
 
   /** Admin test email (used by admin endpoint to verify SMTP config). */
   async sendTestEmail(to: string): Promise<void> {
-    const tpl = renderTestEmail({ appName: this.appName });
+    const tpl = renderTestEmail({ siteName: this.siteName });
     await this.send(to, tpl);
   }
 

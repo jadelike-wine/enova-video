@@ -34,6 +34,24 @@ class LegalDocumentDto extends PublicLoginAgreementDocumentDto {
   contentMd!: string;
 }
 
+/** 自定义菜单项 DTO（公开接口返回）。 */
+class PublicCustomMenuItemDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  label!: string;
+
+  @ApiProperty()
+  url!: string;
+
+  @ApiProperty({ enum: ['user', 'admin'] })
+  visibility!: 'user' | 'admin';
+
+  @ApiProperty()
+  sortOrder!: number;
+}
+
 class PublicSiteConfigDto {
   @ApiProperty({ example: 'https://example.com' })
   siteUrl!: string;
@@ -43,6 +61,79 @@ class PublicSiteConfigDto {
 
   @ApiProperty({ example: 'EnovaMotion' })
   appName!: string;
+
+  @ApiProperty({ example: 'EnovaMotion' })
+  siteName!: string;
+
+  @ApiProperty({ example: 'AI 智能创作平台' })
+  siteSubtitle!: string;
+
+  @ApiProperty({ example: 'https://example.com/logo.png' })
+  siteLogo!: string;
+
+  @ApiProperty({ example: 'support@example.com' })
+  contactInfo!: string;
+
+  @ApiProperty({ example: 'https://docs.example.com' })
+  docUrl!: string;
+
+  @ApiProperty({ example: '<p>Custom homepage</p>' })
+  homeContent!: string;
+
+  @ApiProperty()
+  compactHomeEnabled!: boolean;
+
+  @ApiProperty()
+  hideCcsImportButton!: boolean;
+
+  @ApiProperty({ type: [PublicCustomMenuItemDto] })
+  customMenuItems!: PublicCustomMenuItemDto[];
+
+  @ApiProperty({ example: 20 })
+  tableDefaultPageSize!: number;
+
+  @ApiProperty({ example: [10, 20, 50, 100] })
+  tablePageSizeOptions!: number[];
+}
+
+/** 安全解析自定义菜单项 JSON，过滤无效/危险数据。 */
+function parseCustomMenuItems(raw: string | null | undefined): PublicCustomMenuItemDto[] {
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item: any) => item && typeof item === 'object')
+      .filter((item: any) => typeof item.id === 'string' && typeof item.label === 'string' && typeof item.url === 'string')
+      .filter((item: any) => item.url.startsWith('http://') || item.url.startsWith('https://'))
+      .filter((item: any) => item.visibility === 'user' || item.visibility === 'admin')
+      .filter((item: any) => item.enabled !== false)
+      .map((item: any) => ({
+        id: String(item.id),
+        label: String(item.label),
+        url: String(item.url),
+        visibility: item.visibility as 'user' | 'admin',
+        sortOrder: typeof item.sortOrder === 'number' ? item.sortOrder : 0,
+      }))
+      .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+  } catch {
+    return [];
+  }
+}
+
+/** 解析并验证可选每页条数列表。 */
+function parsePageSizeOptions(raw: string | null | undefined): number[] {
+  if (!raw?.trim()) return [10, 20, 50, 100];
+  const parts = raw.split(',');
+  const valid = new Set<number>();
+  for (const part of parts) {
+    const n = Number(part.trim());
+    if (Number.isInteger(n) && n >= 5 && n <= 1000) {
+      valid.add(n);
+    }
+  }
+  if (valid.size === 0) return [10, 20, 50, 100];
+  return Array.from(valid).sort((a, b) => a - b);
 }
 
 @ApiTags('public')
@@ -69,11 +160,59 @@ export class PublicLoginAgreementController {
   }
 
   @Get('site-config')
-  @ApiOperation({ summary: '返回公开站点配置（站点 URL、客服邮箱和应用名称，无需登录）' })
+  @ApiOperation({ summary: '返回公开站点配置（站点名称、Logo、客服联系方式、首页内容等，无需登录）' })
   async getSiteConfig(): Promise<PublicSiteConfigDto> {
-    const siteUrl = (await this.settings.getString('general.siteUrl'))?.trim() || 'http://localhost:3000';
-    const supportEmail = (await this.settings.getString('general.supportEmail'))?.trim() || 'support@example.com';
-    const appName = (await this.settings.getString('general.appName'))?.trim() || 'EnovaMotion';
-    return { siteUrl, supportEmail, appName };
+    const keys = [
+      'general.siteUrl',
+      'general.supportEmail',
+      'general.appName',
+      'general.siteName',
+      'general.siteSubtitle',
+      'general.siteLogo',
+      'general.contactInfo',
+      'general.docUrl',
+      'general.homeContent',
+      'general.compactHomeEnabled',
+      'general.hideCcsImportButton',
+      'general.customMenuItems',
+      'table.defaultPageSize',
+      'table.pageSizeOptions',
+    ];
+    const values = await this.settings.getMany(keys);
+
+    const getStr = (key: string, fallback: string): string => {
+      const v = values.get(key);
+      return (v != null ? v.trim() : '') || fallback;
+    };
+
+    const getBool = (key: string, fallback: boolean): boolean => {
+      const v = values.get(key);
+      if (v == null) return fallback;
+      return v === 'true' || v === '1' || v === 'yes' || v === 'on';
+    };
+
+    const getNum = (key: string, fallback: number): number => {
+      const v = values.get(key);
+      if (v == null) return fallback;
+      const n = Number(v);
+      return Number.isInteger(n) && n >= 5 && n <= 1000 ? n : fallback;
+    };
+
+    return {
+      siteUrl: getStr('general.siteUrl', 'http://localhost:3000'),
+      supportEmail: getStr('general.supportEmail', 'support@example.com'),
+      appName: getStr('general.appName', 'EnovaMotion'),
+      siteName: getStr('general.siteName', 'EnovaMotion'),
+      siteSubtitle: getStr('general.siteSubtitle', ''),
+      siteLogo: getStr('general.siteLogo', ''),
+      contactInfo: getStr('general.contactInfo', 'support@example.com'),
+      docUrl: getStr('general.docUrl', ''),
+      homeContent: getStr('general.homeContent', ''),
+      compactHomeEnabled: getBool('general.compactHomeEnabled', false),
+      hideCcsImportButton: getBool('general.hideCcsImportButton', false),
+      customMenuItems: parseCustomMenuItems(values.get('general.customMenuItems')),
+      tableDefaultPageSize: getNum('table.defaultPageSize', 20),
+      tablePageSizeOptions: parsePageSizeOptions(values.get('table.pageSizeOptions')),
+    };
   }
 }

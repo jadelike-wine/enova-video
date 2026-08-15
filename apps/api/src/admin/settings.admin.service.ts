@@ -136,6 +136,9 @@ export class SettingsAdminService {
       throw domainError(ERROR_CODES.VALIDATION_ERROR, `${key} must be one of: ${def.options.join(', ')}`, 400);
     }
 
+    // 通用配置校验：URL 格式、自定义菜单 JSON 等。
+    this.validateGeneralSetting(key, value);
+
     // P0: 生产环境动态配置安全守卫——拒绝危险值。
     this.validateProductionSetting(key, value);
     await this.validateLoginAgreementUpdate(key, value);
@@ -152,14 +155,40 @@ export class SettingsAdminService {
     items: Array<{ key: string; value: string }>,
     opts: { updatedBy?: string; requestId?: string; reason?: string } = {},
   ): Promise<SettingValueView[]> {
-    const normalizedItems = items.map(({ key, value }) => ({ key, value: this.normalizeValue(key, value) }));
-
-    // 校验所有 key 已注册。
-    for (const { key, value } of normalizedItems) {
+    const normalizedItems = items.map(({ key, value }) => {
       if (!isRegisteredSetting(key)) {
         throw domainError(ERROR_CODES.VALIDATION_ERROR, `Unknown setting key: ${key}`, 400);
       }
-      // P0: 生产环境动态配置安全守卫。
+      const def = SETTINGS_BY_KEY.get(key)!;
+      const normalized = this.normalizeValue(key, value);
+
+      // 数值范围校验。
+      if (def.valueType === 'number' && normalized !== '' && !(def.isSecret && normalized === '')) {
+        const n = Number(normalized);
+        if (!Number.isFinite(n)) {
+          throw domainError(ERROR_CODES.VALIDATION_ERROR, `Invalid number value for ${key}`, 400);
+        }
+        if (def.min !== undefined && n < def.min) {
+          throw domainError(ERROR_CODES.VALIDATION_ERROR, `${key} must be >= ${def.min}`, 400);
+        }
+        if (def.max !== undefined && n > def.max) {
+          throw domainError(ERROR_CODES.VALIDATION_ERROR, `${key} must be <= ${def.max}`, 400);
+        }
+      }
+
+      // enum 校验。
+      if (def.valueType === 'enum' && def.options && normalized && !def.options.includes(normalized)) {
+        throw domainError(ERROR_CODES.VALIDATION_ERROR, `${key} must be one of: ${def.options.join(', ')}`, 400);
+      }
+
+      // 通用配置校验。
+      this.validateGeneralSetting(key, normalized);
+
+      return { key, value: normalized };
+    });
+
+    // P0: 生产环境动态配置安全守卫。
+    for (const { key, value } of normalizedItems) {
       this.validateProductionSetting(key, value);
     }
 
@@ -325,22 +354,120 @@ export class SettingsAdminService {
     }
   }
 
+  /**
+   * 通用配置校验：URL 格式、可选条数列表去重排序、自定义菜单 JSON 校验等。
+   * 这些校验不区分生产/开发环境，始终生效。
+   */
+  private validateGeneralSetting(key: string, value: string): void {
+    // 文档链接：如果非空，必须是 http/https URL。
+    if (key === 'general.docUrl' && value) {
+      if (!value.startsWith('http://') && !value.startsWith('https://')) {
+        throw domainError(ERROR_CODES.VALIDATION_ERROR, 'general.docUrl must be a valid http(s) URL', 400);
+      }
+      try {
+        // 验证 URL 可解析。
+        new URL(value);
+      } catch {
+        throw domainError(ERROR_CODES.VALIDATION_ERROR, 'general.docUrl is not a valid URL', 400);
+      }
+    }
+
+    // 站点 Logo：如果非空，必须是 http/https URL 或 data URI。
+    if (key === 'general.siteLogo' && value) {
+      if (!value.startsWith('http://') && !value.startsWith('https://') && !value.startsWith('data:')) {
+        throw domainError(ERROR_CODES.VALIDATION_ERROR, 'general.siteLogo must be a valid http(s) URL or data URI', 400);
+      }
+    }
+
+    // 可选每页条数列表：保存时自动去重、排序、过滤非法值。
+    if (key === 'table.pageSizeOptions' && value) {
+      const normalized = this.normalizePageSizeOptions(value);
+      // 校验通过后，将值替换为规范化后的结果。
+      // 注意：这里不直接修改 value（调用方已持有），而是确保校验通过。
+      // 规范化在 normalizeValue 中执行。
+      if (normalized.length === 0) {
+        throw domainError(ERROR_CODES.VALIDATION_ERROR, 'table.pageSizeOptions must contain at least one valid value (5-1000)', 400);
+      }
+    }
+
+    // 自定义菜单项 JSON 校验。
+    if (key === 'general.customMenuItems' && value) {
+      this.validateCustomMenuItems(value);
+    }
+  }
+
+  /** 规范化可选每页条数列表：去空、过滤非法值、去重、升序排序。 */
+  private normalizePageSizeOptions(value: string): number[] {
+    const parts = value.split(',');
+    const valid = new Set<number>();
+    for (const part of parts) {
+      const n = Number(part.trim());
+      if (Number.isInteger(n) && n >= 5 && n <= 1000) {
+        valid.add(n);
+      }
+    }
+    return Array.from(valid).sort((a, b) => a - b);
+  }
+
+  /** 校验自定义菜单项 JSON 格式。 */
+  private validateCustomMenuItems(raw: string): void {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        throw new Error('customMenuItems must be a JSON array');
+      }
+      for (const item of parsed) {
+        if (!item || typeof item !== 'object') {
+          throw new Error('Each menu item must be an object');
+        }
+        if (typeof item.id !== 'string' || !item.id.trim()) {
+          throw new Error('Each menu item must have a non-empty id');
+        }
+        if (typeof item.label !== 'string' || !item.label.trim()) {
+          throw new Error('Each menu item must have a non-empty label');
+        }
+        if (typeof item.url !== 'string' || !(item.url.startsWith('http://') || item.url.startsWith('https://'))) {
+          throw new Error('Each menu item URL must start with http:// or https://');
+        }
+        if (item.visibility !== 'user' && item.visibility !== 'admin') {
+          throw new Error('Each menu item visibility must be user or admin');
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid JSON';
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, `Invalid customMenuItems: ${message}`, 400);
+    }
+  }
+
   private parseBoolean(value: string | null | undefined): boolean {
     return ['1', 'true', 'yes', 'on'].includes((value ?? '').toLowerCase());
   }
 
   private normalizeValue(key: string, value: string): string {
-    if (key !== 'log.level') return value;
-    const aliases: Record<string, string> = {
-      DEBUG: 'debug',
-      INFO: 'info',
-      WARNING: 'warn',
-      WARN: 'warn',
-      ERROR: 'error',
-      CRITICAL: 'fatal',
-      FATAL: 'fatal',
-    };
-    return aliases[value.trim().toUpperCase()] ?? value;
+    // 日志级别别名归一化。
+    if (key === 'log.level') {
+      const aliases: Record<string, string> = {
+        DEBUG: 'debug',
+        INFO: 'info',
+        WARNING: 'warn',
+        WARN: 'warn',
+        ERROR: 'error',
+        CRITICAL: 'fatal',
+        FATAL: 'fatal',
+      };
+      return aliases[value.trim().toUpperCase()] ?? value;
+    }
+
+    // 可选每页条数列表：保存时自动去空、过滤非法值、去重、升序排序。
+    if (key === 'table.pageSizeOptions' && value) {
+      const normalized = this.normalizePageSizeOptions(value);
+      if (normalized.length === 0) {
+        return value; // 校验会在 validateGeneralSetting 中拦截
+      }
+      return normalized.join(',');
+    }
+
+    return value;
   }
 
   private parseLoginAgreementDocuments(raw: string | null | undefined) {

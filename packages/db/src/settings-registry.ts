@@ -26,7 +26,9 @@ export type SettingGroup =
   | 'security'
   | 'log'
   | 'email'
-  | 'general';
+  | 'general'
+  | 'table'
+  | 'customization';
 
 export interface SettingDef {
   key: string;
@@ -800,6 +802,108 @@ export const SETTINGS: SettingDef[] = [
     description: '邮件标题、邮件模板和公开站点配置使用的应用名称。',
     envKey: 'APP_NAME',
     envDefault: 'EnovaMotion',
+  },
+  {
+    key: 'general.siteName',
+    valueType: 'string',
+    group: 'general',
+    label: '站点名称',
+    description: '站点对外展示的名称，显示在侧边栏、登录页和浏览器标题。留空则使用默认品牌名。',
+    envKey: 'SITE_NAME',
+    envDefault: 'EnovaMotion',
+  },
+  {
+    key: 'general.siteSubtitle',
+    valueType: 'string',
+    group: 'general',
+    label: '站点副标题',
+    description: '站点副标题/标语，显示在侧边栏和登录页。留空则隐藏。',
+    envKey: 'SITE_SUBTITLE',
+    envDefault: 'AI 智能创作平台',
+  },
+  {
+    key: 'general.siteLogo',
+    valueType: 'string',
+    group: 'general',
+    label: '站点 Logo',
+    description: '站点 Logo 图片 URL（支持 http/https/data URI）。留空则使用默认渐变 Logo。',
+    envKey: 'SITE_LOGO',
+    envDefault: '',
+  },
+  {
+    key: 'general.contactInfo',
+    valueType: 'string',
+    group: 'general',
+    label: '客服联系方式',
+    description: '填写客服联系方式（邮箱或其他），将展示在兑换页面、个人资料等位置。',
+    envKey: 'CONTACT_INFO',
+    envDefault: 'support@example.com',
+  },
+  {
+    key: 'general.docUrl',
+    valueType: 'string',
+    group: 'general',
+    label: '文档链接',
+    description: '文档网站的链接。留空则隐藏文档入口。必须为 http 或 https 开头的完整 URL。',
+    envKey: 'DOC_URL',
+    envDefault: '',
+  },
+  {
+    key: 'general.homeContent',
+    valueType: 'string',
+    group: 'customization',
+    label: '首页内容',
+    description: '自定义首页内容，支持 Markdown/HTML。如果输入的是链接（以 http:// 或 https:// 开头），则会使用该链接作为 iframe 的 src 属性，这允许你设置任意网页作为首页。设置后首页的状态信息将不再显示。',
+    envKey: 'HOME_CONTENT',
+    envDefault: '',
+  },
+  {
+    key: 'general.compactHomeEnabled',
+    valueType: 'boolean',
+    group: 'customization',
+    label: '简洁首页',
+    description: '未设置自定义首页内容时，展示简洁的站点信息页面。关闭则保持当前默认首页状态信息页面。',
+    envKey: 'COMPACT_HOME_ENABLED',
+    envDefault: 'false',
+  },
+  {
+    key: 'general.hideCcsImportButton',
+    valueType: 'boolean',
+    group: 'customization',
+    label: '隐藏 CCS 导入按钮',
+    description: '启用后将在 API Keys 页面隐藏「导入 CCS」按钮。',
+    envKey: 'HIDE_CCS_IMPORT_BUTTON',
+    envDefault: 'false',
+  },
+  {
+    key: 'general.customMenuItems',
+    valueType: 'string',
+    group: 'customization',
+    label: '自定义菜单页面',
+    description: 'JSON 数组，每项含 id、label、url、enabled、visibility（user/admin）、sortOrder。用于在侧边栏添加自定义 iframe 页面。',
+    envKey: 'CUSTOM_MENU_ITEMS',
+    envDefault: '[]',
+  },
+  // ---- 通用表格设置 ----
+  {
+    key: 'table.defaultPageSize',
+    valueType: 'number',
+    group: 'table',
+    label: '默认每页条数',
+    description: '设置后台与用户侧表格组件的默认分页行为。必须为整数，取值范围 5-1000。',
+    envKey: 'TABLE_DEFAULT_PAGE_SIZE',
+    envDefault: '20',
+    min: 5,
+    max: 1000,
+  },
+  {
+    key: 'table.pageSizeOptions',
+    valueType: 'string',
+    group: 'table',
+    label: '可选每页条数列表',
+    description: '使用英文逗号分隔，取值范围 5-1000，保存时会自动去重并排序。例如：10,20,50,100',
+    envKey: 'TABLE_PAGE_SIZE_OPTIONS',
+    envDefault: '10,20,50,100',
   },
 ];
 

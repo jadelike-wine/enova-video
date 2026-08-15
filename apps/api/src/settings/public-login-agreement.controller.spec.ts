@@ -33,10 +33,25 @@ describe('PublicLoginAgreementController', () => {
     };
     const settingsService = {
       getString: async () => 'https://example.com',
+      getMany: async (keys: string[]) => {
+        const map = new Map<string, string | null>();
+        for (const key of keys) {
+          if (key === 'general.siteUrl') map.set(key, 'https://example.com');
+          else if (key === 'general.appName') map.set(key, 'TestApp');
+          else if (key === 'general.siteName') map.set(key, 'TestSite');
+          else if (key === 'table.defaultPageSize') map.set(key, '50');
+          else if (key === 'table.pageSizeOptions') map.set(key, '10,20,50');
+          else map.set(key, null);
+        }
+        return map;
+      },
     };
     const controller = new PublicLoginAgreementController(agreementService as never, settingsService as never);
     const result = await controller.getSiteConfig();
     expect(result.siteUrl).toBe('https://example.com');
+    expect(result.siteName).toBe('TestSite');
+    expect(result.tableDefaultPageSize).toBe(50);
+    expect(result.tablePageSizeOptions).toEqual([10, 20, 50]);
   });
 
   it('falls back to localhost when site URL is not configured', async () => {
@@ -46,9 +61,15 @@ describe('PublicLoginAgreementController', () => {
     };
     const settingsService = {
       getString: async () => null,
+      getMany: async () => new Map<string, string | null>(),
     };
     const controller = new PublicLoginAgreementController(agreementService as never, settingsService as never);
     const result = await controller.getSiteConfig();
     expect(result.siteUrl).toBe('http://localhost:3000');
+    expect(result.siteName).toBe('EnovaMotion');
+    expect(result.tableDefaultPageSize).toBe(20);
+    expect(result.tablePageSizeOptions).toEqual([10, 20, 50, 100]);
+    expect(result.customMenuItems).toEqual([]);
+    expect(result.hideCcsImportButton).toBe(false);
   });
 });

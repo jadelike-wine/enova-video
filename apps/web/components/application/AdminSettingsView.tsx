@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { Button, Checkbox, Input, InputNumber, Modal, Select, Skeleton, Switch, Tag } from 'antd'
+import { Button, Checkbox, Input, InputNumber, Modal, Result, Select, Skeleton, Spin, Switch, Tag } from 'antd'
 import {
   settingsApi,
   type SettingView,
@@ -370,6 +370,7 @@ function AdminSettingsInner() {
   const [settings, setSettings] = useState<SettingView[]>([])
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<Record<string, boolean>>({})
   const [justSaved, setJustSaved] = useState<Record<string, boolean>>({})
@@ -377,6 +378,10 @@ function AdminSettingsInner() {
   const [history, setHistory] = useState<SettingHistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [showKeys, setShowKeys] = useState(false)
+
+  // 竞态防护：用于取消旧请求，避免组件卸载后 setState
+  const loadRequestId = useRef(0)
+  const isMounted = useRef(true)
 
   const urlTab = searchParams?.get('tab') ?? null
   const [activeTab, setActiveTab] = useState<SettingsTabKey>(() => (isTabKey(urlTab) ? urlTab : 'general'))
@@ -386,6 +391,7 @@ function AdminSettingsInner() {
   useEffect(() => {
     const timers = flashTimers.current
     return () => {
+      isMounted.current = false
       for (const timer of Object.values(timers)) clearTimeout(timer)
     }
   }, [])
@@ -399,13 +405,17 @@ function AdminSettingsInner() {
     }, 2000)
   }, [])
 
-  // ---- 加载 ----
+  // ---- 加载（带竞态防护） ----
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestId.current
     setLoading(true)
     setLoadFailed(false)
+    setLoadError(null)
     try {
       const items = await settingsApi.list()
+      // 竞态防护：如果已有更新的请求或组件已卸载，丢弃结果
+      if (requestId !== loadRequestId.current || !isMounted.current) return
       setSettings(items)
       const d: Record<string, string> = {}
       for (const s of items) {
@@ -419,15 +429,19 @@ function AdminSettingsInner() {
       }
       setDrafts(d)
     } catch (e) {
+      if (requestId !== loadRequestId.current || !isMounted.current) return
       setSettings([])
       setLoadFailed(true)
-      await alert({ title: '加载失败', message: formatErrorMessage(e) })
+      setLoadError(formatErrorMessage(e))
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestId.current && isMounted.current) {
+        setLoading(false)
+      }
     }
-  }, [alert])
+  }, [])
 
   useEffect(() => {
+    isMounted.current = true
     void load()
   }, [load])
 
@@ -1021,13 +1035,23 @@ function AdminSettingsInner() {
       {/* 内容区 */}
       <div className="admin-settings-content flex-1 overflow-y-auto bg-slate-50" data-testid="admin-settings-content">
         <div className="admin-settings-content-inner px-6 pb-16 pt-4 sm:px-8">
-          {loading && <Skeleton active paragraph={{ rows: 6 }} className="py-12" />}
+          {loading && (
+            <Spin spinning size="large" className="flex w-full justify-center py-12">
+              <div className="min-h-[200px]" />
+            </Spin>
+          )}
 
           {!loading && loadFailed && settings.length === 0 && (
-            <div className="py-24 text-center">
-              <p className="text-gray-500">{t('loadFailed')}</p>
-              <Button className="mt-4" size="small" onClick={() => void load()}>{t('retry')}</Button>
-            </div>
+            <Result
+              status="error"
+              title={t('loadFailed')}
+              subTitle={loadError ?? undefined}
+              extra={
+                <Button type="primary" onClick={() => void load()}>
+                  {t('retry')}
+                </Button>
+              }
+            />
           )}
 
           {!loading && !loadFailed && settings.length === 0 && (

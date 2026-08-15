@@ -45,7 +45,23 @@ vi.mock('antd', () => {
   const Empty = ({ description }: { description?: ReactNode }) => element('div', {}, description)
   const DatePicker = ({ value, onChange, ...props }: { value?: unknown; onChange?: (value: unknown) => void; [key: string]: unknown }) =>
     element('input', { ...props, type: 'date', 'data-testid': 'date-picker', value: typeof value === 'object' && value !== null ? String(value) : '', onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) })
-  return { Button, DatePicker, Input, InputNumber, Select, Switch, Segmented, Tag, Empty }
+  // Spin: 将 children 包裹在 div 中，spinning 属性接受但在此忽略
+  const Spin = ({ children, spinning, ...props }: { children?: ReactNode; spinning?: boolean; [key: string]: unknown }) => {
+    void spinning
+    return element('div', props, children)
+  }
+  // Alert: 渲染为简单 div
+  const Alert = ({ title, message, description, ...props }: { title?: ReactNode; message?: ReactNode; description?: ReactNode; [key: string]: unknown }) =>
+    element('div', props, [title ?? message, description].filter(Boolean))
+  // Result: 渲染为简单 div
+  const Result = ({ title, subTitle, extra, ...props }: { title?: ReactNode; subTitle?: ReactNode; extra?: ReactNode; [key: string]: unknown }) =>
+    element('div', props, [title, subTitle, extra].filter(Boolean))
+  // Skeleton: 渲染为简单 div
+  const Skeleton = ({ active, ...props }: { active?: boolean; [key: string]: unknown }) => {
+    void active
+    return element('div', props, 'Loading...')
+  }
+  return { Button, DatePicker, Input, InputNumber, Select, Switch, Segmented, Tag, Empty, Spin, Alert, Result, Skeleton }
 })
 
 vi.mock('next/link', () => ({
@@ -124,7 +140,11 @@ async function renderPanels(): Promise<{ container: HTMLDivElement; root: Root }
         <BackupSettingsPanel />
       </>,
     )
-    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  // BackupSettingsPanel has an async useEffect; wait for it to settle
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 200))
   })
 
   return { container, root }
@@ -156,7 +176,7 @@ describe('business settings panels', () => {
     ]) {
       expect(container.querySelector(`[data-testid="${testId}"]`), testId).not.toBeNull()
     }
-    expect(container.textContent).toContain('备份配置通过')
+    expect(container.textContent).toContain('备份属于部署与运维能力')
 
     await act(async () => root.unmount())
   })

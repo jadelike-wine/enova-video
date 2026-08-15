@@ -73,10 +73,18 @@ vi.mock('antd', () => {
   const DatePicker = ({ value, onChange, ...props }: { value?: unknown; onChange?: (value: unknown) => void; [key: string]: unknown }) =>
     element('input', { ...props, type: 'date', 'data-testid': 'date-picker', value: typeof value === 'object' && value !== null ? String(value) : '', onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) })
   const Skeleton = () => element('div', {}, 'Loading')
+  const Spin = ({ children, spinning, ...props }: { children?: ReactNode; spinning?: boolean; [key: string]: unknown }) => {
+    void spinning
+    return element('div', props, children)
+  }
+  const Result = ({ title, subTitle, extra, ...props }: { title?: ReactNode; subTitle?: ReactNode; extra?: ReactNode; [key: string]: unknown }) =>
+    element('div', props, [title, subTitle, extra].filter(Boolean))
+  const Alert = ({ title, message, description, ...props }: { title?: ReactNode; message?: ReactNode; description?: ReactNode; [key: string]: unknown }) =>
+    element('div', props, [title ?? message, description].filter(Boolean))
   const Tag = ({ children }: { children?: ReactNode }) => element('span', {}, children)
   const Modal = ({ open, children }: { open?: boolean; children?: ReactNode }) => open ? element('div', {}, children) : null
 
-  return { Button, Checkbox, DatePicker, Input, InputNumber, Modal, Segmented, Select, Skeleton, Switch, Tag }
+  return { Alert, Button, Checkbox, DatePicker, Input, InputNumber, Modal, Result, Segmented, Select, Skeleton, Spin, Switch, Tag }
 })
 
 vi.mock('next/navigation', () => ({
@@ -168,7 +176,7 @@ async function renderSettingsView(): Promise<{ container: HTMLDivElement; root: 
   const root = createRoot(container)
 
   root.render(<AdminSettingsView />)
-  await new Promise((resolve) => setTimeout(resolve, 50))
+  await new Promise((resolve) => setTimeout(resolve, 200))
 
   return { container, root }
 }

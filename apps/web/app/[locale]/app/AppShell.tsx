@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter } from '@/i18n.config'
 import { useTranslations } from 'next-intl'
 import { Button } from 'antd'
 import { DialogProvider } from '@/components/application/DialogProvider'
@@ -46,17 +46,34 @@ function RoutePendingProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const [pending, setPending] = useState(false)
   const prevPath = useRef(pathname)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // pathname 变化 → 路由已到达，清除 pending
   useEffect(() => {
     if (pathname !== prevPath.current) {
       prevPath.current = pathname
       setPending(false)
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
     }
   }, [pathname])
 
-  // 点击导航时调用：立即标记 pending
-  const trigger = () => setPending(true)
+  // 卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    }
+  }, [])
+
+  // 点击导航时调用：立即标记 pending，同时设置安全超时兜底
+  // 防止路由未完成导航（如同路径仅 query 变化）时 pending 永不清除
+  const trigger = () => {
+    setPending(true)
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => setPending(false), 5000)
+  }
 
   return (
     <RoutePendingContext.Provider value={{ pending, trigger }}>
@@ -68,7 +85,8 @@ function RoutePendingProvider({ children }: { children: ReactNode }) {
 function NavLink({ item, pathname }: { item: { path: string; labelKey: string; icon: string }; pathname: string }) {
   const t = useTranslations()
   const { trigger } = useRoutePending()
-  const active = pathname.startsWith(item.path)
+  // pathname 来自 next-intl 的 usePathname，已去除 locale 前缀
+  const active = pathname === item.path || pathname.startsWith(item.path + '/')
   return (
     <Link
       href={item.path}

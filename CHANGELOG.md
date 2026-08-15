@@ -8,9 +8,19 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ## Unreleased
 
+---
+
+## [1.6.0] — 2026-08-15
+
+### Added
+- Admin-configurable site branding and content: site name, subtitle, logo, contact info, and doc URL, exposed via the public `site-config` endpoint and consumed across the web app (header, footer, wallet, settings).
+- Custom homepage content rendered through a shared `HomeContentRenderer` supporting inline HTML/Markdown or an external iframe URL, with a compact-home toggle and a hide-CCS-import-button toggle.
+- Admin-defined custom menu items embedded into the app sidebar as iframe routes (`/app/custom/[menuId]`), scoped by `user`/`admin` visibility.
+- Centralized table pagination driven by site config (`table.defaultPageSize`, `table.pageSizeOptions`) via a shared `useTablePagination` hook used across admin and user tables; admin settings validate URL/logo formats, custom menu JSON, and page-size lists.
+
 ### Fixed
 - Update/rollback scripts keep the admin one-click update mounts (`/var/run/docker.sock`, `/host/repo`) when recreating the API container with `UPDATE_ENABLED=true`, so subsequent updates from the admin UI no longer fail with "no such file or directory".
-- Deploy workflow pulls the `deploy-tool` image for the actually deployed version (`.deploy/version.env`) instead of the repo `VERSION` file; `VERSION` is bumped to 1.5.0 and the release workflow now fails early when `VERSION` does not match the release tag.
+- Deploy workflow pulls the `deploy-tool` image for the actually deployed version (`.deploy/version.env`) instead of the repo `VERSION` file; the release workflow now fails early when `VERSION` does not match the release tag.
 
 ---
 

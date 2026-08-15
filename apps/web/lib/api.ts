@@ -202,6 +202,17 @@ export interface CustomMenuItem {
   url: string
   visibility: 'user' | 'admin'
   sortOrder: number
+  /** Stored setting values may include this flag; public API filters disabled items. */
+  enabled?: boolean
+}
+
+/** Structured custom endpoint draft used by the system settings workbench. */
+export interface CustomEndpoint {
+  id: string
+  name: string
+  url: string
+  description: string
+  sortOrder: number
 }
 
 export interface SiteConfig {
@@ -482,8 +493,12 @@ export const modelsApi = {
   get: () => Promise.reject(new ApiError(404, { error: { code: 'NOT_FOUND', message: '模型目录由前端本地提供' } }, '模型目录不可用')),
 }
 
+export interface UploadResult {
+  url: string
+}
+
 export const uploadApi = {
-  upload: async (file: File): Promise<{ url: string }> => {
+  upload: async (file: File): Promise<UploadResult> => {
     const form = new FormData()
     form.append('file', file)
     const headers = addRequestIdHeader()

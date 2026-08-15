@@ -17,6 +17,7 @@ import { formatErrorMessage } from '../../lib/errorMessage'
 import { ContentLoading } from './admin/AdminUi'
 import AgreementDocumentsEditor, { normalizeDocumentsJson } from './AgreementDocumentsEditor'
 import EmailSettingsPanel from './admin/EmailSettingsPanel'
+import GeneralSettingsPanel from './admin-settings/GeneralSettingsPanel.js'
 import {
   AGREEMENT_DOCUMENTS_KEY,
   SETTINGS_TABS,
@@ -737,6 +738,20 @@ function AdminSettingsInner() {
     // 「登录条款」使用定制页面
     if (tab.key === 'agreement') {
       return renderAgreementTab(items, tabDirty, batchId)
+    }
+
+    // 「通用设置」使用结构化业务面板，复杂 JSON 仅在面板内编辑。
+    if (tab.key === 'general') {
+      return (
+        <GeneralSettingsPanel
+          settings={items}
+          drafts={drafts}
+          onDraftChange={(key, value) => setDrafts((p) => ({ ...p, [key]: value }))}
+          onBatchSave={(keys) => void handleBatchSave('general', keys)}
+          saving={Boolean(saving[batchId])}
+          saved={Boolean(justSaved[batchId])}
+        />
+      )
     }
 
     // 「数据备份」Tab：展示备份说明和运维入口（预留）

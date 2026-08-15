@@ -10,6 +10,17 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.5] — 2026-08-16
+
+### Changed
+- Admin system settings workbench: replaced plain skeleton with a `Spin` loading state and a `Result` error view (with error detail and retry), and guarded async loads against stale responses / unmounted setState.
+- Backup settings panel now loads asynchronously with loading/error/success states (Spin, Result, Alert) while keeping the deployment/ops guidance.
+- App-level `loading.tsx` shows the shared content loading placeholder while nested personal-center routes stream in.
+- Route pending indicator gained a 5s timeout fallback (so it clears even when navigation only changes query string), timer cleanup on unmount, and more precise nav active matching.
+- Dev builds compile faster by opting antd, @ant-design/icons, dayjs, and next-intl into Next.js `optimizePackageImports`.
+
+---
+
 ## [1.7.4] — 2026-08-16
 
 ### Added

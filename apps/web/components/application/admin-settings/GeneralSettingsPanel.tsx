@@ -5,7 +5,6 @@ import type { ReactNode } from 'react'
 
 import type { SettingView } from '../../../lib/api'
 import { GENERAL_SECTIONS, settingBelongsToSection, type SettingsSectionDef } from './settings-tabs'
-import CustomEndpointEditor from './CustomEndpointEditor'
 import CustomMenuEditor from './CustomMenuEditor'
 import LogoUploader from './LogoUploader'
 
@@ -92,12 +91,10 @@ export default function GeneralSettingsPanel({ settings, drafts, onDraftChange, 
   const supportItems = itemsForSection(section('support'))
   const tableItems = itemsForSection(section('table'))
   const homepageItems = itemsForSection(section('homepage')).filter((setting) => setting.key !== 'general.homeContent')
-  const endpointItems = itemsForSection(section('endpoints')).filter((setting) => setting.key !== 'general.customEndpoints')
-
   return (
     <div data-testid="general-settings-panel" className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-2xl text-sm text-gray-500">配置站点品牌、客服入口、首页内容和可扩展的菜单与端点。</p>
+        <p className="max-w-2xl text-sm text-gray-500">配置站点品牌、客服入口、首页内容和可扩展的菜单。</p>
         <div className="flex items-center gap-3">
           {saved && <span className="text-xs font-medium text-emerald-600">已保存</span>}
           <Button data-testid="general-settings-save" type="primary" size="small" disabled={!dirty} loading={saving} onClick={() => onBatchSave(keys)}>
@@ -120,19 +117,6 @@ export default function GeneralSettingsPanel({ settings, drafts, onDraftChange, 
       )}
 
       {tableItems.length > 0 && <Section section={section('table')}><SettingGrid items={tableItems} drafts={drafts} onDraftChange={onDraftChange} /></Section>}
-
-      {endpointItems.length > 0 || getSetting('general.customEndpoints') ? (
-        <Section section={section('endpoints')}>
-          {endpointItems.length > 0 && <SettingGrid items={endpointItems} drafts={drafts} onDraftChange={onDraftChange} />}
-          {getSetting('general.customEndpoints') && (
-            <div className={endpointItems.length > 0 ? 'border-t border-gray-100 pt-5' : ''}>
-              <div className="mb-2 text-xs font-medium text-gray-800">{getSetting('general.customEndpoints')?.label}</div>
-              <p className="mb-3 text-xs text-gray-400">新增端点时只需填写字段，URL 先做基础格式校验，最终安全校验由 API 执行。</p>
-              <CustomEndpointEditor value={getValue('general.customEndpoints')} onChange={(value) => onDraftChange('general.customEndpoints', value)} />
-            </div>
-          )}
-        </Section>
-      ) : null}
 
       {supportItems.length > 0 && <Section section={section('support')}><SettingGrid items={supportItems} drafts={drafts} onDraftChange={onDraftChange} /></Section>}
 

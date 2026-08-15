@@ -1,6 +1,8 @@
 'use client'
 
-import { Button, Input, Segmented, Switch } from 'antd'
+import { useMemo } from 'react'
+import { Button, DatePicker, Segmented, Switch } from 'antd'
+import dayjs, { type Dayjs } from 'dayjs'
 
 import AgreementDocumentsEditor from '../AgreementDocumentsEditor'
 import { AGREEMENT_DOCUMENTS_KEY } from './settings-tabs'
@@ -12,11 +14,11 @@ import {
 } from './SettingsPanelPrimitives'
 import type { SettingsPanelProps } from './SettingsPanelPrimitives'
 
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-
 export interface AgreementSettingsPanelProps extends SettingsPanelProps {
   onShowHistory?: (key: string, label: string) => void
 }
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 export default function AgreementSettingsPanel({
   settings,
@@ -37,6 +39,27 @@ export default function AgreementSettingsPanel({
       查看历史
     </Button>
   ) : null
+
+  // 日期默认值逻辑：
+  // - 已设置日期且格式正确 → 使用已设置日期
+  // - 未设置日期 → 使用浏览器当前日期（仅 UI 默认值，不覆盖数据库已有值）
+  const datePickerValue = useMemo<Dayjs>(() => {
+    const trimmed = (updatedAt ?? '').trim()
+    if (trimmed && DATE_PATTERN.test(trimmed)) {
+      const parsed = dayjs(trimmed, 'YYYY-MM-DD')
+      if (parsed.isValid()) return parsed
+    }
+    // 默认显示当前日期
+    return dayjs()
+  }, [updatedAt])
+
+  const handleDateChange = (date: Dayjs | null) => {
+    if (date && date.isValid()) {
+      onDraftChange('general.loginAgreementUpdatedAt', date.format('YYYY-MM-DD'))
+    } else {
+      onDraftChange('general.loginAgreementUpdatedAt', '')
+    }
+  }
 
   return (
     <div data-testid="agreement-settings-panel" className="space-y-5">
@@ -62,13 +85,13 @@ export default function AgreementSettingsPanel({
           </div>
           <div>
             <div className="flex items-center gap-2 text-xs font-medium text-gray-800">条款更新日期 {history('general.loginAgreementUpdatedAt', '条款更新日期')}</div>
-            <Input
-              type={updatedAt === '' || DATE_PATTERN.test(updatedAt) ? 'date' : 'text'}
-              value={updatedAt}
-              placeholder="YYYY-MM-DD"
-              onChange={(event) => onDraftChange('general.loginAgreementUpdatedAt', event.target.value)}
+            <DatePicker
+              value={datePickerValue}
+              onChange={handleDateChange}
+              format="YYYY-MM-DD"
               aria-label="条款更新日期"
               className="mt-2 w-full"
+              allowClear={false}
             />
             <p className="mt-2 text-xs leading-relaxed text-gray-500">日期或文档内容变化后，用户需要重新同意。</p>
           </div>

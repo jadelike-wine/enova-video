@@ -70,11 +70,13 @@ vi.mock('antd', () => {
     element('label', {}, [element('input', { key: 'input', ...props, type: 'checkbox', checked, onChange: (event: { target: { checked: boolean } }) => onChange?.(event) }), element('span', { key: 'label' }, children)])
   const Switch = ({ checked, onChange, ...props }: { checked?: boolean; onChange?: (checked: boolean) => void; [key: string]: unknown }) =>
     element('button', { ...props, type: 'button', role: 'switch', 'aria-checked': checked, onClick: () => onChange?.(!checked) }, checked ? 'on' : 'off')
+  const DatePicker = ({ value, onChange, ...props }: { value?: unknown; onChange?: (value: unknown) => void; [key: string]: unknown }) =>
+    element('input', { ...props, type: 'date', 'data-testid': 'date-picker', value: typeof value === 'object' && value !== null ? String(value) : '', onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) })
   const Skeleton = () => element('div', {}, 'Loading')
   const Tag = ({ children }: { children?: ReactNode }) => element('span', {}, children)
   const Modal = ({ open, children }: { open?: boolean; children?: ReactNode }) => open ? element('div', {}, children) : null
 
-  return { Button, Checkbox, Input, InputNumber, Modal, Segmented, Select, Skeleton, Switch, Tag }
+  return { Button, Checkbox, DatePicker, Input, InputNumber, Modal, Segmented, Select, Skeleton, Switch, Tag }
 })
 
 vi.mock('next/navigation', () => ({
@@ -82,6 +84,27 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: routerReplace }),
   useSearchParams: () => searchParams,
 }))
+
+vi.mock('dayjs', () => {
+  function dayjsMock(date?: string | Date | null) {
+    const d = date ? new Date(date) : new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const obj = {
+      isValid: () => !Number.isNaN(d.getTime()),
+      format: (fmt: string) => {
+        const y = d.getFullYear()
+        const m = pad(d.getMonth() + 1)
+        const day = pad(d.getDate())
+        return (fmt || 'YYYY-MM-DD')
+          .replace('YYYY', String(y))
+          .replace('MM', m)
+          .replace('DD', day)
+      },
+    }
+    return obj
+  }
+  return { default: dayjsMock }
+})
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => ({

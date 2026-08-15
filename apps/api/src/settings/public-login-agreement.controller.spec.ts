@@ -37,7 +37,6 @@ describe('PublicLoginAgreementController', () => {
         const map = new Map<string, string | null>();
         for (const key of keys) {
           if (key === 'general.siteUrl') map.set(key, 'https://example.com');
-          else if (key === 'general.appName') map.set(key, 'TestApp');
           else if (key === 'general.siteName') map.set(key, 'TestSite');
           else if (key === 'table.defaultPageSize') map.set(key, '50');
           else if (key === 'table.pageSizeOptions') map.set(key, '10,20,50');

@@ -27,7 +27,6 @@ describe('system settings metadata', () => {
     expect(GENERAL_SECTIONS.map((section) => section.key)).toEqual([
       'branding',
       'table',
-      'endpoints',
       'support',
       'homepage',
       'menu',
@@ -65,5 +64,18 @@ describe('system settings metadata', () => {
     expect(settingBelongsToSection({ key: 'general.customMenuItems', group: 'customization' }, menu!)).toBe(true)
     expect(settingBelongsToSection({ key: 'table.defaultPageSize', group: 'table' }, table!)).toBe(true)
     expect(settingBelongsToSection({ key: 'table.defaultPageSize', group: 'table' }, branding!)).toBe(false)
+  })
+
+  it('places table pagination settings in the General tab', () => {
+    const tableSettings = [
+      { key: 'table.defaultPageSize', group: 'table' },
+      { key: 'table.pageSizeOptions', group: 'table' },
+    ]
+
+    expect(itemsForTab(SETTINGS_TABS.find((tab) => tab.key === 'general')!, tableSettings).map((item) => item.key)).toEqual([
+      'table.defaultPageSize',
+      'table.pageSizeOptions',
+    ])
+    expect(itemsForTab(SETTINGS_TABS.find((tab) => tab.key === 'features')!, tableSettings)).toEqual([])
   })
 })

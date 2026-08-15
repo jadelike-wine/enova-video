@@ -13,6 +13,16 @@ function makeSettings() {
 }
 
 describe('SettingsAdminService login agreement validation', () => {
+  it('rejects fractional default table page sizes', async () => {
+    const settings = makeSettings();
+    const service = new SettingsAdminService(settings as never);
+
+    await expect(service.update('table.defaultPageSize', '20.5')).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.updateGroup([{ key: 'table.defaultPageSize', value: '20.5' }])).rejects.toMatchObject({ statusCode: 400 });
+    expect(settings.update).not.toHaveBeenCalled();
+    expect(settings.updateGroup).not.toHaveBeenCalled();
+  });
+
   it('rejects malformed agreement JSON before writing settings', async () => {
     const settings = makeSettings();
     const service = new SettingsAdminService(settings as never);
@@ -29,6 +39,51 @@ describe('SettingsAdminService login agreement validation', () => {
 
     await expect(
       service.updateGroup([{ key: 'general.loginAgreementEnabled', value: 'true' }]),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(settings.updateGroup).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed agreement update date format', async () => {
+    const settings = makeSettings();
+    const service = new SettingsAdminService(settings as never);
+
+    await expect(
+      service.update('general.loginAgreementUpdatedAt', '2026/08/14'),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(settings.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects impossible calendar dates for agreement update date', async () => {
+    const settings = makeSettings();
+    const service = new SettingsAdminService(settings as never);
+
+    await expect(
+      service.update('general.loginAgreementUpdatedAt', '2026-13-45'),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(settings.update).not.toHaveBeenCalled();
+  });
+
+  it('accepts valid YYYY-MM-DD agreement update dates', async () => {
+    const settings = makeSettings();
+    settings.list = vi.fn(async () => [
+      { key: 'general.loginAgreementUpdatedAt', value: '2026-08-14', isSecret: false },
+    ]);
+    const service = new SettingsAdminService(settings as never);
+
+    await service.update('general.loginAgreementUpdatedAt', '2026-08-14');
+    expect(settings.update).toHaveBeenCalledWith(
+      'general.loginAgreementUpdatedAt',
+      '2026-08-14',
+      {},
+    );
+  });
+
+  it('rejects malformed agreement update date in batch mode', async () => {
+    const settings = makeSettings();
+    const service = new SettingsAdminService(settings as never);
+
+    await expect(
+      service.updateGroup([{ key: 'general.loginAgreementUpdatedAt', value: 'not-a-date' }]),
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(settings.updateGroup).not.toHaveBeenCalled();
   });
@@ -68,25 +123,6 @@ describe('SettingsAdminService login agreement validation', () => {
       }])),
     ).rejects.toMatchObject({ statusCode: 400 });
     expect(settings.update).not.toHaveBeenCalled();
-  });
-
-  it('rejects invalid custom endpoints in a batch before writing', async () => {
-    const settings = makeSettings();
-    const service = new SettingsAdminService(settings as never);
-
-    await expect(
-      service.updateGroup([{
-        key: 'general.customEndpoints',
-        value: JSON.stringify([{
-          id: 'api',
-          name: '',
-          url: 'javascript:alert(1)',
-          description: '',
-          sortOrder: 1,
-        }]),
-      }]),
-    ).rejects.toMatchObject({ statusCode: 400 });
-    expect(settings.updateGroup).not.toHaveBeenCalled();
   });
 
   it('rejects oversized menus and unsupported visibility values', async () => {
@@ -136,7 +172,7 @@ describe('SettingsAdminService login agreement validation', () => {
 
     await expect(
       service.updateGroup([
-        { key: 'general.apiBaseUrl', value: 'ftp://api.example.com' },
+        { key: 'general.docUrl', value: 'ftp://docs.example.com' },
         { key: 'payment.mode', value: 'sandbox' },
       ]),
     ).rejects.toMatchObject({ statusCode: 400 });

@@ -19,7 +19,6 @@ SET "default_value" = CASE "key"
   WHEN 'security.rateLimitEnabled' THEN 'true'
   WHEN 'security.rateLimitPrefix' THEN 'enova:rl'
   WHEN 'general.supportEmail' THEN 'support@example.com'
-  WHEN 'general.appName' THEN 'EnovaMotion'
   ELSE "default_value"
 END
 WHERE "default_value" = '';

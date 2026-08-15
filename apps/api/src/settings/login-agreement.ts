@@ -5,6 +5,20 @@ export const LOGIN_AGREEMENT_MAX_SLUG_LENGTH = 80;
 export const LOGIN_AGREEMENT_MAX_TITLE_LENGTH = 200;
 export const LOGIN_AGREEMENT_MAX_CONTENT_LENGTH = 500_000;
 
+/** 日期格式校验：YYYY-MM-DD */
+export const LOGIN_AGREEMENT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 路由标识前缀：所有文档路由必须以此开头 */
+export const LOGIN_AGREEMENT_ROUTE_PREFIX = '/legal/';
+
+/** 默认提供的协议文档 */
+export const DEFAULT_LOGIN_AGREEMENT_DOCUMENTS = [
+  { slug: 'terms', title: '服务条款', contentMd: '# 服务条款\n\n请在此编辑服务条款内容。' },
+  { slug: 'usage-policy', title: '使用政策', contentMd: '# 使用政策\n\n请在此编辑使用政策内容。' },
+  { slug: 'supported-regions', title: '支持的国家和地区', contentMd: '# 支持的国家和地区\n\n请在此编辑支持的国家和地区内容。' },
+  { slug: 'service-specific-terms', title: '服务特定条款', contentMd: '# 服务特定条款\n\n请在此编辑服务特定条款内容。' },
+] as const;
+
 export interface LoginAgreementDocument {
   slug: string;
   title: string;
@@ -18,13 +32,26 @@ export class LoginAgreementValidationError extends Error {
   }
 }
 
+/**
+ * 从路由标识中提取 slug。
+ *
+ * 路由标识可以是完整路径（如 `/legal/terms`）或纯 slug（如 `terms`）。
+ * 如果以 `/` 开头，取最后一段路径作为 slug 来源；否则直接使用输入值。
+ * 最终 slug 经过规范化（小写、非字母数字转连字符、去首尾连字符）。
+ */
 function normalizeSlug(raw: unknown): string {
   if (typeof raw !== 'string') {
     throw new LoginAgreementValidationError('document slug must be a string');
   }
 
-  const slug = raw
-    .trim()
+  let input = raw.trim();
+  // 如果以 / 开头（完整路由路径），提取最后一段。
+  if (input.startsWith('/')) {
+    const segments = input.split('/').filter(Boolean);
+    input = segments.length > 0 ? segments[segments.length - 1] : '';
+  }
+
+  const slug = input
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
@@ -36,6 +63,22 @@ function normalizeSlug(raw: unknown): string {
     throw new LoginAgreementValidationError(`document slug must be <= ${LOGIN_AGREEMENT_MAX_SLUG_LENGTH} characters`);
   }
   return slug;
+}
+
+/** 校验条款更新日期格式（YYYY-MM-DD）。空值允许通过（表示未设置）。 */
+export function validateLoginAgreementDate(value: string | null | undefined): string {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) return '';
+  if (!LOGIN_AGREEMENT_DATE_PATTERN.test(trimmed)) {
+    throw new LoginAgreementValidationError('terms update date must be in YYYY-MM-DD format');
+  }
+  // 校验真实日期
+  const [year, month, day] = trimmed.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    throw new LoginAgreementValidationError('terms update date is not a valid calendar date');
+  }
+  return trimmed;
 }
 
 export function normalizeLoginAgreementDocuments(raw: unknown): LoginAgreementDocument[] {

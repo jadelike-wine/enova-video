@@ -7,7 +7,6 @@ import { publicApi, type SiteConfig } from './api'
 export const DEFAULT_SITE_CONFIG: SiteConfig = {
   siteUrl: 'http://localhost:3000',
   supportEmail: 'support@example.com',
-  appName: 'EnovaMotion',
   siteName: 'EnovaMotion',
   siteSubtitle: 'AI 智能创作平台',
   siteLogo: '',

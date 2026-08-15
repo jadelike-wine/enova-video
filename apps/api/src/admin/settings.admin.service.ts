@@ -3,7 +3,7 @@ import { DomainError, domainError, ERROR_CODES } from '@enova/contracts';
 import { isRegisteredSetting, SETTINGS_BY_KEY } from '@enova/db';
 import { createObjectStorage, validateFetchableUrl } from '@enova/provider';
 import { SettingsService, type SettingValueView } from '../settings/settings.service.js';
-import { LoginAgreementValidationError, parseLoginAgreementDocuments } from '../settings/login-agreement.js';
+import { LoginAgreementValidationError, parseLoginAgreementDocuments, validateLoginAgreementDate } from '../settings/login-agreement.js';
 
 /** 脱敏展示：Secret 返回 masked 尾缀或空。 */
 function maskSecret(value: string): string {
@@ -16,7 +16,6 @@ const MAX_URL_LENGTH = 2048;
 const MAX_LOGO_LENGTH = 410_000;
 const MAX_LOGO_BYTES = 300 * 1024;
 const MAX_CUSTOM_MENU_ITEMS = 100;
-const MAX_CUSTOM_ENDPOINTS = 50;
 const MAX_SORT_ORDER = 10_000;
 const MAX_SETTING_ID_LENGTH = 128;
 const MAX_SETTING_LABEL_LENGTH = 200;
@@ -134,6 +133,9 @@ export class SettingsAdminService {
       if (!Number.isFinite(n)) {
         throw domainError(ERROR_CODES.VALIDATION_ERROR, `Invalid number value for ${key}`, 400);
       }
+      if (key === 'table.defaultPageSize' && !Number.isInteger(n)) {
+        throw domainError(ERROR_CODES.VALIDATION_ERROR, 'table.defaultPageSize must be an integer', 400);
+      }
       if (def.min !== undefined && n < def.min) {
         throw domainError(ERROR_CODES.VALIDATION_ERROR, `${key} must be >= ${def.min}`, 400);
       }
@@ -179,6 +181,9 @@ export class SettingsAdminService {
         const n = Number(normalized);
         if (!Number.isFinite(n)) {
           throw domainError(ERROR_CODES.VALIDATION_ERROR, `Invalid number value for ${key}`, 400);
+        }
+        if (key === 'table.defaultPageSize' && !Number.isInteger(n)) {
+          throw domainError(ERROR_CODES.VALIDATION_ERROR, 'table.defaultPageSize must be an integer', 400);
         }
         if (def.min !== undefined && n < def.min) {
           throw domainError(ERROR_CODES.VALIDATION_ERROR, `${key} must be >= ${def.min}`, 400);
@@ -332,6 +337,16 @@ export class SettingsAdminService {
     if (key === 'general.loginAgreementDocuments') {
       this.parseLoginAgreementDocuments(value);
     }
+    if (key === 'general.loginAgreementUpdatedAt') {
+      try {
+        validateLoginAgreementDate(value);
+      } catch (error) {
+        if (error instanceof LoginAgreementValidationError) {
+          throw domainError(ERROR_CODES.VALIDATION_ERROR, error.message, 400);
+        }
+        throw error;
+      }
+    }
     if (key !== 'general.loginAgreementEnabled' && key !== 'general.loginAgreementDocuments') return;
 
     const current = await this.settings.getMany([
@@ -351,6 +366,19 @@ export class SettingsAdminService {
   }
 
   private async validateLoginAgreementGroup(items: Array<{ key: string; value: string }>): Promise<void> {
+    // 日期格式校验
+    const dateItem = items.find(({ key }) => key === 'general.loginAgreementUpdatedAt');
+    if (dateItem) {
+      try {
+        validateLoginAgreementDate(dateItem.value);
+      } catch (error) {
+        if (error instanceof LoginAgreementValidationError) {
+          throw domainError(ERROR_CODES.VALIDATION_ERROR, error.message, 400);
+        }
+        throw error;
+      }
+    }
+
     if (!items.some(({ key }) => key === 'general.loginAgreementEnabled' || key === 'general.loginAgreementDocuments')) return;
 
     const current = await this.settings.getMany([
@@ -371,7 +399,7 @@ export class SettingsAdminService {
    * 这些校验不区分生产/开发环境，始终生效。
    */
   private async validateGeneralSetting(key: string, value: string): Promise<void> {
-    const urlSettingKeys = new Set(['general.siteUrl', 'general.apiBaseUrl', 'general.docUrl']);
+    const urlSettingKeys = new Set(['general.siteUrl', 'general.docUrl']);
     if (urlSettingKeys.has(key) && value) {
       await this.validateHttpUrl(key, value);
     }
@@ -402,10 +430,11 @@ export class SettingsAdminService {
       await this.validateCustomMenuItems(value);
     }
 
-    // 自定义端点 JSON 校验。
-    if (key === 'general.customEndpoints' && value) {
-      await this.validateCustomEndpoints(value);
+    // 邮箱域名白名单 JSON 校验。
+    if (key === 'auth.emailDomainWhitelist' && value) {
+      this.validateEmailDomainWhitelist(value);
     }
+
   }
 
   private async getUrlGuardOptions() {
@@ -476,6 +505,79 @@ export class SettingsAdminService {
     return Array.from(valid).sort((a, b) => a - b);
   }
 
+  /** 校验邮箱域名白名单 JSON 格式和每项格式。 */
+  private validateEmailDomainWhitelist(raw: string): void {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        throw new Error('emailDomainWhitelist must be a JSON array');
+      }
+      const domainPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+      for (const [index, item] of parsed.entries()) {
+        if (typeof item !== 'string') {
+          throw new Error(`emailDomainWhitelist[${index}] must be a string`);
+        }
+        const value = item.trim().toLowerCase();
+        if (!value) continue;
+        // 支持 @example.com 或 example.com 或 *.edu.cn
+        if (value.startsWith('@')) {
+          const domain = value.slice(1);
+          if (!domainPattern.test(domain)) {
+            throw new Error(`emailDomainWhitelist[${index}] has invalid domain: ${item}`);
+          }
+        } else if (value.startsWith('*.')) {
+          const domain = value.slice(2);
+          if (!domainPattern.test(domain)) {
+            throw new Error(`emailDomainWhitelist[${index}] has invalid wildcard domain: ${item}`);
+          }
+        } else if (!domainPattern.test(value)) {
+          throw new Error(`emailDomainWhitelist[${index}] has invalid domain: ${item}`);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid JSON';
+      throw domainError(ERROR_CODES.VALIDATION_ERROR, `Invalid emailDomainWhitelist: ${message}`, 400);
+    }
+  }
+
+  /** 规范化邮箱域名白名单：解析 JSON、去重、统一为 @domain 格式。 */
+  private normalizeEmailDomainWhitelist(raw: string): string {
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return '[]';
+      const domainPattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const item of parsed) {
+        if (typeof item !== 'string') continue;
+        const value = item.trim().toLowerCase();
+        if (!value) continue;
+        // 统一为 @domain 或 *.domain 格式
+        if (value.startsWith('*.')) {
+          const domain = value.slice(2);
+          if (!domainPattern.test(domain)) continue;
+          const normalized = '*.' + domain;
+          if (!seen.has(normalized)) {
+            seen.add(normalized);
+            out.push(normalized);
+          }
+        } else {
+          let domain = value;
+          if (value.startsWith('@')) domain = value.slice(1);
+          if (!domainPattern.test(domain)) continue;
+          const normalized = '@' + domain;
+          if (!seen.has(normalized)) {
+            seen.add(normalized);
+            out.push(normalized);
+          }
+        }
+      }
+      return JSON.stringify(out);
+    } catch {
+      return '[]';
+    }
+  }
+
   /** 校验自定义菜单项 JSON 格式。 */
   private async validateCustomMenuItems(raw: string): Promise<void> {
     try {
@@ -523,49 +625,6 @@ export class SettingsAdminService {
     }
   }
 
-  private async validateCustomEndpoints(raw: string): Promise<void> {
-    try {
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        throw new Error('customEndpoints must be a JSON array');
-      }
-      if (parsed.length > MAX_CUSTOM_ENDPOINTS) {
-        throw new Error(`customEndpoints supports at most ${MAX_CUSTOM_ENDPOINTS} items`);
-      }
-      const ids = new Set<string>();
-      for (const [index, item] of parsed.entries()) {
-        if (!item || typeof item !== 'object') {
-          throw new Error('Each endpoint must be an object');
-        }
-        const record = item as StructuredRecord;
-        if (typeof record.id !== 'string' || !record.id.trim() || record.id.length > MAX_SETTING_ID_LENGTH) {
-          throw new Error('Each endpoint must have a non-empty id');
-        }
-        if (ids.has(record.id)) {
-          throw new Error(`Duplicate endpoint id: ${record.id}`);
-        }
-        ids.add(record.id);
-        if (typeof record.name !== 'string' || !record.name.trim() || record.name.length > MAX_SETTING_LABEL_LENGTH) {
-          throw new Error('Each endpoint must have a non-empty name');
-        }
-        if (typeof record.url !== 'string' || !record.url.trim()) {
-          throw new Error('Each endpoint must have a URL');
-        }
-        if (record.description !== undefined && (typeof record.description !== 'string' || record.description.length > 1000)) {
-          throw new Error('Each endpoint description must be a string of at most 1000 characters');
-        }
-        if (record.sortOrder !== undefined && (typeof record.sortOrder !== 'number' || !Number.isInteger(record.sortOrder) || record.sortOrder < 1 || record.sortOrder > MAX_SORT_ORDER)) {
-          throw new Error(`Each endpoint sortOrder must be an integer from 1 to ${MAX_SORT_ORDER}`);
-        }
-        await this.validateHttpUrl(`customEndpoints[${index}].url`, record.url);
-      }
-    } catch (error) {
-      if (error instanceof DomainError) throw error;
-      const message = error instanceof Error ? error.message : 'Invalid JSON';
-      throw domainError(ERROR_CODES.VALIDATION_ERROR, `Invalid customEndpoints: ${message}`, 400);
-    }
-  }
-
   private parseBoolean(value: string | null | undefined): boolean {
     return ['1', 'true', 'yes', 'on'].includes((value ?? '').toLowerCase());
   }
@@ -592,6 +651,11 @@ export class SettingsAdminService {
         return value; // 校验会在 validateGeneralSetting 中拦截
       }
       return normalized.join(',');
+    }
+
+    // 邮箱域名白名单：保存时规范化为统一 JSON 格式。
+    if (key === 'auth.emailDomainWhitelist' && value) {
+      return this.normalizeEmailDomainWhitelist(value);
     }
 
     return value;

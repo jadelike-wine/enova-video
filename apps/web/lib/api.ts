@@ -166,10 +166,10 @@ async function json<T>(url: string, options: RequestInit = {}): Promise<T> {
 // ---------------------------------------------------------------------------
 
 export const authApi = {
-  register: (email: string, password: string, turnstileToken?: string, agreementRevision?: string) =>
+  register: (email: string, password: string, turnstileToken?: string, agreementRevision?: string, invitationCode?: string, promoCode?: string) =>
     json<AuthResult>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, turnstileToken, agreementRevision }),
+      body: JSON.stringify({ email, password, turnstileToken, agreementRevision, invitationCode, promoCode }),
     }),
   login: (email: string, password: string, turnstileToken?: string, agreementRevision?: string) =>
     json<AuthResult>('/auth/login', {
@@ -206,19 +206,9 @@ export interface CustomMenuItem {
   enabled?: boolean
 }
 
-/** Structured custom endpoint draft used by the system settings workbench. */
-export interface CustomEndpoint {
-  id: string
-  name: string
-  url: string
-  description: string
-  sortOrder: number
-}
-
 export interface SiteConfig {
   siteUrl: string
   supportEmail: string
-  appName: string
   siteName: string
   siteSubtitle: string
   siteLogo: string
@@ -232,10 +222,23 @@ export interface SiteConfig {
   tablePageSizeOptions: number[]
 }
 
+export interface AuthConfig {
+  openRegistration: boolean
+  emailVerification: boolean
+  emailDomainWhitelist: string[]
+  nonWhitelistDomainLimit: boolean
+  enablePromoCode: boolean
+  requireInvitationCode: boolean
+  enablePasswordReset: boolean
+  turnstileEnabled: boolean
+  turnstileSiteKey: string
+}
+
 export const publicApi = {
   loginAgreement: () => json<LoginAgreementConfig>('/public/login-agreement'),
   legalDocument: (slug: string) => json<LegalDocument>(`/public/legal/${encodeURIComponent(slug)}`),
   siteConfig: () => json<SiteConfig>('/public/site-config'),
+  authConfig: () => json<AuthConfig>('/public/auth-config'),
 }
 
 export const turnstileApi = {

@@ -3,9 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
-import { marked } from 'marked'
-import DOMPurify from 'isomorphic-dompurify'
 import { publicApi, type LegalDocument } from '@/lib/api'
+import { renderMarkdown } from '@/lib/markdown'
 
 export default function LegalDocumentPage() {
   const t = useTranslations('legal')
@@ -41,7 +40,7 @@ export default function LegalDocumentPage() {
   if (loading) return <main className="mx-auto max-w-3xl p-8 text-gray-500">{t('loading')}</main>
   if (notFound || !document) return <main className="mx-auto max-w-3xl p-8 text-gray-500">{t('notFound')}</main>
 
-  const html = DOMPurify.sanitize(marked.parse(document.contentMd, { breaks: true }) as string)
+  const html = renderMarkdown(document.contentMd)
   return (
     <main className="mx-auto max-w-3xl p-6 sm:p-10">
       <article className="glass-card p-6 sm:p-10">

@@ -54,14 +54,12 @@ export const AGREEMENT_KEYS = [
 
 export const AGREEMENT_DOCUMENTS_KEY = 'general.loginAgreementDocuments'
 
-/** Settings moved from the registry's general/customization groups to Features. */
+/** Settings moved from the registry's general/customization group to Features. */
 export const CUSTOMIZATION_KEYS: ReadonlySet<string> = new Set([
   'general.homeContent',
   'general.compactHomeEnabled',
   'general.hideCcsImportButton',
   'general.customMenuItems',
-  'table.defaultPageSize',
-  'table.pageSizeOptions',
 ])
 
 export const SETTINGS_TABS: readonly SettingsTabDef[] = [
@@ -69,7 +67,7 @@ export const SETTINGS_TABS: readonly SettingsTabDef[] = [
     key: 'general',
     label: '通用设置',
     description: '站点名称、副标题、Logo、客服联系方式、文档链接等基础信息。',
-    groups: ['general'],
+    groups: ['general', 'table'],
     excludeKeys: [...AGREEMENT_KEYS, ...CUSTOMIZATION_KEYS],
   },
   {
@@ -82,8 +80,8 @@ export const SETTINGS_TABS: readonly SettingsTabDef[] = [
   {
     key: 'features',
     label: '功能开关',
-    description: '首页内容、简洁首页、自定义菜单、表格分页、日志级别与敏感内容开关等功能性配置。',
-    groups: ['customization', 'table', 'log'],
+    description: '首页内容、自定义菜单、日志级别与敏感内容开关等功能性配置。',
+    groups: ['customization', 'log'],
   },
   {
     key: 'security',
@@ -134,11 +132,9 @@ export const GENERAL_SECTIONS: readonly SettingsSectionDef[] = [
   {
     key: 'branding',
     title: '品牌与站点基础信息',
-    description: '站点 URL、应用名称、站点名称、副标题和 Logo。',
+    description: '站点 URL、站点名称、副标题和 Logo。',
     keys: [
       'general.siteUrl',
-      'general.apiBaseUrl',
-      'general.appName',
       'general.siteName',
       'general.siteSubtitle',
       'general.siteLogo',
@@ -152,12 +148,6 @@ export const GENERAL_SECTIONS: readonly SettingsSectionDef[] = [
     description: '统一控制后台与用户侧表格组件的默认分页行为。',
     keys: ['table.defaultPageSize', 'table.pageSizeOptions'],
     groups: ['table'],
-  },
-  {
-    key: 'endpoints',
-    title: '自定义端点',
-    description: '管理 API/站点端点名称、URL、描述和排序。',
-    keys: ['general.apiBaseUrl', 'general.customEndpoints'],
   },
   {
     key: 'support',

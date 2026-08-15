@@ -31,6 +31,40 @@ describe('LoginAgreementService', () => {
     expect(config.documents[0].contentMd).toBe('# 内容');
   });
 
+  it('extracts slug from full route path and normalizes it', async () => {
+    const settings = makeSettings({
+      'general.loginAgreementEnabled': 'true',
+      'general.loginAgreementMode': 'modal',
+      'general.loginAgreementUpdatedAt': '2026-08-14',
+      'general.loginAgreementDocuments': JSON.stringify([
+        { slug: '/legal/terms', title: '服务条款', contentMd: '# 内容' },
+        { slug: '/legal/usage-policy', title: '使用政策', contentMd: '# 使用政策' },
+      ]),
+    });
+    const service = new LoginAgreementService(settings as never, undefined as never);
+    const config = await service.getConfig();
+
+    expect(config.documents).toHaveLength(2);
+    expect(config.documents[0].slug).toBe('terms');
+    expect(config.documents[1].slug).toBe('usage-policy');
+  });
+
+  it('retrieves document by slug even when stored as full route path', async () => {
+    const settings = makeSettings({
+      'general.loginAgreementEnabled': 'true',
+      'general.loginAgreementMode': 'modal',
+      'general.loginAgreementUpdatedAt': '2026-08-14',
+      'general.loginAgreementDocuments': JSON.stringify([
+        { slug: '/legal/terms', title: '服务条款', contentMd: '# 内容' },
+      ]),
+    });
+    const service = new LoginAgreementService(settings as never, undefined as never);
+
+    const doc = await service.getDocument('terms');
+    expect(doc.title).toBe('服务条款');
+    expect(doc.contentMd).toBe('# 内容');
+  });
+
   it('requires the current revision before authentication can continue', async () => {
     const settings = makeSettings({
       'general.loginAgreementEnabled': 'true',

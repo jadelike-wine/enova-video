@@ -101,8 +101,8 @@ export const envSchema = z.object({
   APP_PASSWORD_RESET_URL: z.string().default('http://localhost:3000/zh-CN/auth/reset-password'),
   /** 邮箱验证页面 URL（前端）。 */
   APP_EMAIL_VERIFY_URL: z.string().default('http://localhost:3000/zh-CN/auth/verify-email'),
-  /** 应用名称（邮件品牌/显示）。 */
-  APP_NAME: z.string().default('EnovaMotion'),
+  /** 站点名称（邮件品牌/显示）。 */
+  SITE_NAME: z.string().default('EnovaMotion'),
   /** 站点对外访问的完整 URL（CORS 允许列表 + cookie secure 判断）。 */
   APP_SITE_URL: z.string().default('http://localhost:3000'),
 
@@ -210,7 +210,9 @@ export const envSchema = z.object({
   LOGIN_AGREEMENT_ENABLED: envBool(false),
   LOGIN_AGREEMENT_MODE: z.enum(['modal', 'checkbox']).default('modal'),
   LOGIN_AGREEMENT_UPDATED_AT: z.string().default(''),
-  LOGIN_AGREEMENT_DOCUMENTS: z.string().default('[]'),
+  LOGIN_AGREEMENT_DOCUMENTS: z.string().default(
+    '[{"slug":"terms","title":"服务条款","contentMd":"# 服务条款\\n\\n请在此编辑服务条款内容。"},{"slug":"usage-policy","title":"使用政策","contentMd":"# 使用政策\\n\\n请在此编辑使用政策内容。"},{"slug":"supported-regions","title":"支持的国家和地区","contentMd":"# 支持的国家和地区\\n\\n请在此编辑支持的国家和地区内容。"},{"slug":"service-specific-terms","title":"服务特定条款","contentMd":"# 服务特定条款\\n\\n请在此编辑服务特定条款内容。"}]',
+  ),
 
   // ---- 支付 ----
   /** 支付模式：sandbox=本地演示（无需商户密钥）；alipay/wechat=真实渠道。 */

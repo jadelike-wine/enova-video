@@ -43,12 +43,35 @@ vi.mock('antd', () => {
     element('select', { ...props, value, onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) }, options.map((option) => element('option', { key: option.value, value: option.value }, option.label)))
   const Tag = ({ children }: { children?: ReactNode }) => element('span', {}, children)
   const Empty = ({ description }: { description?: ReactNode }) => element('div', {}, description)
-  return { Button, Input, InputNumber, Select, Switch, Segmented, Tag, Empty }
+  const DatePicker = ({ value, onChange, ...props }: { value?: unknown; onChange?: (value: unknown) => void; [key: string]: unknown }) =>
+    element('input', { ...props, type: 'date', 'data-testid': 'date-picker', value: typeof value === 'object' && value !== null ? String(value) : '', onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) })
+  return { Button, DatePicker, Input, InputNumber, Select, Switch, Segmented, Tag, Empty }
 })
 
 vi.mock('next/link', () => ({
   default: ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) => React.createElement('a', props, children),
 }))
+
+vi.mock('dayjs', () => {
+  function dayjsMock(date?: string | Date | null) {
+    const d = date ? new Date(date) : new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const obj = {
+      isValid: () => !Number.isNaN(d.getTime()),
+      format: (fmt: string) => {
+        const y = d.getFullYear()
+        const m = pad(d.getMonth() + 1)
+        const day = pad(d.getDate())
+        return (fmt || 'YYYY-MM-DD')
+          .replace('YYYY', String(y))
+          .replace('MM', m)
+          .replace('DD', day)
+      },
+    }
+    return obj
+  }
+  return { default: dayjsMock }
+})
 
 function fixture(def: (typeof SETTINGS)[number]): SettingView {
   return {

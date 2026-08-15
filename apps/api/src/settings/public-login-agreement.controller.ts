@@ -70,9 +70,6 @@ class PublicSiteConfigDto {
   supportEmail!: string;
 
   @ApiProperty({ example: 'EnovaMotion' })
-  appName!: string;
-
-  @ApiProperty({ example: 'EnovaMotion' })
   siteName!: string;
 
   @ApiProperty({ example: 'AI 智能创作平台' })
@@ -104,6 +101,36 @@ class PublicSiteConfigDto {
 
   @ApiProperty({ example: [10, 20, 50, 100] })
   tablePageSizeOptions!: number[];
+}
+
+/** 公开注册配置 DTO（无需登录，前端注册页消费）。 */
+class PublicAuthConfigDto {
+  @ApiProperty()
+  openRegistration!: boolean;
+
+  @ApiProperty()
+  emailVerification!: boolean;
+
+  @ApiProperty({ type: [String], description: '邮箱域名白名单（@domain 或 *.domain 格式）' })
+  emailDomainWhitelist!: string[];
+
+  @ApiProperty()
+  nonWhitelistDomainLimit!: boolean;
+
+  @ApiProperty()
+  enablePromoCode!: boolean;
+
+  @ApiProperty()
+  requireInvitationCode!: boolean;
+
+  @ApiProperty()
+  enablePasswordReset!: boolean;
+
+  @ApiProperty()
+  turnstileEnabled!: boolean;
+
+  @ApiProperty()
+  turnstileSiteKey!: string;
 }
 
 /** 安全解析自定义菜单项 JSON，过滤无效/危险数据。 */
@@ -175,7 +202,6 @@ export class PublicLoginAgreementController {
     const keys = [
       'general.siteUrl',
       'general.supportEmail',
-      'general.appName',
       'general.siteName',
       'general.siteSubtitle',
       'general.siteLogo',
@@ -211,7 +237,6 @@ export class PublicLoginAgreementController {
     return {
       siteUrl: getStr('general.siteUrl', 'http://localhost:3000'),
       supportEmail: getStr('general.supportEmail', 'support@example.com'),
-      appName: getStr('general.appName', 'EnovaMotion'),
       siteName: getStr('general.siteName', 'EnovaMotion'),
       siteSubtitle: getStr('general.siteSubtitle', ''),
       siteLogo: getStr('general.siteLogo', ''),
@@ -223,6 +248,59 @@ export class PublicLoginAgreementController {
       customMenuItems: parseCustomMenuItems(values.get('general.customMenuItems')),
       tableDefaultPageSize: getNum('table.defaultPageSize', 20),
       tablePageSizeOptions: parsePageSizeOptions(values.get('table.pageSizeOptions')),
+    };
+  }
+
+  @Get('auth-config')
+  @ApiOperation({ summary: '返回公开注册配置（开放注册、邮箱验证、白名单等，无需登录）' })
+  async getAuthConfig(): Promise<PublicAuthConfigDto> {
+    const keys = [
+      'auth.openRegistration',
+      'auth.emailVerification',
+      'auth.emailDomainWhitelist',
+      'auth.nonWhitelistDomainLimit',
+      'auth.enablePromoCode',
+      'auth.requireInvitationCode',
+      'auth.enablePasswordReset',
+      'auth.turnstileEnabled',
+      'auth.turnstileSiteKey',
+    ];
+    const values = await this.settings.getMany(keys);
+
+    const getBool = (key: string, fallback: boolean): boolean => {
+      const v = values.get(key);
+      if (v == null) return fallback;
+      return v === 'true' || v === '1' || v === 'yes' || v === 'on';
+    };
+
+    const getStr = (key: string, fallback: string): string => {
+      const v = values.get(key);
+      return (v != null ? v.trim() : '') || fallback;
+    };
+
+    let whitelist: string[] = [];
+    try {
+      const raw = values.get('auth.emailDomainWhitelist');
+      if (raw && raw.trim()) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          whitelist = parsed.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+        }
+      }
+    } catch {
+      // 无效 JSON 返回空数组
+    }
+
+    return {
+      openRegistration: getBool('auth.openRegistration', true),
+      emailVerification: getBool('auth.emailVerification', false),
+      emailDomainWhitelist: whitelist,
+      nonWhitelistDomainLimit: getBool('auth.nonWhitelistDomainLimit', false),
+      enablePromoCode: getBool('auth.enablePromoCode', false),
+      requireInvitationCode: getBool('auth.requireInvitationCode', false),
+      enablePasswordReset: getBool('auth.enablePasswordReset', true),
+      turnstileEnabled: getBool('auth.turnstileEnabled', false),
+      turnstileSiteKey: getStr('auth.turnstileSiteKey', ''),
     };
   }
 }

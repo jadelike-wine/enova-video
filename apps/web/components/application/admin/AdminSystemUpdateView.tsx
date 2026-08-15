@@ -7,6 +7,55 @@ import { useDialog } from '../DialogProvider'
 import { useSession } from '@/lib/auth'
 import { formatErrorMessage } from '@/lib/errorMessage'
 import { buildSuccessMessage } from '@/lib/system-update-logic'
+import { CopyBox } from './CopyBox'
+
+// ---------------------------------------------------------------------------
+// sessionStorage 键：更新成功后标记自动刷新
+// 写入后触发 window.location.reload()，刷新后读取并消费（删除），
+// 避免重复刷新或数据丢失。消费标记后自动触发 force-check 加载最新版本。
+// ---------------------------------------------------------------------------
+const RELOAD_FLAG_KEY = 'sys_update_pending_reload'
+
+interface PendingReload {
+  /** 目标版本号，刷新后用于验证 */  targetVersion?: string
+  /** 操作类型，用于成功通知文案 */
+  action: 'update' | 'rollback'
+  /** 写入时间戳，超时自动失效（5 分钟） */
+  ts: number
+}
+
+const PENDING_TTL_MS = 5 * 60 * 1000
+
+function readPendingReload(): PendingReload | null {
+  try {
+    const raw = sessionStorage.getItem(RELOAD_FLAG_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as PendingReload
+    if (Date.now() - parsed.ts > PENDING_TTL_MS) {
+      sessionStorage.removeItem(RELOAD_FLAG_KEY)
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writePendingReload(pending: PendingReload): void {
+  try {
+    sessionStorage.setItem(RELOAD_FLAG_KEY, JSON.stringify(pending))
+  } catch {
+    // sessionStorage 不可用时静默降级
+  }
+}
+
+function clearPendingReload(): void {
+  try {
+    sessionStorage.removeItem(RELOAD_FLAG_KEY)
+  } catch {
+    // ignore
+  }
+}
 
 function dateText(value?: string): string {
   if (!value) return '—'
@@ -26,6 +75,10 @@ export default function AdminSystemUpdateView() {
   const successNotifiedRef = useRef(false)
   // 当前操作的 action 类型，用于区分「更新」和「回滚」通知文案
   const actionRef = useRef<'update' | 'rollback'>('update')
+  // 防止重复触发 reload 的幂等标记
+  const reloadTriggeredRef = useRef(false)
+  // 刷新后展示的成功提示内容（release body）
+  const [releaseBody, setReleaseBody] = useState<string>('')
 
   // ------------------------------------------------------------------
   // 统一成功通知：根据 action 选择正确动词，避免回滚被误标为「更新」
@@ -64,8 +117,23 @@ export default function AdminSystemUpdateView() {
     }
   }, [alert])
 
+  // ------------------------------------------------------------------
+  // 页面加载时检查是否有「更新成功后待刷新」标记
+  // 如果存在且未过期：消费标记 → 强制刷新版本 → 展示成功通知
+  // 这确保刷新后展示最新版本内容，且不会重复加载
+  // ------------------------------------------------------------------
   useEffect(() => {
-    void load()
+    const pending = readPendingReload()
+    if (pending) {
+      clearPendingReload()
+      actionRef.current = pending.action
+      // 强制刷新获取最新版本信息
+      void load(true).then(() => {
+        message.success(buildSuccessMessage(pending.action, pending.targetVersion))
+      })
+    } else {
+      void load()
+    }
     return () => {
       if (timer.current) clearInterval(timer.current)
     }
@@ -78,6 +146,10 @@ export default function AdminSystemUpdateView() {
     try {
       const fresh = await systemUpdateApi.check()
       setInfo(fresh)
+      // 保存 release body 供 CopyBox 展示
+      if (fresh.release_info?.body) {
+        setReleaseBody(fresh.release_info.body)
+      }
       if (fresh.enabled) {
         try {
           const result = await systemUpdateApi.rollbackVersions()
@@ -94,6 +166,26 @@ export default function AdminSystemUpdateView() {
       // 版本刷新失败不影响 operation 状态判定
     }
   }, [notifySuccess])
+
+  // ------------------------------------------------------------------
+  // 更新成功后自动刷新页面：
+  // 1. 写入 sessionStorage 标记（包含目标版本、操作类型、时间戳）
+  // 2. 延迟 1.5s 后 window.location.reload()（让用户看到成功通知）
+  // 3. 刷新后组件重新挂载，读取标记 → 强制 check → 展示最新版本
+  // 使用 reloadTriggeredRef 保证只触发一次，避免重复加载
+  // ------------------------------------------------------------------
+  const triggerAutoReload = useCallback((targetVersion?: string) => {
+    if (reloadTriggeredRef.current) return
+    reloadTriggeredRef.current = true
+    writePendingReload({
+      targetVersion,
+      action: actionRef.current,
+      ts: Date.now(),
+    })
+    setTimeout(() => {
+      window.location.reload()
+    }, 1500)
+  }, [])
 
   // ------------------------------------------------------------------
   // 通过版本号变化判断更新是否成功（服务重启后 operation 可能丢失）
@@ -171,6 +263,8 @@ export default function AdminSystemUpdateView() {
         if (current.current_version !== prevVersion) {
           setOperation((prev) => (prev ? { ...prev, status: 'success', output: (prev.output || '') + '\n[auto-resolved] API 已重启，通过版本号变化确认操作成功' } : prev))
           notifySuccess(current.current_version)
+          // 自动刷新整页
+          triggerAutoReload(current.current_version)
         } else {
           setOperation((prev) => (prev ? { ...prev, status: 'failed', output: (prev.output || '') + '\n[auto-resolved] 轮询超时，版本号未变化，更新可能未生效' } : prev))
           void alert({ title: '更新状态未知', message: '轮询超时，无法确认更新是否完成。请刷新页面检查当前版本。' })
@@ -193,8 +287,11 @@ export default function AdminSystemUpdateView() {
             stopPolling()
             const versionLabel = targetVersion || next.target || info?.latest_version
             notifySuccess(versionLabel)
-            // 局部刷新版本信息
-            void refreshAfterSuccess(targetVersion || next.target || undefined)
+            // 局部刷新版本信息（获取最新 release body 等）
+            void refreshAfterSuccess(targetVersion || next.target || undefined).then(() => {
+              // 自动刷新整页，确保所有前端资源（JS/CSS）也更新到最新版本
+              triggerAutoReload(versionLabel)
+            })
           } else if (next.status === 'failed') {
             stopPolling()
             void alert({ title: '更新失败', message: next.output?.trim() || '操作未能完成，请检查服务端日志' })
@@ -208,6 +305,8 @@ export default function AdminSystemUpdateView() {
                 if (ok) {
                   stopPolling()
                   setOperation((prev) => (prev ? { ...prev, status: 'success', output: (prev.output || '') + '\n[auto-resolved] 通过版本号变化确认更新成功' } : prev))
+                  // 自动刷新整页
+                  triggerAutoReload(targetVersion || undefined)
                 }
               })
             }
@@ -222,7 +321,7 @@ export default function AdminSystemUpdateView() {
           }
         })
     }, 2000)
-  }, [alert, info?.current_version, info?.latest_version, stopPolling, refreshAfterSuccess, checkVersionSuccess, notifySuccess])
+  }, [alert, info?.current_version, info?.latest_version, stopPolling, refreshAfterSuccess, checkVersionSuccess, notifySuccess, triggerAutoReload])
 
   const runUpdate = useCallback(async (version?: string) => {
     if (working) return // 防止连续点击
@@ -305,6 +404,20 @@ export default function AdminSystemUpdateView() {
 
             {info.warning && <Alert type="warning" message={info.warning} />}
 
+            {/* 更新成功后展示 release body 复制框 */}
+            {releaseBody && (
+              <CopyBox
+                label="更新日志"
+                description={
+                  <span>
+                    版本 <code className="text-cyan-600">{info.current_version}</code> 的更新内容，可一键复制。
+                  </span>
+                }
+                value={releaseBody}
+                onCopied={() => message.success('已复制更新日志')}
+              />
+            )}
+
             <Card
               title="发布信息"
               extra={
@@ -318,6 +431,17 @@ export default function AdminSystemUpdateView() {
                   <p className="text-gray-800">{info.release_info.name || info.latest_version}</p>
                   <p className="text-xs text-gray-400 mt-1">发布时间：{dateText(info.release_info.published_at)}</p>
                   <a className="text-xs text-cyan-600 hover:text-cyan-700 inline-block mt-3" href={info.release_info.html_url} target="_blank" rel="noreferrer">查看 GitHub Release ↗</a>
+                  {/* 展示 release body 并提供一键复制 */}
+                  {info.release_info.body && (
+                    <div className="mt-4">
+                      <CopyBox
+                        label="发布说明"
+                        description="点击右侧按钮一键复制发布说明内容"
+                        value={info.release_info.body}
+                        onCopied={() => message.success('已复制发布说明')}
+                      />
+                    </div>
+                  )}
                 </>
               ) : <p className="text-gray-400 text-sm">暂无发布说明</p>}
             </Card>

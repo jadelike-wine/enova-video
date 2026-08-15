@@ -48,8 +48,6 @@ function fixture(key: string, value: string, label: string, group = 'general', v
 
 const fixtureSettings: SettingView[] = [
   fixture('general.siteUrl', 'https://example.com', '站点 URL'),
-  fixture('general.apiBaseUrl', 'https://api.example.com', 'API 地址'),
-  fixture('general.appName', 'EnovaMotion', '应用名称'),
   fixture('general.siteName', '灵动创影', '站点名称'),
   fixture('general.siteSubtitle', 'AI 创作平台', '站点副标题'),
   fixture('general.siteLogo', '', '站点 Logo'),
@@ -60,7 +58,6 @@ const fixtureSettings: SettingView[] = [
   fixture('general.compactHomeEnabled', 'true', '简洁首页', 'customization', 'boolean'),
   fixture('general.hideCcsImportButton', 'false', '隐藏 CCS 导入按钮', 'customization', 'boolean'),
   fixture('general.customMenuItems', '[{"id":"docs","label":"文档","url":"https://docs.example.com","visibility":"user","enabled":true,"sortOrder":1}]', '自定义菜单页面', 'customization'),
-  fixture('general.customEndpoints', '[{"id":"api","name":"公共 API","url":"https://api.example.com","description":"接口地址","sortOrder":1}]', '自定义端点'),
   fixture('table.defaultPageSize', '20', '默认每页条数', 'table', 'number'),
   fixture('table.pageSizeOptions', '10,20,50', '可选每页条数列表', 'table'),
 ]
@@ -103,10 +100,7 @@ describe('GeneralSettingsPanel', () => {
     expect(container.textContent).toContain('通用表格设置')
     expect(container.querySelector('[data-testid="logo-uploader"] input[type="file"]')?.getAttribute('accept')).toContain('image/png')
     expect(container.querySelector('[data-testid="custom-menu-editor"]')).not.toBeNull()
-    expect(container.querySelector('[data-testid="custom-endpoint-editor"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="custom-menu-json"]')).toBeNull()
-    expect(container.querySelector('[data-testid="custom-endpoint-json"]')).toBeNull()
-
     await act(async () => root.unmount())
   })
 

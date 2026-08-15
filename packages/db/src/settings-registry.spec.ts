@@ -42,10 +42,6 @@ describe('runtime settings registry', () => {
       envDefault: '587',
     });
     expect(SETTINGS_BY_KEY.get('general.supportEmail')?.envKey).toBe('SUPPORT_EMAIL');
-    expect(SETTINGS_BY_KEY.get('general.appName')).toMatchObject({
-      envKey: 'APP_NAME',
-      envDefault: 'EnovaMotion',
-    });
     expect(SETTINGS_BY_KEY.get('security.rateLimitEnabled')).toMatchObject({
       envKey: 'RATE_LIMIT_ENABLED',
       envDefault: 'true',
@@ -55,18 +51,6 @@ describe('runtime settings registry', () => {
   });
 
   it('registers the structured general settings consumed by the workbench', () => {
-    expect(SETTINGS_BY_KEY.get('general.apiBaseUrl')).toMatchObject({
-      valueType: 'string',
-      group: 'general',
-      envKey: 'API_BASE_URL',
-      envDefault: '',
-    });
-    expect(SETTINGS_BY_KEY.get('general.customEndpoints')).toMatchObject({
-      valueType: 'string',
-      group: 'general',
-      envKey: 'CUSTOM_ENDPOINTS',
-      envDefault: '[]',
-    });
     expect(SETTINGS_BY_KEY.get('general.siteUrl')).toMatchObject({
       valueType: 'string',
       group: 'general',

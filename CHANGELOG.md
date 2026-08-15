@@ -10,6 +10,14 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.0] — 2026-08-15
+
+### Added
+- Admin SMTP connection test (no email sent): the host is validated against the same SSRF guard used for provider URLs (private/link-local addresses blocked, optional DNS re-check), the transport enforces timeouts, and the client only receives a fixed success/failure message while details go to server logs.
+- Admin AI provider management page: browse providers and their credentials, and create/update/delete providers and credentials from the UI, with step-up password verification for credential mutations.
+
+---
+
 ## [1.6.0] — 2026-08-15
 
 ### Added

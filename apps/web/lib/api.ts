@@ -365,6 +365,12 @@ export interface EmailTemplatePreview {
 }
 
 export const emailApi = {
+  // 测试 SMTP 连接（不发送邮件）
+  testSmtpConnection: (config?: { host?: string; port?: number; secure?: boolean; user?: string; password?: string }) =>
+    json<{ ok: true; message: string }>('/admin/email/test-smtp', {
+      method: 'POST',
+      body: JSON.stringify(config ?? {}),
+    }),
   // 测试邮件
   sendTestEmail: (to: string, subject?: string) =>
     json<{ ok: true; message: string }>('/admin/email/test', {

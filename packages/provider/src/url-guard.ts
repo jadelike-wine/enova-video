@@ -109,3 +109,37 @@ export async function validateFetchableUrl(url: string, opts: UrlGuardOptions): 
 export async function validateProviderBaseUrl(url: string, opts: UrlGuardOptions): Promise<void> {
   await validateFetchableUrl(url, opts);
 }
+
+/**
+ * 校验裸 hostname（无 URL scheme），用于 SMTP 等非 HTTP 出站连接。
+ *
+ * SMTP host 不是完整 URL，不能走 validateFetchableUrl（它会校验 http/https scheme）。
+ * 本函数复用同样的私网/链路本地地址拒绝 + DNS 解析后再校验逻辑，但不校验 scheme。
+ *
+ * 规则：
+ * - 禁止 localhost / 127.0.0.1 / ::1 / 169.254.0.0/16 / 私有内网段。
+ * - 可选 DNS 解析后校验所有 A/AAAA 记录（默认开启，测试可关闭）。
+ * - devAllowlist 仅在非生产环境生效。
+ */
+export async function validateSmtpHost(hostname: string, opts: UrlGuardOptions): Promise<void> {
+  const host = hostname.trim().toLowerCase();
+  if (!host) {
+    throw domainError(ERROR_CODES.SSRF_BLOCKED, 'SMTP host is empty', 400);
+  }
+
+  if (opts.devAllowlist?.some((h) => h.toLowerCase() === host)) {
+    return;
+  }
+
+  const literal = isPrivateHostname(host);
+  if (literal.blocked) {
+    throw domainError(ERROR_CODES.SSRF_BLOCKED, `Blocked SMTP host: ${host} (${literal.reason})`, 400);
+  }
+
+  if (opts.resolveDns) {
+    const dnsReason = await isPrivateViaDns(host);
+    if (dnsReason) {
+      throw domainError(ERROR_CODES.SSRF_BLOCKED, `Blocked SMTP host via DNS: ${host} (${dnsReason})`, 400);
+    }
+  }
+}

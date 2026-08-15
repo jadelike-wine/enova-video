@@ -52,6 +52,16 @@ class PublicCustomMenuItemDto {
   sortOrder!: number;
 }
 
+/** 从 JSON 解析出的原始菜单项结构（字段均可能缺失或类型不符）。 */
+interface RawCustomMenuItem {
+  id?: unknown;
+  label?: unknown;
+  url?: unknown;
+  visibility?: unknown;
+  enabled?: unknown;
+  sortOrder?: unknown;
+}
+
 class PublicSiteConfigDto {
   @ApiProperty({ example: 'https://example.com' })
   siteUrl!: string;
@@ -102,20 +112,20 @@ function parseCustomMenuItems(raw: string | null | undefined): PublicCustomMenuI
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((item: any) => item && typeof item === 'object')
-      .filter((item: any) => typeof item.id === 'string' && typeof item.label === 'string' && typeof item.url === 'string')
-      .filter((item: any) => item.url.startsWith('http://') || item.url.startsWith('https://'))
-      .filter((item: any) => item.visibility === 'user' || item.visibility === 'admin')
-      .filter((item: any) => item.enabled !== false)
-      .map((item: any) => ({
+    return (parsed as RawCustomMenuItem[])
+      .filter((item): item is RawCustomMenuItem => item !== null && typeof item === 'object')
+      .filter((item) => typeof item.id === 'string' && typeof item.label === 'string' && typeof item.url === 'string')
+      .filter((item) => (item.url as string).startsWith('http://') || (item.url as string).startsWith('https://'))
+      .filter((item) => item.visibility === 'user' || item.visibility === 'admin')
+      .filter((item) => item.enabled !== false)
+      .map((item) => ({
         id: String(item.id),
         label: String(item.label),
         url: String(item.url),
         visibility: item.visibility as 'user' | 'admin',
         sortOrder: typeof item.sortOrder === 'number' ? item.sortOrder : 0,
       }))
-      .sort((a: any, b: any) => a.sortOrder - b.sortOrder);
+      .sort((a, b) => a.sortOrder - b.sortOrder);
   } catch {
     return [];
   }

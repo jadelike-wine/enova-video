@@ -94,9 +94,31 @@ function SmtpSettingsCard({
   drafts: Record<string, string>
   onDraftChange: (key: string, value: string) => void
 }) {
+  const { alert } = useDialog()
+  const [testing, setTesting] = useState(false)
   const findSetting = (key: string) => settings.find((s) => s.key === key)
-  const getDraft = (key: string) => drafts[key] ?? ''
+  const getDraft = useCallback((key: string) => drafts[key] ?? '', [drafts])
   const isPasswordConfigured = Boolean(findSetting('email.smtpPassword')?.configured)
+
+  const handleTestConnection = useCallback(async () => {
+    setTesting(true)
+    try {
+      const portStr = getDraft('email.smtpPort')
+      const secureStr = getDraft('email.smtpSecure')
+      const result = await emailApi.testSmtpConnection({
+        host: getDraft('email.smtpHost') || undefined,
+        port: portStr ? Number(portStr) : undefined,
+        secure: secureStr === 'true' ? true : secureStr === 'false' ? false : undefined,
+        user: getDraft('email.smtpUser') || undefined,
+        password: getDraft('email.smtpPassword') || undefined,
+      })
+      await alert({ title: '连接成功', message: result.message })
+    } catch (e) {
+      await alert({ title: '连接失败', message: formatErrorMessage(e) })
+    } finally {
+      setTesting(false)
+    }
+  }, [alert, getDraft])
 
   return (
     <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-card">
@@ -105,6 +127,13 @@ function SmtpSettingsCard({
           <h3 className="text-lg font-semibold text-gray-900">SMTP 配置</h3>
           <p className="mt-1 text-sm text-gray-500">生产环境邮件发信服务配置。</p>
         </div>
+        <Button
+          size="small"
+          loading={testing}
+          onClick={() => void handleTestConnection()}
+        >
+          {testing ? '测试中…' : '测试连接'}
+        </Button>
       </header>
       <div className="space-y-6 p-6">
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">

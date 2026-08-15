@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateFetchableUrl, type UrlGuardOptions } from '../url-guard.js';
+import { validateFetchableUrl, validateSmtpHost, type UrlGuardOptions } from '../url-guard.js';
 
 const prodGuard: UrlGuardOptions = { allowHttp: false, resolveDns: false };
 const devGuard: UrlGuardOptions = { allowHttp: true, resolveDns: false };
@@ -51,5 +51,34 @@ describe('SSRF guard (validateFetchableUrl)', () => {
   it('honors dev allowlist host override', async () => {
     const guard: UrlGuardOptions = { allowHttp: false, resolveDns: false, devAllowlist: ['meta.internal'] };
     await expectAllowed('https://meta.internal/svc', guard);
+  });
+});
+
+describe('SSRF guard (validateSmtpHost)', () => {
+  it('allows public SMTP host', async () => {
+    await expect(validateSmtpHost('smtp.example.com', prodGuard)).resolves.toBeUndefined();
+  });
+
+  it('blocks localhost', async () => {
+    await expect(validateSmtpHost('localhost', prodGuard)).rejects.toThrow();
+    await expect(validateSmtpHost('127.0.0.1', prodGuard)).rejects.toThrow();
+    await expect(validateSmtpHost('::1', prodGuard)).rejects.toThrow();
+  });
+
+  it('blocks private / link-local ranges', async () => {
+    await expect(validateSmtpHost('10.0.0.5', prodGuard)).rejects.toThrow();
+    await expect(validateSmtpHost('192.168.1.1', prodGuard)).rejects.toThrow();
+    await expect(validateSmtpHost('172.16.0.1', prodGuard)).rejects.toThrow();
+    await expect(validateSmtpHost('169.254.169.254', prodGuard)).rejects.toThrow();
+  });
+
+  it('blocks empty host', async () => {
+    await expect(validateSmtpHost('', prodGuard)).rejects.toThrow();
+    await expect(validateSmtpHost('   ', prodGuard)).rejects.toThrow();
+  });
+
+  it('honors dev allowlist host override', async () => {
+    const guard: UrlGuardOptions = { allowHttp: false, resolveDns: false, devAllowlist: ['mail.internal'] };
+    await expect(validateSmtpHost('mail.internal', guard)).resolves.toBeUndefined();
   });
 });

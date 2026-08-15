@@ -1156,6 +1156,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/settings/email-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 获取邮件模板列表（事件 + 语言 + 占位符） */
+        get: operations["EmailTemplatesAdminController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/email-templates/{event}/{locale}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 获取指定事件和语言的邮件模板 */
+        get: operations["EmailTemplatesAdminController_getTemplate"];
+        /** 更新邮件模板 */
+        put: operations["EmailTemplatesAdminController_updateTemplate"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/email-templates/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 预览邮件模板（替换占位符为 mock 数据） */
+        post: operations["EmailTemplatesAdminController_preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/email-templates/{event}/{locale}/restore-official": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 恢复官方默认模板 */
+        post: operations["EmailTemplatesAdminController_restoreOfficial"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/ops/metrics": {
         parameters: {
             query?: never;
@@ -1601,6 +1670,8 @@ export interface components {
             version?: string;
         };
         TestEmailDto: Record<string, never>;
+        PreviewEmailTemplateDto: Record<string, never>;
+        UpdateEmailTemplateDto: Record<string, never>;
         CreatePlanOrderDto: {
             /**
              * @description 要购买的 Plan id
@@ -3097,6 +3168,108 @@ export interface operations {
             query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EmailTemplatesAdminController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EmailTemplatesAdminController_getTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EmailTemplatesAdminController_updateTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event: string;
+                locale: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEmailTemplateDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EmailTemplatesAdminController_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewEmailTemplateDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    EmailTemplatesAdminController_restoreOfficial: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event: string;
+                locale: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

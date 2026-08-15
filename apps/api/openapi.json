@@ -1986,6 +1986,150 @@
         ]
       }
     },
+    "/api/v1/admin/settings/email-templates": {
+      "get": {
+        "operationId": "EmailTemplatesAdminController_list",
+        "summary": "获取邮件模板列表（事件 + 语言 + 占位符）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/email-templates"
+        ]
+      }
+    },
+    "/api/v1/admin/settings/email-templates/{event}/{locale}": {
+      "get": {
+        "operationId": "EmailTemplatesAdminController_getTemplate",
+        "summary": "获取指定事件和语言的邮件模板",
+        "parameters": [
+          {
+            "name": "event",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "locale",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/email-templates"
+        ]
+      },
+      "put": {
+        "operationId": "EmailTemplatesAdminController_updateTemplate",
+        "summary": "更新邮件模板",
+        "parameters": [
+          {
+            "name": "event",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "locale",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEmailTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/email-templates"
+        ]
+      }
+    },
+    "/api/v1/admin/settings/email-templates/preview": {
+      "post": {
+        "operationId": "EmailTemplatesAdminController_preview",
+        "summary": "预览邮件模板（替换占位符为 mock 数据）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewEmailTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/email-templates"
+        ]
+      }
+    },
+    "/api/v1/admin/settings/email-templates/{event}/{locale}/restore-official": {
+      "post": {
+        "operationId": "EmailTemplatesAdminController_restoreOfficial",
+        "summary": "恢复官方默认模板",
+        "parameters": [
+          {
+            "name": "event",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "locale",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/email-templates"
+        ]
+      }
+    },
     "/api/v1/admin/ops/metrics": {
       "get": {
         "operationId": "OpsMonitoringController_getMetrics",
@@ -2806,6 +2950,14 @@
         }
       },
       "TestEmailDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "PreviewEmailTemplateDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateEmailTemplateDto": {
         "type": "object",
         "properties": {}
       },

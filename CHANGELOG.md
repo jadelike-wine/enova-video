@@ -10,6 +10,13 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.6] — 2026-08-16
+
+### Fixed
+- Admin settings update now accepts large values (base-64 site logos up to ~410K, login agreement documents JSON, custom menu items JSON) by raising the DTO value length cap from 4000 to 10,000,000 chars; per-setting validation remains at the service layer.
+
+---
+
 ## [1.7.5] — 2026-08-16
 
 ### Changed

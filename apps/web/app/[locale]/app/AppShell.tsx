@@ -14,11 +14,32 @@ import { SiteConfigProvider, useSiteConfig } from '@/lib/useSiteConfig'
 import type { CustomMenuItem } from '@/lib/api'
 
 // 普通用户（个人端）导航项
+// 图片/视频为可展开菜单，包含「生成」和「历史记录」二级菜单
 const userNavItems = [
-  { path: '/app/images', labelKey: 'navigation.images', icon: '🎨' },
-  { path: '/app/videos', labelKey: 'navigation.videos', icon: '🎬' },
   { path: '/app/wallet', labelKey: 'navigation.wallet', icon: '💰' },
   { path: '/app/settings', labelKey: 'navigation.settings', icon: '⚙️' },
+]
+
+// 可展开的生成菜单配置
+const expandableMenus = [
+  {
+    basePath: '/app/images',
+    labelKey: 'navigation.images',
+    icon: '🎨',
+    children: [
+      { path: '/app/images', labelKey: 'navigation.generateImage' },
+      { path: '/app/images/history', labelKey: 'navigation.history' },
+    ],
+  },
+  {
+    basePath: '/app/videos',
+    labelKey: 'navigation.videos',
+    icon: '🎬',
+    children: [
+      { path: '/app/videos', labelKey: 'navigation.generateVideo' },
+      { path: '/app/videos/history', labelKey: 'navigation.history' },
+    ],
+  },
 ]
 
 // 管理员后台导航项（仅管理员可见）
@@ -108,6 +129,98 @@ function NavLink({ item, pathname }: { item: { path: string; labelKey: string; i
       </span>
       <span className="nav-item-label">{t(item.labelKey)}</span>
     </Link>
+  )
+}
+
+/** 可展开的二级菜单导航组件 */
+function ExpandableNavLink({
+  menu,
+  pathname,
+}: {
+  menu: (typeof expandableMenus)[number]
+  pathname: string
+}) {
+  const t = useTranslations()
+  const { trigger } = useRoutePending()
+  const router = useRouter()
+
+  // 判断当前是否处于该菜单的子路由下（包括生成页面和历史记录页面）
+  const isChildRoute =
+    pathname === menu.basePath || pathname.startsWith(menu.basePath + '/')
+
+  // 当处于子路由时自动展开；也可手动收起
+  const [expanded, setExpanded] = useState(false)
+
+  // 路由变化时同步展开状态
+  useEffect(() => {
+    if (isChildRoute) setExpanded(true)
+  }, [isChildRoute])
+
+  const handleToggle = () => {
+    if (!expanded) {
+      // 展开：如果当前不在该菜单的子路由下，则跳转到默认生成页面
+      setExpanded(true)
+      if (!isChildRoute) {
+        trigger()
+        router.push(menu.basePath)
+      }
+    } else {
+      // 收起
+      setExpanded(false)
+    }
+  }
+
+  return (
+    <div>
+      {/* 一级菜单：点击展开/收起 */}
+      <button
+        type="button"
+        onClick={handleToggle}
+        className={`nav-item w-full text-left ${isChildRoute ? 'nav-item-active' : 'nav-item-inactive'}`}
+      >
+        <span
+          className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
+            isChildRoute ? 'bg-gradient-to-br from-primary-500 to-primary-600' : 'bg-gray-100'
+          }`}
+        >
+          {menu.icon}
+        </span>
+        <span className="nav-item-label flex-1">{t(menu.labelKey)}</span>
+        <span className="text-gray-400 text-sm flex-shrink-0 ml-1">
+          {expanded ? '▾' : '▸'}
+        </span>
+      </button>
+
+      {/* 二级菜单 */}
+      {expanded && (
+        <div className="ml-4 mt-1 space-y-1 border-l border-gray-100 pl-3">
+          {menu.children.map((child) => {
+            const childActive =
+              pathname === child.path ||
+              (child.path === menu.basePath && pathname === menu.basePath)
+            return (
+              <Link
+                key={child.path}
+                href={child.path}
+                prefetch
+                onClick={() => {
+                  if (childActive) return
+                  trigger()
+                }}
+                className={`flex items-center px-3 py-2 rounded-lg text-sm transition-colors ${
+                  childActive
+                    ? 'text-primary-600 font-medium bg-primary-50/60'
+                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50 mr-2.5" />
+                {t(child.labelKey)}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -235,6 +348,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 <span className="h-px flex-1 bg-gray-200" />
               </div>
               <div className="space-y-2">
+                {expandableMenus.map((menu) => (
+                  <ExpandableNavLink key={menu.basePath} menu={menu} pathname={pathname} />
+                ))}
                 {userNavItems.map((item) => (
                   <NavLink key={item.path} item={item} pathname={pathname} />
                 ))}
@@ -242,6 +358,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             </>
           ) : (
             <div className="space-y-2">
+              {expandableMenus.map((menu) => (
+                <ExpandableNavLink key={menu.basePath} menu={menu} pathname={pathname} />
+              ))}
               {userNavItems.map((item) => (
                 <NavLink key={item.path} item={item} pathname={pathname} />
               ))}

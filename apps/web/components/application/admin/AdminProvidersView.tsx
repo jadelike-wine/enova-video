@@ -86,70 +86,6 @@ function friendlyTime(v: string | Date | null | undefined): string {
   return fmtDate(v)
 }
 
-// ---------------------------------------------------------------------------
-// Step-up password modal
-// ---------------------------------------------------------------------------
-
-function useStepUpPassword() {
-  const [modalOpen, setModalOpen] = useState(false)
-  const [password, setPassword] = useState('')
-  const [resolver, setResolver] = useState<((pw: string | null) => void) | null>(null)
-  const { modal } = App.useApp()
-
-  const request = useCallback((): Promise<string | null> => {
-    return new Promise<string | null>((resolve) => {
-      setResolver(() => (pw: string | null) => resolve(pw))
-      setPassword('')
-      setModalOpen(true)
-    })
-  }, [])
-
-  const handleOk = useCallback(() => {
-    const pw = password.trim()
-    if (!pw) {
-      modal.warning({ title: '请输入密码', content: '敏感操作需要管理员密码验证' })
-      return
-    }
-    setModalOpen(false)
-    resolver?.(pw)
-    setResolver(null)
-    setPassword('')
-  }, [password, resolver, modal])
-
-  const handleCancel = useCallback(() => {
-    setModalOpen(false)
-    resolver?.(null)
-    setResolver(null)
-    setPassword('')
-  }, [resolver])
-
-  const modalElement = (
-    <Modal
-      title="安全验证"
-      open={modalOpen}
-      onOk={handleOk}
-      onCancel={handleCancel}
-      okText="确认"
-      cancelText="取消"
-      destroyOnClose
-    >
-      <div className="py-4">
-        <p className="mb-3 text-sm text-gray-600">
-          此操作涉及敏感凭证管理，请输入管理员密码以完成验证。
-        </p>
-        <Input.Password
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onPressEnter={handleOk}
-          placeholder="管理员密码"
-          autoFocus
-        />
-      </div>
-    </Modal>
-  )
-
-  return { request, modalElement }
-}
 
 // ---------------------------------------------------------------------------
 // Provider Form Drawer (Add / Edit)
@@ -481,7 +417,6 @@ function CredentialDrawer({
   onChanged: () => void
 }) {
   const { message } = App.useApp()
-  const { request: requestStepUp, modalElement: stepUpModal } = useStepUpPassword()
   const [credentials, setCredentials] = useState<AdminCredentialView[]>([])
   const [loading, setLoading] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
@@ -526,17 +461,11 @@ function CredentialDrawer({
     if (!provider) return
     setSubmitting(true)
     try {
-      const stepUpPw = await requestStepUp()
-      if (!stepUpPw) {
-        message.warning('操作已取消')
-        return
-      }
-
       if (formMode === 'create') {
-        await adminCredentialsApi.create(provider.id, values as CreateCredentialInput, stepUpPw)
+        await adminCredentialsApi.create(provider.id, values as CreateCredentialInput)
         message.success('API Key 已创建')
       } else if (editTarget) {
-        await adminCredentialsApi.update(editTarget.id, values as UpdateCredentialInput, stepUpPw)
+        await adminCredentialsApi.update(editTarget.id, values as UpdateCredentialInput)
         message.success('API Key 已更新')
       }
       setFormOpen(false)
@@ -553,12 +482,7 @@ function CredentialDrawer({
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      const stepUpPw = await requestStepUp()
-      if (!stepUpPw) {
-        message.warning('操作已取消')
-        return
-      }
-      await adminCredentialsApi.delete(deleteTarget.id, stepUpPw)
+      await adminCredentialsApi.delete(deleteTarget.id)
       message.success('API Key 已删除')
       setDeleteTarget(null)
       await loadCredentials()
@@ -696,7 +620,6 @@ function CredentialDrawer({
         </div>
       </Modal>
 
-      {stepUpModal}
     </>
   )
 }
@@ -755,7 +678,6 @@ function AddAgnesAccountModal({
   onSuccess: () => void
 }) {
   const { message } = App.useApp()
-  const { request: requestStepUp, modalElement: stepUpModal } = useStepUpPassword()
   const [apiKey, setApiKey] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -765,14 +687,9 @@ function AddAgnesAccountModal({
       message.warning('请输入 API Key')
       return
     }
-    const stepUpPw = await requestStepUp()
-    if (!stepUpPw) {
-      message.warning('操作已取消')
-      return
-    }
     setSubmitting(true)
     try {
-      await adminProvidersApi.createAgnesAccount(key, stepUpPw)
+      await adminProvidersApi.createAgnesAccount(key)
       message.success('Agnes 账号已添加')
       setApiKey('')
       onClose()
@@ -785,41 +702,38 @@ function AddAgnesAccountModal({
   }
 
   return (
-    <>
-      <Modal
-        title="添加 Agnes 账号"
-        open={open}
-        onCancel={onClose}
-        onOk={handleSubmit}
-        okText="保存"
-        cancelText="取消"
-        confirmLoading={submitting}
-        destroyOnClose
-      >
-        <div className="py-4 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
-            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-600">
-              Agnes (agnes.com)
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-            <Input.Password
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-xxxxxxxxxxxxxxxx"
-              onPressEnter={handleSubmit}
-              autoFocus
-            />
-            <p className="mt-1 text-xs text-gray-400">
-              API Key 将加密存储，不会暴露给前端
-            </p>
+    <Modal
+      title="添加 Agnes 账号"
+      open={open}
+      onCancel={onClose}
+      onOk={handleSubmit}
+      okText="保存"
+      cancelText="取消"
+      confirmLoading={submitting}
+      destroyOnClose
+    >
+      <div className="py-4 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+          <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-600">
+            Agnes (agnes.com)
           </div>
         </div>
-      </Modal>
-      {stepUpModal}
-    </>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+          <Input.Password
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="sk-xxxxxxxxxxxxxxxx"
+            onPressEnter={handleSubmit}
+            autoFocus
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            API Key 将加密存储，不会暴露给前端
+          </p>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

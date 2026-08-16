@@ -25,7 +25,6 @@ import {
 } from './providers.admin.service.js';
 import { CredentialsAdminService, type CredentialView } from './credentials.admin.service.js';
 import { AdminAuditService } from './admin.audit.service.js';
-import { SensitiveActionService } from '../common/services/sensitive-action.service.js';
 import { CreateProviderDto, ListQueryDto, UpdateProviderDto, CreateAgnesAccountDto } from './dto/admin.dto.js';
 
 @ApiTags('admin/providers')
@@ -36,7 +35,6 @@ export class ProvidersAdminController {
     @Inject(ProvidersAdminService) private readonly service: ProvidersAdminService,
     @Inject(CredentialsAdminService) private readonly credentialsService: CredentialsAdminService,
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
-    @Inject(SensitiveActionService) private readonly sensitiveAction: SensitiveActionService,
   ) {}
 
   @Get()
@@ -126,17 +124,6 @@ export class ProvidersAdminController {
     @Req() req: FastifyRequest,
     @Body() dto: CreateAgnesAccountDto,
   ): Promise<CredentialView> {
-    // step-up 验证：创建凭证属于敏感操作。
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.CREDENTIALS_ROTATE,
-      target: 'provider:agnes',
-      reason: 'Create Agnes account (simplified)',
-      requestId: req.id,
-      stepUpPassword,
-    });
-
     // 1. 确保 agnes Provider 存在（不存在则自动创建）。
     const provider = await this.service.ensureAgnesProvider();
 

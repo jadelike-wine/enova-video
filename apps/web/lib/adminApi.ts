@@ -404,26 +404,6 @@ export interface UpdateCredentialInput {
   clearBackoff?: boolean
 }
 
-/**
- * 发送带 step-up password 的请求。
- * Credential create/update/delete 需要管理员二次验证密码。
- */
-async function jsonWithStepUp<T>(
-  url: string,
-  options: RequestInit & { stepUpPassword?: string } = {},
-): Promise<T> {
-  const headers = new Headers(options.headers || {})
-  if (!headers.has('X-Request-ID')) headers.set('X-Request-ID', newRequestId())
-  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
-  if (options.stepUpPassword) headers.set('x-step-up-password', options.stepUpPassword)
-  const resp = await fetch(`${BASE}${url}`, { ...options, headers })
-  if (!resp.ok) {
-    const body = await resp.json().catch(() => undefined)
-    throw new AdminApiError(resp.status, body, resp.statusText)
-  }
-  return (await resp.json()) as Promise<T>
-}
-
 export const adminProvidersApi = {
   list: (params: { limit?: number; offset?: number } = {}) =>
     json<AdminProviderView[]>(`/providers?limit=${params.limit ?? 50}&offset=${params.offset ?? 0}`),
@@ -441,35 +421,30 @@ export const adminProvidersApi = {
     json<{ ok: true }>(`/providers/${id}`, { method: 'DELETE' }),
   /**
    * 简化的添加 Agnes 账号：只需 API Key，后端自动创建 Provider 和凭证。
-   * 需要 step-up 密码验证。
    */
-  createAgnesAccount: (apiKey: string, stepUpPassword: string) =>
-    jsonWithStepUp<AdminCredentialView>('/providers/agnes/account', {
+  createAgnesAccount: (apiKey: string) =>
+    json<AdminCredentialView>('/providers/agnes/account', {
       method: 'POST',
       body: JSON.stringify({ apiKey }),
-      stepUpPassword,
     }),
 }
 
 export const adminCredentialsApi = {
   listByProvider: (providerId: string) =>
     json<AdminCredentialView[]>(`/providers/${providerId}/credentials`),
-  create: (providerId: string, input: CreateCredentialInput, stepUpPassword: string) =>
-    jsonWithStepUp<AdminCredentialView>(`/providers/${providerId}/credentials`, {
+  create: (providerId: string, input: CreateCredentialInput) =>
+    json<AdminCredentialView>(`/providers/${providerId}/credentials`, {
       method: 'POST',
       body: JSON.stringify(input),
-      stepUpPassword,
     }),
-  update: (id: string, input: UpdateCredentialInput, stepUpPassword: string) =>
-    jsonWithStepUp<AdminCredentialView>(`/credentials/${id}`, {
+  update: (id: string, input: UpdateCredentialInput) =>
+    json<AdminCredentialView>(`/credentials/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
-      stepUpPassword,
     }),
-  delete: (id: string, stepUpPassword: string) =>
-    jsonWithStepUp<{ ok: true }>(`/credentials/${id}`, {
+  delete: (id: string) =>
+    json<{ ok: true }>(`/credentials/${id}`, {
       method: 'DELETE',
-      stepUpPassword,
     }),
 }
 

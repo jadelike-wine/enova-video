@@ -21,6 +21,8 @@ interface CopyBoxProps {
   collapsible?: boolean
   /** 折叠时显示的行数（默认 6） */
   collapsedLines?: number
+  /** 是否默认折叠（默认 false）。开启后无论内容长短都默认折叠，仅显示标题/描述。 */
+  defaultCollapsed?: boolean
 }
 
 /** 折叠阈值：内容行数超过此值时启用折叠 */
@@ -34,6 +36,8 @@ const DEFAULT_COLLAPSED_LINES = 6
  *
  * 当 `collapsible` 为 true 且内容行数超过 `collapsedLines` 时，
  * 内容默认折叠，点击底部按钮可展开/收起。
+ * 当 `defaultCollapsed` 为 true 时，无论内容长短都默认折叠，仅显示标题/描述，
+ * 点击底部按钮展开。
  */
 export function CopyBox({
   value,
@@ -44,6 +48,7 @@ export function CopyBox({
   onCopied,
   collapsible = false,
   collapsedLines = DEFAULT_COLLAPSED_LINES,
+  defaultCollapsed = false,
 }: CopyBoxProps) {
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -53,7 +58,7 @@ export function CopyBox({
     return value.split('\n').length
   }, [value])
 
-  const canCollapse = collapsible && lineCount > collapsedLines
+  const canCollapse = defaultCollapsed || (collapsible && lineCount > collapsedLines)
 
   const handleCopy = async () => {
     if (!value?.trim()) return

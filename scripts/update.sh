@@ -18,6 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib.sh
 source "$SCRIPT_DIR/lib.sh"
+load_deployment_version
 
 DRY_RUN=0
 TARGET_INPUT=""
@@ -56,6 +57,9 @@ if [ "$CURRENT" = "unknown" ]; then
   CURRENT="$(cat "$ROOT_DIR/VERSION" 2>/dev/null | tr -d '[:space:]' | sed 's/^v//' || echo '0.0.0')"
   info "update current_version_default=$CURRENT"
 fi
+if [ -z "${APP_VERSION:-}" ]; then
+  export APP_VERSION="$CURRENT"
+fi
 
 # ---- 目标版本 ----
 TARGET=""
@@ -93,6 +97,15 @@ API_IMG="${IMAGE_BASE}-api:${TARGET}"
 WORKER_IMG="${IMAGE_BASE}-worker:${TARGET}"
 WEB_IMG="${IMAGE_BASE}-web:${TARGET}"
 
+record_failed_state() {
+  local status="$1" actual_version="${2:-$TARGET}"
+  STATE_FAIL="$(python3 -c 'import json,sys
+d=json.loads(sys.argv[1]); d["status"]=sys.argv[2]; d["current_version"]=sys.argv[3]; d["completed_at"]=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(); print(json.dumps(d, ensure_ascii=False))
+' "$STATE" "$status" "$actual_version")"
+  write_state "$STATE_FAIL"
+  append_history "$STATE_FAIL"
+}
+
 # ---- dry-run：只打印计划 ----
 if [ "$DRY_RUN" -eq 1 ]; then
   info "update_plan dry_run=1 current=$CURRENT target=$TARGET"
@@ -125,10 +138,11 @@ if ! wait_healthy; then
 fi
 
 # ---- PostgreSQL backup（必须成功才能继续）----
-DB_BACKUP="$(backup_database "$CURRENT" "$TARGET")" || {
+backup_database "$CURRENT" "$TARGET" || {
   critical "update_aborted error_code=UPDATE_BACKUP_FAILED"
   exit 1
 }
+DB_BACKUP="$BACKUP_DATABASE_FILE"
 
 # ---- 保存 deployment state（记录 previous 的一切，供回滚）----
 UPDATE_ID_FOR_STATE="$UPDATE_ID"
@@ -181,11 +195,36 @@ fi
 write_app_version "$TARGET"
 export APP_VERSION="$TARGET"
 info "update switching=start version=$TARGET compose_files=${COMPOSE_UP_FILES[*]}"
-docker compose "${COMPOSE_UP_FILES[@]}" up -d --no-build
+if ! verify_compose_images "$TARGET"; then
+  error "switch_failed error_code=UPDATE_SWITCH_FAILED reason=image_resolution version=$TARGET"
+  save_failed_logs "switch-failed"
+  info "rollback_started reason=switch_image_resolution"
+  if perform_rollback "no"; then
+    record_failed_state "failed_rolled_back" "$CURRENT"
+    info "rollback_completed reason=switch_image_resolution"
+  else
+    record_failed_state "failed_rollback" "$TARGET"
+    critical "rollback_failed error_code=UPDATE_ROLLBACK_FAILED reason=switch_image_resolution"
+  fi
+  exit 1
+fi
+if ! compose_switch_services "$TARGET"; then
+  error "switch_failed error_code=UPDATE_SWITCH_FAILED version=$TARGET"
+  save_failed_logs "switch-failed"
+  info "rollback_started reason=switch_failed"
+  if perform_rollback "no"; then
+    record_failed_state "failed_rolled_back" "$CURRENT"
+    info "rollback_completed reason=switch_failed"
+  else
+    record_failed_state "failed_rollback" "$TARGET"
+    critical "rollback_failed error_code=UPDATE_ROLLBACK_FAILED reason=switch_failed"
+  fi
+  exit 1
+fi
 info "update compose_up=completed version=$TARGET"
 
 # ---- 全链路健康检查 ----
-if wait_healthy; then
+if wait_healthy && reported_version_matches "$TARGET"; then
   UPDATE_SUCCESS=1
   info "update=success version=$TARGET"
   # 更新 state 为 success，并追加 history
@@ -204,14 +243,15 @@ UPDATE_SUCCESS=0
 error "update_healthcheck_failed error_code=UPDATE_HEALTHCHECK_FAILED version=$TARGET"
 save_failed_logs "update-failed"
 
-info "update automatic_rollback=start restore_db=yes"
-if perform_rollback "yes"; then
+info "rollback_started reason=post_switch_healthcheck restore_db=no"
+if perform_rollback "no"; then
   # 回滚成功，但本次部署失败：state 标记失败
   STATE_FAIL="$(python3 -c 'import json,sys
-d=json.loads(sys.argv[1]); d["status"]="failed_rolled_back"; d["completed_at"]=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(); print(json.dumps(d, ensure_ascii=False))
-' "$STATE")"
+d=json.loads(sys.argv[1]); d["status"]="failed_rolled_back"; d["current_version"]=sys.argv[2]; d["completed_at"]=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(); print(json.dumps(d, ensure_ascii=False))
+' "$STATE" "$CURRENT")"
   write_state "$STATE_FAIL"
   append_history "$STATE_FAIL"
+  info "rollback_completed reason=post_switch_healthcheck"
   critical "update=FAILED error_code=UPDATE_HEALTHCHECK_FAILED version=$TARGET rolled_back=success to=$CURRENT"
 else
   critical "update=FAILED error_code=UPDATE_ROLLBACK_FAILED version=$TARGET rolled_back=failed"

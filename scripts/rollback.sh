@@ -15,6 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib.sh
 source "$SCRIPT_DIR/lib.sh"
+load_deployment_version
 
 MODE="code-only"
 
@@ -61,6 +62,17 @@ if [ "$current" = "$prev" ]; then
   exit 0
 fi
 
+record_rollback_state() {
+  local status="$1"
+  local state_json
+  state_json="$(read_state)"
+  state_json="$(python3 -c 'import json,sys
+d=json.loads(sys.argv[1]); d["status"]=sys.argv[2]; d["current_version"]=sys.argv[3]; d["completed_at"]=__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(); print(json.dumps(d, ensure_ascii=False))
+' "$state_json" "$status" "$prev")"
+  write_state "$state_json"
+  append_history "$state_json"
+}
+
 # ---- --restore-db 必须确认（数据丢失风险）----
 if [ "$MODE" = "restore-db" ]; then
   echo "==========================================================" >&2
@@ -75,6 +87,7 @@ if [ "$MODE" = "restore-db" ]; then
     fi
   fi
   if perform_rollback "yes"; then
+    record_rollback_state "rollback_success"
     info "rollback=success mode=restore-db version=$prev"
     exit 0
   fi
@@ -84,6 +97,7 @@ fi
 
 # ---- 默认：code-only ----
 if perform_rollback "no"; then
+  record_rollback_state "rollback_success"
   info "rollback=success mode=code-only version=$prev (database kept)"
   exit 0
 fi

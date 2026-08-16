@@ -3,7 +3,7 @@
 #
 # 服务：postgres + redis + api + worker + web。
 # 镜像通过根级 Dockerfile 构建（--target 区分），版本通过
-# .deploy/version.env 的 APP_VERSION 注入（见 scripts/update-new.sh）。
+# .deploy/version.env 的 APP_VERSION 注入（见 scripts/lib.sh 与 scripts/update.sh）。
 #
 #   升级/回滚 = 切换 APP_VERSION -> docker compose up -d
 #
@@ -59,7 +59,7 @@ services:
       - enova-internal
 
   api:
-    image: ghcr.io/jadelike-wine/enova-video-api:${APP_VERSION}
+    image: ghcr.io/jadelike-wine/enova-video-api:${APP_VERSION:?APP_VERSION is required}
     security_opt:
       - no-new-privileges:true
     expose:
@@ -84,7 +84,7 @@ services:
       PORT: 3001
       HOST: 0.0.0.0
       # system-update 展示当前版本（与镜像 tag 保持一致）
-      APP_VERSION: ${APP_VERSION}
+      APP_VERSION: ${APP_VERSION:?APP_VERSION is required}
       # ---- 后台一键更新/回滚（默认关闭；开启需挂载 docker.sock 与仓库目录）----
       UPDATE_ENABLED: ${UPDATE_ENABLED:-false}
       UPDATE_GITHUB_REPOSITORY: ${UPDATE_GITHUB_REPOSITORY:-jadelike-wine/enova-video}
@@ -93,7 +93,7 @@ services:
       UPDATE_CHECK_TIMEOUT_MS: ${UPDATE_CHECK_TIMEOUT_MS:-8000}
       UPDATE_EXEC_TIMEOUT_MS: ${UPDATE_EXEC_TIMEOUT_MS:-900000}
       UPDATE_DOCKER_SOCKET: ${UPDATE_DOCKER_SOCKET:-/var/run/docker.sock}
-      UPDATE_DEPLOY_TOOL_IMAGE: ${UPDATE_DEPLOY_TOOL_IMAGE:-ghcr.io/jadelike-wine/enova-video-deploy-tool:${APP_VERSION}}
+      UPDATE_DEPLOY_TOOL_IMAGE: ${UPDATE_DEPLOY_TOOL_IMAGE:-ghcr.io/jadelike-wine/enova-video-deploy-tool:${APP_VERSION:?APP_VERSION is required}}
       UPDATE_REPO_MOUNT: ${UPDATE_REPO_MOUNT:-/host/repo}
       UPDATE_SCRIPTS_SUBDIR: ${UPDATE_SCRIPTS_SUBDIR:-scripts}
       UPDATE_MAX_ROLLBACK_VERSIONS: ${UPDATE_MAX_ROLLBACK_VERSIONS:-3}
@@ -119,7 +119,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: ghcr.io/jadelike-wine/enova-video-worker:${APP_VERSION}
+    image: ghcr.io/jadelike-wine/enova-video-worker:${APP_VERSION:?APP_VERSION is required}
     security_opt:
       - no-new-privileges:true
     environment:
@@ -146,7 +146,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: ghcr.io/jadelike-wine/enova-video-web:${APP_VERSION}
+    image: ghcr.io/jadelike-wine/enova-video-web:${APP_VERSION:?APP_VERSION is required}
     security_opt:
       - no-new-privileges:true
     ports:

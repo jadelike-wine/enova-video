@@ -19,6 +19,20 @@ BACKUP_DIR="$ROOT_DIR/backups"
 PROD_COMPOSE="$ROOT_DIR/docker-compose.prod.yml"
 UPDATE_COMPOSE="$ROOT_DIR/docker-compose.update.yml"
 
+# Compose does not automatically read .deploy/version.env. Load the deployment
+# version into the shell before any config/up/exec invocation so interpolation
+# is deterministic and never falls back to an empty image tag.
+load_deployment_version() {
+  if [ -n "${APP_VERSION:-}" ] || [ ! -f "$VERSION_ENV_FILE" ]; then
+    return 0
+  fi
+  local v
+  v="$(grep -E '^APP_VERSION=' "$VERSION_ENV_FILE" | head -n1 | cut -d= -f2- | tr -d '[:space:]')"
+  if [ -n "$v" ]; then
+    export APP_VERSION="$v"
+  fi
+}
+
 # 读取 .env 中的布尔开关（兼容带引号的 true），为 true 时返回 0
 dotenv_bool() {
   local key="$1"
@@ -50,6 +64,7 @@ FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
 UPDATE_ID=""
 LOG_FILE=""
 _LOCK_FD=""
+BACKUP_DATABASE_FILE=""
 
 # =============================================================================
 # 日志
@@ -164,6 +179,33 @@ current_app_version() {
   fi
 }
 
+compose_resolved_image() {
+  local service="$1"
+  docker compose "${COMPOSE_UP_FILES[@]}" config --format json |
+    python3 -c 'import json,sys
+service=sys.argv[1]
+model=json.load(sys.stdin)
+image=model.get("services",{}).get(service,{}).get("image","")
+if not image:
+    raise SystemExit(f"missing image for {service}")
+print(image)' "$service"
+}
+
+verify_compose_images() {
+  local expected_version="$1"
+  local expected_api="${IMAGE_BASE}-api:${expected_version}"
+  local expected_worker="${IMAGE_BASE}-worker:${expected_version}"
+  local expected_web="${IMAGE_BASE}-web:${expected_version}"
+  local api_image worker_image web_image
+  api_image="$(compose_resolved_image api)" || return 1
+  worker_image="$(compose_resolved_image worker)" || return 1
+  web_image="$(compose_resolved_image web)" || return 1
+  info "compose_resolved api_image=$api_image worker_image=$worker_image web_image=$web_image"
+  [ "$api_image" = "$expected_api" ] &&
+    [ "$worker_image" = "$expected_worker" ] &&
+    [ "$web_image" = "$expected_web" ]
+}
+
 write_app_version() {
   local v="$1"
   mkdir -p "$DEPLOY_DIR"
@@ -245,7 +287,7 @@ backup_database() {
     return 1
   fi
   info "database_backup=completed file=$dbfile"
-  echo "$dbfile"
+  BACKUP_DATABASE_FILE="$dbfile"
 }
 
 # 清理旧 backup，保留最近 N 个，但绝不动 state.json 引用的当前/上一个 backup
@@ -276,13 +318,78 @@ api_health() {
     'wget -q -O /dev/null http://127.0.0.1:3001/api/v1/health' 2>/dev/null
 }
 
+container_diagnostics() {
+  local svc="$1" id
+  id="$(docker compose "${COMPOSE_UP_FILES[@]}" ps -q "$svc" 2>/dev/null || true)"
+  if [ -z "$id" ]; then
+    info "container_state service=$svc state=missing"
+    return 0
+  fi
+  docker inspect --format \
+    "container_state service=$svc container_id={{.Id}} image={{.Config.Image}} state={{.State.Status}} exit_code={{.State.ExitCode}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" \
+    "$id" 2>/dev/null || info "container_state service=$svc state=inspect_failed"
+}
+
+wait_service_healthy() {
+  local svc="$1" attempts="${HEALTH_ATTEMPTS}" interval="${HEALTH_INTERVAL}" i id state health
+  for ((i=1; i<=attempts; i++)); do
+    id="$(docker compose "${COMPOSE_UP_FILES[@]}" ps -q "$svc" 2>/dev/null || true)"
+    state=""
+    health=""
+    if [ -n "$id" ]; then
+      state="$(docker inspect --format '{{.State.Status}}' "$id" 2>/dev/null || true)"
+      health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id" 2>/dev/null || true)"
+    fi
+    if [ "$state" = "running" ] && [ "$health" = "healthy" ]; then
+      info "container_health=ok service=$svc attempts=$i state=$state health=$health"
+      return 0
+    fi
+    if [ "$state" = "running" ] && [ "$health" = "none" ] && [ "$svc" = "worker" ]; then
+      info "container_health=ok service=$svc attempts=$i state=$state health=$health"
+      return 0
+    fi
+    if [ "$i" -lt "$attempts" ]; then sleep "$interval"; fi
+  done
+  info "container_health=failed service=$svc attempts=$attempts state=${state:-missing} health=${health:-missing}"
+  container_diagnostics "$svc"
+  return 1
+}
+
+compose_switch_services() {
+  local version="$1"
+  info "compose_command=docker compose ${COMPOSE_UP_FILES[*]} up -d --no-build --no-deps postgres redis api APP_VERSION=$version"
+  if ! docker compose "${COMPOSE_UP_FILES[@]}" up -d --no-build --no-deps postgres redis api; then
+    error "switch_failed error_code=UPDATE_SWITCH_FAILED phase=api"
+    return 1
+  fi
+  if ! wait_service_healthy postgres || ! wait_service_healthy redis; then
+    error "container_unhealthy error_code=UPDATE_CONTAINER_UNHEALTHY phase=dependencies"
+    return 1
+  fi
+  if ! wait_service_healthy api; then
+    error "api_healthcheck_failed error_code=UPDATE_API_HEALTHCHECK_FAILED"
+    return 1
+  fi
+
+  info "compose_command=docker compose ${COMPOSE_UP_FILES[*]} up -d --no-build --no-deps web worker APP_VERSION=$version"
+  if ! docker compose "${COMPOSE_UP_FILES[@]}" up -d --no-build --no-deps web worker; then
+    error "switch_failed error_code=UPDATE_SWITCH_FAILED phase=web_worker"
+    return 1
+  fi
+  if ! wait_service_healthy web || ! wait_service_healthy worker; then
+    error "container_unhealthy error_code=UPDATE_CONTAINER_UNHEALTHY phase=web_worker"
+    return 1
+  fi
+}
+
 # 失败时保存 new 版本的 Docker 日志（Rollback 后仍可调查）
 save_failed_logs() {
   local tag="$1"
   for svc in api worker web; do
-    if docker compose -f "$PROD_COMPOSE" ps --services 2>/dev/null | grep -qx "$svc"; then
-      docker compose -f "$PROD_COMPOSE" logs --tail=500 "$svc" > "$LOG_DIR/${tag}-${svc}-${UPDATE_ID}.log" 2>&1 || true
+    if docker compose "${COMPOSE_UP_FILES[@]}" ps --services 2>/dev/null | grep -qx "$svc"; then
+      docker compose "${COMPOSE_UP_FILES[@]}" logs --no-color --tail=200 "$svc" > "$LOG_DIR/${tag}-${svc}-${UPDATE_ID}.log" 2>&1 || true
       info "failed_logs_saved svc=$svc file=${LOG_DIR}/${tag}-${svc}-${UPDATE_ID}.log"
+      container_diagnostics "$svc"
     fi
   done
 }
@@ -308,12 +415,30 @@ wait_healthy() {
   return 1
 }
 
+reported_version_matches() {
+  local expected="$1" actual
+  actual="$(curl -fsS --max-time 5 "$FRONTEND_URL/api/v1/health" 2>/dev/null |
+    python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("version", ""))
+except Exception:
+    print("")')"
+  if [ "$actual" = "$expected" ]; then
+    info "versioncheck=ok expected=$expected"
+    return 0
+  fi
+  error "version_check_failed error_code=UPDATE_VERSION_CHECK_FAILED expected=$expected reported=${actual:-missing}"
+  return 1
+}
+
 # =============================================================================
 # 预检
 # =============================================================================
 precheck() {
   if ! command -v docker >/dev/null 2>&1; then error "precheck docker_missing error_code=UPDATE_PRECHECK_FAILED"; return 1; fi
+  if [ -z "${APP_VERSION:-}" ]; then error "precheck app_version_missing error_code=UPDATE_PRECHECK_FAILED"; return 1; fi
   if ! docker compose "${COMPOSE_UP_FILES[@]}" config -q; then error "precheck compose_invalid error_code=UPDATE_PRECHECK_FAILED"; return 1; fi
+  if ! verify_compose_images "$APP_VERSION"; then error "precheck image_resolution_failed error_code=UPDATE_PRECHECK_FAILED"; return 1; fi
   info "precheck=ok"
   return 0
 }
@@ -397,10 +522,13 @@ except Exception:
   write_app_version "$prev"
   export APP_VERSION="$prev"
   info "rollback switching=start version=$prev compose_files=${COMPOSE_UP_FILES[*]}"
-  docker compose "${COMPOSE_UP_FILES[@]}" up -d --no-build \
-    || { critical "rollback_failed error_code=UPDATE_ROLLBACK_FAILED compose_up_failed version=$prev"; return 1; }
+  if ! compose_switch_services "$prev"; then
+    save_failed_logs "rollback"
+    critical "rollback_failed error_code=UPDATE_ROLLBACK_FAILED compose_up_failed version=$prev"
+    return 1
+  fi
 
-  if wait_healthy; then
+  if wait_healthy && reported_version_matches "$prev"; then
     info "rollback=success version=$prev"
     return 0
   else

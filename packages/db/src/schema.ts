@@ -611,6 +611,8 @@ export const priceQuotes = pgTable('price_quotes', {
   estimatedRevenueCents: integer('estimated_revenue_cents').notNull().default(0),
   /** 估算供应商成本（微美元）。 */
   estimatedCostMicrousd: integer('estimated_cost_microusd').notNull().default(0),
+  /** 动态价格计算过程快照（审计用：baseCredits, durationCost, resolutionMultiplier, qualityMultiplier, fpsMultiplier 等）。 */
+  calculationSnapshot: jsonb('calculation_snapshot').$type<Record<string, unknown>>(),
   /** Quote 过期时间（超过则需重新报价）。 */
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

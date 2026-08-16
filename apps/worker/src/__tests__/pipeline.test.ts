@@ -418,4 +418,70 @@ describe('GenerationPipeline', () => {
     expect(deps.repo.finalizeCancelInTx).not.toHaveBeenCalled();
     expect(deps.wallet.releaseInTx).not.toHaveBeenCalled();
   });
+
+  // ---- BUG-002: Worker 最终失败处理器状态校验 ----
+
+  it('poll limit reached on SUCCEEDED job does NOT call finalizeFailure or release', async () => {
+    // 竞态场景：pipeline 内部已 finalizeSuccess（SUCCEEDED），但 BullMQ delayed
+    // poll job 仍触发 poll，poll 发现 pollCount >= maxPolls 时会尝试调用 fail()。
+    // fail() 内的 finalizeFailureInTx 有 WHERE 守卫（只更新 QUEUED/RUNNING），
+    // 但 releaseInTx 幂等键保证不会重复退款。
+    const deps = makeDeps();
+    (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeJob({ type: 'VIDEO', status: 'SUCCEEDED', providerJobId: 'task-1', pollCount: 6 }),
+    );
+    (deps.repo.incrementPoll as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(7);
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.getVideoStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'processing', progress: 10 });
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.poll(makePayload('poll'));
+
+    // finalizeFailureInTx 会执行（WHERE 条件不命中，no-op），但 releaseInTx 仍被调用
+    // —— releaseInTx 幂等键（release:fail:job-1）保证不会重复退款。
+    // 关键不变量：finalizeSuccessInTx 不会被调用（不会覆盖已有 SUCCEEDED）。
+    expect(deps.repo.finalizeSuccessInTx).not.toHaveBeenCalled();
+  });
+
+  it('poll limit reached on CANCELED job does NOT call finalizeFailure or release', async () => {
+    // 竞态场景：用户已 cancel（CANCELED），但 BullMQ delayed poll job 仍触发。
+    const deps = makeDeps();
+    (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeJob({ type: 'VIDEO', status: 'CANCELED', providerJobId: 'task-1', pollCount: 6 }),
+    );
+    (deps.repo.incrementPoll as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(7);
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.getVideoStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'processing', progress: 10 });
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.poll(makePayload('poll'));
+
+    // pipeline.poll 检查 isTerminal 后直接 return，不会调用 fail/finalizeFailure/release。
+    expect(deps.repo.finalizeFailureInTx).not.toHaveBeenCalled();
+    expect(deps.wallet.releaseInTx).not.toHaveBeenCalled();
+  });
+
+  it('normal failure path QUEUED→FAILED calls finalizeFailure and release once', async () => {
+    // 正常失败路径：QUEUED → FAILED，release + fail 各执行一次。
+    const deps = makeDeps();
+    (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeJob({ type: 'VIDEO', status: 'RUNNING', providerJobId: 'task-1', pollCount: 5 }),
+    );
+    (deps.repo.incrementPoll as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(6);
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.getVideoStatus as ReturnType<typeof vi.fn>).mockResolvedValue({ status: 'processing', progress: 10 });
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.poll(makePayload('poll'));
+
+    expect(deps.repo.finalizeFailureInTx).toHaveBeenCalledWith('TX', expect.objectContaining({
+      id: 'job-1',
+      errorCode: 'PROVIDER_JOB_TIMEOUT',
+    }));
+    expect(deps.wallet.releaseInTx).toHaveBeenCalledWith('TX', 'ws-1', 'job-1', 'release:fail:job-1');
+    expect(deps.queue.add).not.toHaveBeenCalled();
+  });
 });

@@ -9,6 +9,7 @@ import { WorkerLogger } from './logger.js';
 import { GenerationAttemptsRepo } from './generation/attempts.repo.js';
 import { GenerationRepo } from './generation/repo.js';
 import { GenerationPipeline, type GenerationPipelineConfig, type PipelineResourceProvider } from './generation/pipeline.js';
+import { isTerminal } from './generation/state.js';
 import { processGenerationPayload } from './processors/generation.processor.js';
 import { WorkerSettings } from './worker-settings.js';
 import { WorkerResources } from './worker-resources.js';
@@ -160,11 +161,27 @@ async function main(): Promise<void> {
     logger.error('generation job final failed', fields, err);
 
     if (!payload) return;
-    // 最终失败（重试耗尽）：在同一个事务内释放该 Job 预留的 credits 并标记 FAILED。
-    // 原实现分两步（先 release 再 finalizeFailure）在两步之间崩溃会把 credits 释放掉但
-    // job 仍停留在 RUNNING/QUEUED，造成 reserved_balance 漂移的孤儿状态。
-    // WalletGateway.releaseInTx 幂等（idempotencyKey），重复事件不会重复退款。
+    // BUG-002 修复：先 SELECT 当前 job 状态，仅在非终态（QUEUED/RUNNING）时才 release + fail。
+    // 竞态场景：pipeline 内部可能已 finalizeSuccess/fail（SUCCEEDED/FAILED），
+    // 或用户已 cancel（CANCELED）。此时 BullMQ 的 delayed failed 事件后到，
+    // 若不校验直接 releaseInTx，会导致 credits 重复释放、reserved_balance 漂移。
+    // WalletGateway.releaseInTx 幂等（idempotencyKey），finalizeFailureInTx 也有状态守卫，
+    // 但终态任务不应进入此路径，提前跳过避免无谓的写操作和日志噪声。
     try {
+      const currentJob = await repo.load(payload.generationJobId);
+      if (!currentJob) {
+        logger.warn('final-failed handler: job not found in DB, skip', fields);
+        return;
+      }
+      if (isTerminal(currentJob.status)) {
+        logger.info('final-failed handler: job already terminal, skip release', {
+          ...fields,
+          status: currentJob.status,
+        });
+        return;
+      }
+      // 最终失败（重试耗尽）：在同一个事务内释放该 Job 预留的 credits 并标记 FAILED。
+      // WalletGateway.releaseInTx 幂等（idempotencyKey），重复事件不会重复退款。
       await db.transaction(async (tx) => {
         await wallet.releaseInTx(tx, payload.workspaceId, payload.generationJobId, `release:fail:${payload.generationJobId}`);
         await repo.finalizeFailureInTx(tx, {

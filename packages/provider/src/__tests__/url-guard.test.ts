@@ -52,6 +52,49 @@ describe('SSRF guard (validateFetchableUrl)', () => {
     const guard: UrlGuardOptions = { allowHttp: false, resolveDns: false, devAllowlist: ['meta.internal'] };
     await expectAllowed('https://meta.internal/svc', guard);
   });
+
+  // BUG-005: IP 变体覆盖测试
+  describe('BUG-005: IP variant coverage', () => {
+    it('blocks decimal IP (2130706433 → 127.0.0.1)', async () => {
+      await expectBlocked('https://2130706433/', prodGuard);
+    });
+
+    it('blocks decimal IP for private 10.x (167772161 → 10.0.0.1)', async () => {
+      await expectBlocked('https://167772161/', prodGuard);
+    });
+
+    it('blocks decimal IP for link-local (2852039166 → 169.254.169.254)', async () => {
+      await expectBlocked('https://2852039166/', prodGuard);
+    });
+
+    it('blocks hex IP segments (0x7f.0.0.1 → 127.0.0.1)', async () => {
+      await expectBlocked('https://0x7f.0.0.1/', prodGuard);
+    });
+
+    it('blocks octal IP segments (0177.0.0.1 → 127.0.0.1)', async () => {
+      await expectBlocked('https://0177.0.0.1/', prodGuard);
+    });
+
+    it('blocks IPv6 mapped IPv4 loopback (::ffff:127.0.0.1)', async () => {
+      await expectBlocked('https://[::ffff:127.0.0.1]/', prodGuard);
+    });
+
+    it('blocks IPv6 mapped IPv4 private (::ffff:10.0.0.1)', async () => {
+      await expectBlocked('https://[::ffff:10.0.0.1]/', prodGuard);
+    });
+
+    it('blocks IPv6 mapped IPv4 link-local (::ffff:169.254.169.254)', async () => {
+      await expectBlocked('https://[::ffff:169.254.169.254]/', prodGuard);
+    });
+
+    it('blocks 0.0.0.0', async () => {
+      await expectBlocked('https://0.0.0.0/', prodGuard);
+    });
+
+    it('allows public decimal IP (3997760612 → 238.21.74.148)', async () => {
+      await expectAllowed('https://3997760612/', prodGuard);
+    });
+  });
 });
 
 describe('SSRF guard (validateSmtpHost)', () => {

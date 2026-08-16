@@ -7,6 +7,8 @@ import { lookup } from 'node:dns/promises';
  * 规则：
  * - 默认仅允许 https://（开发环境可显式允许 http，用于本地 mock）。
  * - 禁止 localhost / 127.0.0.1 / ::1 / 169.254.0.0/16 / 私有内网段。
+ * - 禁止十进制/十六进制/八进制 IP 变体表示的内网地址（BUG-005）。
+ * - 禁止 IPv6 mapped IPv4 内网地址（如 ::ffff:127.0.0.1）。
  * - 可选 DNS 解析后校验所有 A/AAAA 记录（默认开启，测试可关闭）。
  */
 
@@ -27,10 +29,19 @@ const PRIVATE_HOST_GLOBS: Array<{ match: RegExp; reason: string }> = [
   { match: /^172\.(1[6-9]|2\d|3[01])\./i, reason: 'private-172.16-31' },
   { match: /^169\.254\./i, reason: 'link-local' },
   { match: /^0\./, reason: 'unspecified' },
+  { match: /^0\.0\.0\.0$/i, reason: 'unspecified' },
   { match: /^::1$/i, reason: 'loopback' },
   { match: /^::$/i, reason: 'unspecified' },
   { match: /^fc|^fd/i, reason: 'unique-local-ipv6' },
   { match: /^fe80/i, reason: 'link-local-ipv6' },
+  // BUG-005: IPv6 mapped IPv4 内网地址（Node.js URL 会将 ::ffff:127.0.0.1 转为 ::ffff:7f00:1）
+  // 这些正则覆盖点分十进制和十六进制两种表示形式。
+  { match: /^::ffff:7f/i, reason: 'ipv4-mapped-loopback' },         // ::ffff:127.x.x.x / ::ffff:7f00:1
+  { match: /^::ffff:a[0-9a-f]?\.?/i, reason: 'ipv4-mapped-private-10' }, // ::ffff:10.x.x.x / ::ffff:a00:1
+  { match: /^::ffff:c0a8/i, reason: 'ipv4-mapped-private-192.168' }, // ::ffff:192.168.x.x / ::ffff:c0a8:1
+  { match: /^::ffff:ac1[0-9a-f]/i, reason: 'ipv4-mapped-private-172.16-31' },
+  { match: /^::ffff:a9fe/i, reason: 'ipv4-mapped-link-local' },     // ::ffff:169.254.x.x / ::ffff:a9fe:a9fe
+  { match: /^::ffff:0/i, reason: 'ipv4-mapped-unspecified' },
 ];
 
 function isPrivateIpLiteral(ip: string): string | null {
@@ -46,7 +57,75 @@ function isPrivateHostname(hostname: string): { blocked: boolean; reason?: strin
   if (ip.startsWith('[') && ip.endsWith(']')) ip = ip.slice(1, -1);
   const reason = isPrivateIpLiteral(ip);
   if (reason) return { blocked: true, reason };
+  // BUG-005: 十进制/十六进制/八进制 IP 变体检测。
+  // 例如 2130706433 = 127.0.0.1, 0x7f000001 = 127.0.0.1, 0177.0.0.1 = 127.0.0.1
+  const variantReason = checkIpVariant(ip);
+  if (variantReason) return { blocked: true, reason: variantReason };
   return { blocked: false };
+}
+
+/**
+ * BUG-005: 检测十进制/十六进制/八进制 IP 变体是否指向私有/内网地址。
+ * - 纯十进制整数（如 2130706433 → 127.0.0.1）
+ * - 十六进制（如 0x7f000001 → 127.0.0.1）
+ * - 八进制分段（如 0177.0.0.1 → 127.0.0.1）
+ * - 混合分段（如 0x7f.0.0.1 → 127.0.0.1）
+ *
+ * 浏览器和 HTTP 客户端可能将这类变体解析为标准 IP 后发请求，
+ * 因此必须在 SSRF guard 层提前拦截。
+ */
+function checkIpVariant(hostname: string): string | null {
+  // 纯十进制整数：尝试转换为 IPv4
+  if (/^\d+$/.test(hostname) && hostname.length <= 10) {
+    const num = Number(hostname);
+    if (num > 0 && num <= 0xffffffff) {
+      const ip = longToIpv4(num);
+      if (ip) {
+        const reason = isPrivateIpLiteral(ip);
+        if (reason) return `decimal-ip-${reason} (${hostname}→${ip})`;
+      }
+    }
+    return null;
+  }
+
+  // 含十六进制或八进制分段的 IPv4（如 0x7f.0.0.1, 0177.0.0.1, 0x7f.0.0x0.1）
+  if (hostname.includes('.') && /0x[0-9a-f]+|^0[0-7]+/i.test(hostname)) {
+    const parts = hostname.split('.');
+    if (parts.length === 4) {
+      const octets: number[] = [];
+      for (const part of parts) {
+        let val: number;
+        if (/^0x[0-9a-f]+$/i.test(part)) {
+          val = parseInt(part, 16);
+        } else if (/^0[0-7]+$/.test(part) && part.length > 1) {
+          val = parseInt(part, 8);
+        } else if (/^\d+$/.test(part)) {
+          val = parseInt(part, 10);
+        } else {
+          return null; // 不是 IP 变体
+        }
+        if (val < 0 || val > 255) return null;
+        octets.push(val);
+      }
+      const ip = octets.join('.');
+      const reason = isPrivateIpLiteral(ip);
+      if (reason) return `variant-ip-${reason} (${hostname}→${ip})`;
+    }
+  }
+
+  return null;
+}
+
+/** 将 32 位无符号整数转换为点分十进制 IPv4。使用 BigInt 避免 JS 32 位有符号整数溢出。 */
+function longToIpv4(num: number): string | null {
+  if (!Number.isInteger(num) || num < 0 || num > 0xffffffff) return null;
+  const big = BigInt(num);
+  return [
+    Number((big >> 24n) & 0xffn),
+    Number((big >> 16n) & 0xffn),
+    Number((big >> 8n) & 0xffn),
+    Number(big & 0xffn),
+  ].join('.');
 }
 
 async function isPrivateViaDns(hostname: string): Promise<string | null> {

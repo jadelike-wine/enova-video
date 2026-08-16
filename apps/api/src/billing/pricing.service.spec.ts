@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DomainError } from '@enova/contracts';
 import { PricingService, type PriceQuoteInput } from './pricing.service.js';
 
 /**
@@ -209,5 +210,148 @@ describe('PricingService: dynamic pricing', () => {
         dimensions: { resolution: '1080p' },
       }),
     ).rejects.toThrow('Video duration is required for per-second pricing');
+  });
+
+  it('VIDEO pricing: width/height normalizes to tier key (1280x720 → 720p)', async () => {
+    const version: Version = {
+      id: 'v-width-height',
+      version: 1,
+      credits: 0,
+      pricingJson: {
+        providerCostMicrousd: 0,
+        estimatedRevenueCents: 0,
+        rules: {
+          baseCredits: 2,
+          duration: { pricePerSecond: 5 },
+          resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+        },
+      },
+      dimensionsJson: null,
+    };
+    const h = createHarness(() => version);
+
+    const quote = await h.svc.quote({
+      type: 'VIDEO',
+      provider: 'agnes',
+      model: 'agnes-video-v2.0',
+      dimensions: { numFrames: 121, frameRate: 24, width: 1280, height: 720 },
+    });
+
+    // base=2, duration=121/24=5.0417, pricePerSec=5, resolutionMul=1.5
+    // credits = ceil(2 + (5.0417 * 5) * 1.5) = ceil(2 + 37.8125) = ceil(39.8125) = 40
+    expect(quote.credits).toBe(40);
+  });
+
+  it('VIDEO pricing: portrait 720x1280 also normalizes to 720p', async () => {
+    const version: Version = {
+      id: 'v-portrait',
+      version: 1,
+      credits: 0,
+      pricingJson: {
+        providerCostMicrousd: 0,
+        estimatedRevenueCents: 0,
+        rules: {
+          baseCredits: 2,
+          duration: { pricePerSecond: 5 },
+          resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+        },
+      },
+      dimensionsJson: null,
+    };
+    const h = createHarness(() => version);
+
+    const quote = await h.svc.quote({
+      type: 'VIDEO',
+      provider: 'agnes',
+      model: 'agnes-video-v2.0',
+      dimensions: { numFrames: 121, frameRate: 24, width: 720, height: 1280 },
+    });
+
+    expect(quote.credits).toBe(40);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Image size+ratio → resolution rule fallback (bug fix)
+// ---------------------------------------------------------------------------
+
+describe('PricingService: image size+ratio with resolution-only rules', () => {
+  // Simulates the production scenario: agnes-image-2.1-flash pricing version
+  // has only a `resolution` table (no `size` table), but the API request
+  // sends Agnes-native `size` + `ratio` format.
+  const version: Version = {
+    id: 'img-v1',
+    version: 1,
+    credits: 0,
+    pricingJson: {
+      providerCostMicrousd: 0,
+      estimatedRevenueCents: 0,
+      rules: {
+        baseCredits: 5,
+        resolution: {
+          '1024x1024': 1,
+          '2048x2048': 2,
+          '2624x1472': 3,
+        },
+      },
+    },
+    dimensionsJson: null,
+  };
+
+  it('size=1K + ratio=1:1 → correct pricing via canonical resolution', async () => {
+    const h = createHarness(() => version);
+    const quote = await h.svc.quote({
+      type: 'IMAGE',
+      provider: 'agnes',
+      model: 'agnes-image-2.1-flash',
+      dimensions: { size: '1K', ratio: '1:1' },
+    });
+    expect(quote.credits).toBe(5);
+    expect(h.insertedQuotes[0].estimatedCredits).toBe(5);
+  });
+
+  it('size=2K + ratio=16:9 → correct pricing via canonical resolution', async () => {
+    const h = createHarness(() => version);
+    const quote = await h.svc.quote({
+      type: 'IMAGE',
+      provider: 'agnes',
+      model: 'agnes-image-2.1-flash',
+      dimensions: { size: '2K', ratio: '16:9' },
+    });
+    expect(quote.credits).toBe(15);
+  });
+
+  it('width+height input still works (no regression)', async () => {
+    const h = createHarness(() => version);
+    const quote = await h.svc.quote({
+      type: 'IMAGE',
+      provider: 'agnes',
+      model: 'agnes-image-2.1-flash',
+      dimensions: { width: 1024, height: 1024 },
+    });
+    expect(quote.credits).toBe(5);
+  });
+
+  it('resolution string input still works (no regression)', async () => {
+    const h = createHarness(() => version);
+    const quote = await h.svc.quote({
+      type: 'IMAGE',
+      provider: 'agnes',
+      model: 'agnes-image-2.1-flash',
+      dimensions: { resolution: '2048x2048' },
+    });
+    expect(quote.credits).toBe(10);
+  });
+
+  it('unsupported size returns PRICING_NOT_FOUND, not MISSING_PRICING_DIMENSION', async () => {
+    const h = createHarness(() => version);
+    await expect(
+      h.svc.quote({
+        type: 'IMAGE',
+        provider: 'agnes',
+        model: 'agnes-image-2.1-flash',
+        dimensions: { size: '8K', ratio: '1:1' },
+      }),
+    ).rejects.toThrow(DomainError);
   });
 });

@@ -1454,6 +1454,30 @@
         ]
       }
     },
+    "/api/v1/admin/pricing/models/overview": {
+      "get": {
+        "operationId": "PricingAdminController_listModelPricingOverview",
+        "summary": "模型定价概览（系统模型 LEFT JOIN 最新 PUBLISHED pricing）",
+        "parameters": [
+          {
+            "name": "generationType",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/pricing"
+        ]
+      }
+    },
     "/api/v1/admin/pricing/rules": {
       "get": {
         "operationId": "PricingAdminController_listRules",

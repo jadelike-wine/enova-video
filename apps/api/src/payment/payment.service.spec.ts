@@ -190,5 +190,73 @@ describe('PaymentService', () => {
         svc.notify('sandbox', JSON.stringify({ orderId: 'o1', tradeNo: 'T1', amountCents: 999, status: 'success' }), {}),
       ).rejects.toThrowError(/amount mismatch/i);
     });
+
+    // BUG-003: 验证 providerRef 回写在事务内执行，与订单状态/钱包/收入事件同事务边界。
+    it('writes providerRef inside transaction on success notification', async () => {
+      const orderRow = { id: 'o1', workspaceId: 'ws1', userId: 'u1', amountCents: 1000, credits: 1000, status: 'PENDING', orderType: 'RECHARGE', currency: 'CNY', fulfillmentStatus: 'PENDING', finalAmountCents: 1000 };
+      const txUpdates: Array<{ table: string; set: Record<string, unknown> }> = [];
+      const db = createDb({
+        'sel:orders': () => [orderRow],
+        'sel:wallets': () => [{ balance: 200 }],
+      });
+      // Wrap db.transaction to capture tx.update calls
+      const origTx = {
+        select: () => ({
+          from: (t: unknown) => {
+            const key = 'sel:' + tableKey(t);
+            const chain: any = { where: () => chain, limit: () => Promise.resolve([orderRow]), for: () => Promise.resolve([orderRow]) };
+            return chain;
+          },
+        }),
+        update: (t: unknown) => ({
+          set: (s: Record<string, unknown>) => ({
+            where: () => {
+              txUpdates.push({ table: tableKey(t), set: s });
+              return Promise.resolve([]);
+            },
+          }),
+        }),
+        insert: (t: unknown) => {
+          const insertChain: any = { values: () => insertChain, onConflictDoNothing: () => insertChain, returning: () => Promise.resolve([]) };
+          return insertChain;
+        },
+      };
+      const dbWithCapture = {
+        ...db,
+        transaction: async (cb: (t: any) => unknown) => cb(origTx),
+      };
+      const wallet = makeWallet();
+      const svc = new PaymentService(dbWithCapture as any, makeSettings() as any, wallet as any, makeFulfillment() as any);
+      await svc.notify(
+        'sandbox',
+        JSON.stringify({ orderId: 'o1', tradeNo: 'REAL-TX-001', amountCents: 1000, status: 'success' }),
+        {},
+      );
+
+      // 验证 payment_transactions 更新包含 providerRef（在事务内执行）
+      const txUpdate = txUpdates.find((u) => u.table === 'payment_transactions');
+      expect(txUpdate).toBeDefined();
+      expect(txUpdate!.set.providerRef).toBe('REAL-TX-001');
+      expect(txUpdate!.set.status).toBe('SUCCEEDED');
+
+      // 钱包 recharge 也在事务内执行
+      expect(wallet.rechargeInTx).toHaveBeenCalled();
+    });
+
+    // BUG-003: 已 SUCCEEDED 的订单（幂等）不会重复入账
+    it('skips duplicate notification when order already SUCCEEDED (idempotent)', async () => {
+      const orderRow = { id: 'o1', workspaceId: 'ws1', userId: 'u1', amountCents: 1000, credits: 1000, status: 'SUCCEEDED', orderType: 'RECHARGE', currency: 'CNY', fulfillmentStatus: 'SUCCEEDED', finalAmountCents: 1000 };
+      const db = createDb({ 'sel:orders': () => [orderRow] });
+      const wallet = makeWallet();
+      const svc = new PaymentService(db as any, makeSettings() as any, wallet as any, makeFulfillment() as any);
+      const res = await svc.notify(
+        'sandbox',
+        JSON.stringify({ orderId: 'o1', tradeNo: 'T1', amountCents: 1000, status: 'success' }),
+        {},
+      );
+      expect(res.received).toBe(true);
+      // 已 SUCCEEDED → 不应再调用 rechargeInTx
+      expect(wallet.rechargeInTx).not.toHaveBeenCalled();
+    });
   });
 });

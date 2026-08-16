@@ -58,7 +58,9 @@ export class PaymentController {
     @Req() req: FastifyRequest,
   ): Promise<{ received: boolean }> {
     const rawBody = this.rawBodyOf(req);
-    return this.service.notify(channel, rawBody, headers);
+    // 微信支付 APIv3 验签串需要 HTTP method 和请求路径。
+    const context = { method: req.method, url: req.url };
+    return this.service.notify(channel, rawBody, headers, context);
   }
 
   private rawBodyOf(req: FastifyRequest): string {

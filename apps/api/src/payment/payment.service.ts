@@ -7,6 +7,7 @@ import {
   buildPaymentRegistry,
   creditsFromCents,
   PaymentRegistry,
+  type NotificationContext,
   type PaymentEnvConfig,
   type PaymentNotification,
   type PaymentProvider,
@@ -64,6 +65,7 @@ export class PaymentService {
     'payment.wechatSerialNo',
     'payment.wechatPrivateKey',
     'payment.wechatPlatformCert',
+    'payment.sandboxSecret',
   ];
 
   /**
@@ -106,6 +108,7 @@ export class PaymentService {
     const wechatSerialNo = getStr('payment.wechatSerialNo', '');
     const wechatPrivateKey = getStr('payment.wechatPrivateKey', '');
     const wechatPlatformCert = getStr('payment.wechatPlatformCert', '');
+    const sandboxSecret = getStr('payment.sandboxSecret', '');
 
     const cfg: PaymentEnvConfig = {
       mode,
@@ -128,6 +131,7 @@ export class PaymentService {
               platformCert: wechatPlatformCert || undefined,
             }
           : undefined,
+      sandboxSecret: sandboxSecret || undefined,
     };
     const built = buildPaymentRegistry(cfg);
     return {
@@ -371,10 +375,15 @@ export class PaymentService {
   }
 
   /** 渠道异步通知入口：验签后幂等入账。返回 received=false 表示无关回调（应返回 200 忽略）。 */
-  async notify(providerKey: PaymentProviderKey, rawBody: string, headers: Record<string, string>): Promise<{ received: boolean }> {
+  async notify(
+    providerKey: PaymentProviderKey,
+    rawBody: string,
+    headers: Record<string, string>,
+    context?: NotificationContext,
+  ): Promise<{ received: boolean }> {
     const { registry } = await this.buildConfig();
     const provider = registry.get(providerKey);
-    const notification: PaymentNotification | null = await provider.verifyNotification(rawBody, headers);
+    const notification: PaymentNotification | null = await provider.verifyNotification(rawBody, headers, context);
     if (!notification) return { received: false };
     if (notification.status === 'success') {
       await this.settleNotification(notification);
@@ -407,36 +416,18 @@ export class PaymentService {
     if (order.currency !== 'CNY') {
       throw domainError(ERROR_CODES.PAYMENT_AMOUNT_MISMATCH, `Unsupported currency: ${order.currency}`, 400);
     }
-    // P0-6: 回写真实第三方交易号（下单时可能是占位 orderId，回调拿到真实 trade_no/transaction_id）。
-    // provider_ref 唯一索引保证同一渠道交易号不重复入账（防重复回调）。
-    // 若出现唯一约束冲突（同一 trade_no 已被另一订单占用），必须 fail-closed，禁止继续入账。
-    if (notification.tradeNo && notification.tradeNo !== order.id) {
-      try {
-        await this.db
-          .update(paymentTransactions)
-          .set({ providerRef: notification.tradeNo, status: 'SUCCEEDED', updatedAt: new Date() })
-          .where(
-            and(
-              eq(paymentTransactions.orderId, order.id),
-              eq(paymentTransactions.status, 'PENDING'),
-            ),
-          );
-      } catch {
-        // provider_ref 唯一约束冲突：同一交易号已被另一订单入账（跨订单 replayed webhook）。
-        // 这是重复/篡改入账的强信号，绝不能静默吞掉后继续 recharge。
-        throw domainError(
-          ERROR_CODES.PAYMENT_TX_REF_CONFLICT,
-          'Payment transaction ref already bound to another order',
-          409,
-          { orderId: order.id, tradeNo: notification.tradeNo },
-        );
-      }
-    }
-    await this.settleOrder(order.workspaceId, order.id, order.credits);
+    // BUG-003 修复：providerRef 回写移入 markSucceededAndRecharge 事务内，
+    // 保证订单/交易单/钱包/收入事件在同一事务边界内，避免异常路径下的部分写入。
+    await this.settleOrder(order.workspaceId, order.id, order.credits, notification.tradeNo);
   }
 
-  private async settleOrder(workspaceId: string, orderId: string, credits: number): Promise<void> {
-    await this.markSucceededAndRecharge(workspaceId, orderId, credits);
+  private async settleOrder(
+    workspaceId: string,
+    orderId: string,
+    credits: number,
+    tradeNo?: string,
+  ): Promise<void> {
+    await this.markSucceededAndRecharge(workspaceId, orderId, credits, tradeNo);
     // P0-7: PLAN 订单支付成功后触发订阅履约（创建 subscription + 发放 credits）。
     // 履约幂等（idempotency_key = orderId），失败不回滚支付，由 reconciliation 补偿。
     try {
@@ -450,13 +441,21 @@ export class PaymentService {
   }
 
   /**
-   * 入账核心：事务内锁定订单 → 校验 PENDING → 置 SUCCEEDED → 更新交易单 → 调用
+   * 入账核心：事务内锁定订单 → 校验 PENDING → 置 SUCCEEDED → 回写 providerRef → 更新交易单 → 调用
    * WalletGateway.rechargeInTx 写入 RECHARGE（幂等键防重复）。订单行锁保证并发回调串行化。
+   *
+   * BUG-003 修复：providerRef 回写从事务外移入此事务内，保证订单/交易单/钱包/收入事件
+   * 在同一事务边界内。provider_ref 唯一约束冲突时整事务回滚，订单状态保持 PENDING。
    *
    * P0-6/P0-7: RECHARGE 订单的 fulfillment = recharge 本身，直接标记 SUCCEEDED。
    * PLAN/CREDIT_PACK 订单的 fulfillment 由 SubscriptionFulfillmentService 处理，此处只标记 payment SUCCEEDED。
    */
-  private async markSucceededAndRecharge(workspaceId: string, orderId: string, credits: number): Promise<void> {
+  private async markSucceededAndRecharge(
+    workspaceId: string,
+    orderId: string,
+    credits: number,
+    tradeNo?: string,
+  ): Promise<void> {
     await this.db.transaction(async (tx) => {
       const rows = await tx.select().from(orders).where(eq(orders.id, orderId)).for('update');
       const order = rows[0];
@@ -477,7 +476,35 @@ export class PaymentService {
           updatedAt: new Date(),
         })
         .where(eq(orders.id, orderId));
-      await tx.update(paymentTransactions).set({ status: 'SUCCEEDED', updatedAt: new Date() }).where(eq(paymentTransactions.orderId, orderId));
+
+      // P0-6: 回写真实第三方交易号（下单时可能是占位 orderId，回调拿到真实 trade_no/transaction_id）。
+      // provider_ref 唯一索引保证同一渠道交易号不重复入账（防重复回调）。
+      // 若出现唯一约束冲突（同一 trade_no 已被另一订单占用），必须 fail-closed，禁止继续入账。
+      // BUG-003: 此更新在事务内执行，冲突时整事务回滚，订单状态回滚为 PENDING，无部分写入。
+      if (tradeNo && tradeNo !== order.id) {
+        try {
+          await tx
+            .update(paymentTransactions)
+            .set({ providerRef: tradeNo, status: 'SUCCEEDED', updatedAt: new Date() })
+            .where(
+              and(
+                eq(paymentTransactions.orderId, order.id),
+                eq(paymentTransactions.status, 'PENDING'),
+              ),
+            );
+        } catch {
+          // provider_ref 唯一约束冲突：同一交易号已被另一订单入账（跨订单 replayed webhook）。
+          // 这是重复/篡改入账的强信号，绝不能静默吞掉后继续 recharge。
+          throw domainError(
+            ERROR_CODES.PAYMENT_TX_REF_CONFLICT,
+            'Payment transaction ref already bound to another order',
+            409,
+            { orderId: order.id, tradeNo },
+          );
+        }
+      } else {
+        await tx.update(paymentTransactions).set({ status: 'SUCCEEDED', updatedAt: new Date() }).where(eq(paymentTransactions.orderId, orderId));
+      }
 
       if (isRechargeLike) {
         await this.wallet.rechargeInTx(tx, workspaceId, credits, orderId, `payment:recharge:${orderId}`);

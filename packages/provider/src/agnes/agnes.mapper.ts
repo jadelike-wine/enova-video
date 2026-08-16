@@ -24,9 +24,12 @@ export function mapAgnesImageResponse(resp: AgnesImageResponse): ProviderImageRe
   };
 }
 
-/** 提取视频提交后用于后续轮询的 provider_job_id。 */
+/**
+ * 提取视频提交后用于后续轮询的 provider_job_id。
+ * 优先使用 video_id（Agnes 推荐的轮询标识）；回退到 task_id / id。
+ */
 export function extractProviderJobId(resp: AgnesVideoResponse): string {
-  const id = resp.task_id || resp.id || resp.video_id;
+  const id = resp.video_id || resp.task_id || resp.id;
   if (!id) {
     throw new ProviderError('Agnes video submit missing task_id/id', { category: 'PROVIDER_BAD_REQUEST' });
   }
@@ -38,7 +41,8 @@ export function mapAgnesVideoStatus(resp: AgnesVideoResponse): ProviderJobStatus
   const raw = resp.status ?? 'queued';
   switch (raw) {
     case 'completed': {
-      const url = resp.remixed_from_video_id;
+      // 优先从 metadata.url 读取最终视频地址；回退到旧字段 remixed_from_video_id。
+      const url = resp.metadata?.url ?? resp.remixed_from_video_id;
       if (!url) {
         throw new ProviderError('Agnes video completed without result url', { category: 'PROVIDER_BAD_REQUEST' });
       }

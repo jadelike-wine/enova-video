@@ -7,7 +7,10 @@
 export interface AgnesImageRequest {
   model: string;
   prompt: string;
+  /** 尺寸档位（1K/2K/3K/4K）；兼容历史精确尺寸但不推荐。 */
   size?: string;
+  /** 宽高比（1:1/4:3/16:9/...），与档位式 size 配合使用。 */
+  ratio?: string;
   /** 历史兼容：text2img 时可用。 */
   return_base64?: boolean;
   /** 非 text2img 模式（img2img / multi_img）的额外参数。 */
@@ -56,14 +59,19 @@ export interface AgnesVideoResponse {
   /** 提交时返回：task_id 或 id。 */
   task_id?: string;
   id?: string;
-  /** 状态查询所需。 */
+  /** 状态查询所需。优先使用 video_id 轮询。 */
   video_id?: string;
   status?: AgnesVideoStatus;
   progress?: number;
   seconds?: number;
   size?: number;
   duration_ms?: number;
-  /** completed 时返回：结果视频 URL。 */
+  /** completed 时返回的 metadata 对象，含最终视频 URL。 */
+  metadata?: {
+    url?: string;
+    [k: string]: unknown;
+  };
+  /** @deprecated 旧字段，completed 时可能返回结果视频 URL。保留兼容。 */
   remixed_from_video_id?: string;
   error?: unknown;
   [k: string]: unknown;

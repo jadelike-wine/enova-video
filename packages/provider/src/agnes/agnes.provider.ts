@@ -53,7 +53,10 @@ export class AgnesProvider implements AIProvider {
     const payload: AgnesImageRequest = {
       model: input.model,
       prompt: input.prompt,
+      // 新请求使用原生 size + ratio 模型（1K/2K/3K/4K + 16:9 等）。
+      // 历史精确尺寸（如 1280x720）仅作为 fallback 传入，由 Agnes 自动标准化。
       size: input.size,
+      ...(input.ratio ? { ratio: input.ratio } : {}),
     };
     if (input.mode === 'text2img' || !input.mode) {
       if (input.responseFormat === 'b64_json') payload.return_base64 = true;
@@ -85,6 +88,20 @@ export class AgnesProvider implements AIProvider {
     if (input.numInferenceSteps !== undefined) payload.num_inference_steps = input.numInferenceSteps;
     if (input.seed !== undefined) payload.seed = input.seed;
 
+    // ---- Video mode → Agnes wire protocol mapping ----
+    //
+    // Business layer uses provider-agnostic mode names:
+    //   text2video  → (no extra fields needed, Agnes defaults to text-to-video)
+    //   img2video   → Agnes image-to-video: set top-level `image` (single URL).
+    //                 Agnes does NOT use `mode: "ti2vid"`; the presence of
+    //                 a top-level `image` field signals image-to-video semantics.
+    //   keyframes   → Agnes keyframe animation: set `extra_body.image[]` (array)
+    //                 and `extra_body.mode = "keyframes"`.
+    //   multi_img   → Agnes multi-image: set `extra_body.image[]` (array),
+    //                 no `extra_body.mode` (not keyframes).
+    //
+    // Do NOT send `mode: "img2video"` or `mode: "ti2vid"` to Agnes.
+    // The business-layer mode names are translated here and only here.
     if (input.mode === 'img2video') {
       const img = input.image ?? input.images?.[0];
       if (!img) throw new ProviderError('img2video requires an input image', { category: 'PROVIDER_BAD_REQUEST' });
@@ -104,14 +121,15 @@ export class AgnesProvider implements AIProvider {
   }
 
   async getVideoStatus(providerJobId: string, input: GenerateVideoInput, credential: string): Promise<ProviderJobStatus> {
-    // 兼容两种 Agnes 端点：优先 task 端点；404 时回退 video_id 端点（老 poller 主路径）。
-    // 两条路径都失败则抛 ProviderError。
+    // Agnes 视频轮询优先使用 video_id 端点（GET /agnesapi?video_id=...）。
+    // extractProviderJobId 优先返回 video_id，因此 providerJobId 通常就是 video_id。
+    // 404 时回退到 task 端点（GET /v1/videos/{task_id}），兼容旧路径。
     try {
-      const resp = await this.client.getVideoStatusByTask(providerJobId, input.model, credential);
+      const resp = await this.client.getVideoStatusByVideoId(providerJobId, input.model, credential);
       return mapAgnesVideoStatus(resp);
     } catch (err) {
       if (err instanceof ProviderError && err.statusCode === 404) {
-        const resp = await this.client.getVideoStatusByVideoId(providerJobId, input.model, credential);
+        const resp = await this.client.getVideoStatusByTask(providerJobId, input.model, credential);
         return mapAgnesVideoStatus(resp);
       }
       throw err;

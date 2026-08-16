@@ -9,10 +9,24 @@ import { ProviderError } from './errors.js';
  * 业务代码不得依赖上游原始字段。
  */
 
+/**
+ * Agnes 原生尺寸档位。与协议文档 `agnes-image-2.1-flash.md` 的 `size` 参数一致。
+ * 历史精确尺寸（如 `1024x768`）仅作为 backward-compatibility fallback 归一化到此类型。
+ */
+export type AgnesImageSize = '1K' | '2K' | '3K' | '4K';
+
+/**
+ * Agnes 原生宽高比。与协议文档支持的 `ratio` 参数一致。
+ */
+export type AgnesImageRatio = '1:1' | '3:4' | '4:3' | '16:9' | '9:16' | '2:3' | '3:2' | '21:9';
+
 export interface GenerateImageInput {
   model: string;
   prompt: string;
-  size?: string;
+  /** 尺寸档位（1K/2K/3K/4K）。新请求必须使用档位式 size，不再使用精确尺寸。 */
+  size?: AgnesImageSize | string;
+  /** 宽高比（1:1/4:3/16:9/...）。与 size 配合使用，使用协议原生模型。 */
+  ratio?: AgnesImageRatio | string;
   mode?: 'text2img' | 'img2img' | 'multi_img';
   images?: string[]; // 参考图 URL
   responseFormat?: 'url' | 'b64_json';

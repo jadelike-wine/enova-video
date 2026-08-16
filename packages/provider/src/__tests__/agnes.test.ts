@@ -56,6 +56,37 @@ describe('agnes mapper (constant-time normalization)', () => {
     }
   });
 
+  it('maps video succeeded with metadata.url (preferred over remixed_from_video_id)', () => {
+    const s = mapAgnesVideoStatus({
+      status: 'completed',
+      metadata: { url: 'https://x.test/new-via-metadata.mp4' },
+      remixed_from_video_id: 'https://x.test/old-via-remixed.mp4',
+    });
+    if (s.status === 'succeeded') {
+      expect(s.sourceUrl).toBe('https://x.test/new-via-metadata.mp4');
+    } else {
+      throw new Error('expected succeeded');
+    }
+  });
+
+  it('falls back to remixed_from_video_id when metadata.url is missing', () => {
+    const s = mapAgnesVideoStatus({
+      status: 'completed',
+      metadata: {},
+      remixed_from_video_id: 'https://x.test/fallback.mp4',
+    });
+    if (s.status === 'succeeded') {
+      expect(s.sourceUrl).toBe('https://x.test/fallback.mp4');
+    } else {
+      throw new Error('expected succeeded');
+    }
+  });
+
+  it('prioritizes video_id over task_id for provider job id', () => {
+    const resp: AgnesVideoResponse = { task_id: 'task-1', video_id: 'video-99' };
+    expect(mapAgnesVideoSubmission(resp).providerJobId).toBe('video-99');
+  });
+
   it('throws when video completed without result url', () => {
     expect(() => mapAgnesVideoStatus({ status: 'completed' })).toThrow(ProviderError);
   });
@@ -152,5 +183,136 @@ describe('agnes provider (HTTP via mocked fetch)', () => {
     await expect(
       makeProvider().generateImage({ model: 'agn-dream', prompt: 'hi', mode: 'text2img' }, 'sk-1'),
     ).rejects.toBeInstanceOf(ProviderError);
+  });
+});
+
+// ---- Image native size + ratio payload tests ----
+describe('agnes provider: image size + ratio payload', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockReset();
+  });
+
+  function okJson(body: unknown): Response {
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+
+  function getPayload(): Record<string, unknown> {
+    return JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+  }
+
+  it('sends native size=1K + ratio=1:1 in payload', async () => {
+    fetchMock.mockResolvedValue(okJson({ data: [{ url: 'https://cdn.test/img.png' }] }));
+    await makeProvider().generateImage(
+      { model: 'agnes-image-2.1-flash', prompt: 'test', size: '1K', ratio: '1:1', mode: 'text2img' },
+      'sk-1',
+    );
+    const payload = getPayload();
+    expect(payload.size).toBe('1K');
+    expect(payload.ratio).toBe('1:1');
+  });
+
+  it('sends native size=1K + ratio=16:9 in payload', async () => {
+    fetchMock.mockResolvedValue(okJson({ data: [{ url: 'https://cdn.test/img.png' }] }));
+    await makeProvider().generateImage(
+      { model: 'agnes-image-2.1-flash', prompt: 'test', size: '1K', ratio: '16:9', mode: 'text2img' },
+      'sk-1',
+    );
+    const payload = getPayload();
+    expect(payload.size).toBe('1K');
+    expect(payload.ratio).toBe('16:9');
+  });
+
+  it('sends native size=2K + ratio=9:16 in payload', async () => {
+    fetchMock.mockResolvedValue(okJson({ data: [{ url: 'https://cdn.test/img.png' }] }));
+    await makeProvider().generateImage(
+      { model: 'agnes-image-2.1-flash', prompt: 'test', size: '2K', ratio: '9:16', mode: 'text2img' },
+      'sk-1',
+    );
+    const payload = getPayload();
+    expect(payload.size).toBe('2K');
+    expect(payload.ratio).toBe('9:16');
+  });
+
+  it('does NOT send old precise dimensions like 1280x720 for new requests', async () => {
+    fetchMock.mockResolvedValue(okJson({ data: [{ url: 'https://cdn.test/img.png' }] }));
+    await makeProvider().generateImage(
+      { model: 'agnes-image-2.1-flash', prompt: 'test', size: '1K', ratio: '16:9', mode: 'text2img' },
+      'sk-1',
+    );
+    const payload = getPayload();
+    expect(payload.size).not.toBe('1280x720');
+    expect(payload.size).not.toBe('1024x768');
+    expect(payload.size).not.toBe('720x1280');
+  });
+
+  it('legacy precise size (1280x720) still passes through as backward-compat fallback', async () => {
+    fetchMock.mockResolvedValue(okJson({ data: [{ url: 'https://cdn.test/img.png' }] }));
+    await makeProvider().generateImage(
+      { model: 'agnes-image-2.1-flash', prompt: 'legacy', size: '1280x720', mode: 'text2img' },
+      'sk-1',
+    );
+    const payload = getPayload();
+    // Legacy size passes through; Agnes will normalize.
+    expect(payload.size).toBe('1280x720');
+    // ratio is not set for legacy requests.
+    expect(payload.ratio).toBeUndefined();
+  });
+});
+
+// ---- Video mode mapping tests ----
+describe('agnes provider: video mode mapping', () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockReset();
+  });
+
+  function okJson(body: unknown): Response {
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+
+  function getPayload(): Record<string, unknown> {
+    return JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+  }
+
+  it('img2video maps to top-level image (NOT mode=ti2vid or mode=img2video)', async () => {
+    fetchMock.mockResolvedValue(okJson({ task_id: 't-1' }));
+    await makeProvider().submitVideo(
+      { model: 'agnes-video-v2.0', prompt: 'animate', mode: 'img2video', width: 1280, height: 720, numFrames: 97, frameRate: 24, image: 'https://example.com/input.png' },
+      'sk-1',
+    );
+    const payload = getPayload();
+    expect(payload.image).toBe('https://example.com/input.png');
+    // Must NOT send mode: 'img2video' or mode: 'ti2vid' to Agnes.
+    expect(payload.mode).toBeUndefined();
+    expect(payload.extra_body).toBeUndefined();
+  });
+
+  it('keyframes maps to extra_body.image[] + extra_body.mode=keyframes', async () => {
+    fetchMock.mockResolvedValue(okJson({ task_id: 't-2' }));
+    await makeProvider().submitVideo(
+      { model: 'agnes-video-v2.0', prompt: 'transition', mode: 'keyframes', width: 1280, height: 720, numFrames: 121, frameRate: 24, images: ['https://example.com/kf1.png', 'https://example.com/kf2.png'] },
+      'sk-1',
+    );
+    const payload = getPayload();
+    expect(payload.extra_body).toMatchObject({
+      image: ['https://example.com/kf1.png', 'https://example.com/kf2.png'],
+      mode: 'keyframes',
+    });
+  });
+
+  it('text2video does not set image or extra_body', async () => {
+    fetchMock.mockResolvedValue(okJson({ task_id: 't-3' }));
+    await makeProvider().submitVideo(
+      { model: 'agnes-video-v2.0', prompt: 'drone shot', mode: 'text2video', width: 1280, height: 720, numFrames: 97, frameRate: 24 },
+      'sk-1',
+    );
+    const payload = getPayload();
+    expect(payload.image).toBeUndefined();
+    expect(payload.extra_body).toBeUndefined();
   });
 });

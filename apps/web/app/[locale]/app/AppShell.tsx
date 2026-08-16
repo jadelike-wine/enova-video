@@ -6,6 +6,7 @@ import { usePathname, useRouter } from '@/i18n.config'
 import { useTranslations } from 'next-intl'
 import { Button } from 'antd'
 import { DialogProvider } from '@/components/application/DialogProvider'
+import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { SessionProvider, useSession } from '@/lib/auth'
 import { BRAND } from '@/lib/brand'
 import { ContentLoading } from '@/components/application/admin/AdminUi'
@@ -295,9 +296,12 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             <div className="min-w-0">
               <p className="text-sm text-gray-700 truncate">{user.email}</p>
             </div>
-            <Button type="text" size="small" danger onClick={() => void logout()} title={t('appShell.logoutTitle')}>
-              {t('appShell.logout')}
-            </Button>
+            <div className="flex items-center gap-1">
+              <LanguageSwitcher />
+              <Button type="text" size="small" danger onClick={() => void logout()} title={t('appShell.logoutTitle')}>
+                {t('appShell.logout')}
+              </Button>
+            </div>
           </div>
           <p className="text-xs text-gray-400 text-center">
             © {new Date().getFullYear()} {siteConfig.siteName || BRAND.nameZh} · {BRAND.name}

@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl'
 import { Button, Checkbox, Input, InputNumber, Modal, Result, Select, Skeleton, Spin, Switch, Tag } from 'antd'
 import {
   settingsApi,
+  isStepUpRequired,
   type SettingView,
   type SettingHistoryEntry,
 } from '../../lib/api'
@@ -358,6 +359,64 @@ function SettingRow({
 // 主视图
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Step-up 密码验证对话框
+// ---------------------------------------------------------------------------
+
+/**
+ * 安全敏感配置（ssrf.*、security.rateLimit*）保存时弹出，
+ * 要求管理员输入登录密码完成二次验证。
+ *
+ * 与 sub2api 的 TotpStepUpDialog 语义一致，但本项目 step-up 方式为 PASSWORD
+ * （见 SensitiveActionService），不是 TOTP。
+ */
+function StepUpPasswordModal({
+  visible,
+  onConfirm,
+  onCancel,
+}: {
+  visible: boolean
+  onConfirm: (password: string) => void
+  onCancel: () => void
+}) {
+  const [password, setPassword] = useState('')
+  // 每次打开时清空密码
+  useEffect(() => {
+    if (visible) setPassword('')
+  }, [visible])
+
+  return (
+    <Modal
+      open={visible}
+      title="安全验证"
+      okText="确认"
+      cancelText="取消"
+      onOk={() => onConfirm(password)}
+      onCancel={onCancel}
+      destroyOnClose
+      maskClosable={false}
+    >
+      <div className="space-y-3 py-2">
+        <p className="text-sm text-gray-600">
+          此操作涉及安全敏感配置，需要管理员密码二次验证。
+        </p>
+        <Input.Password
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="请输入管理员密码"
+          autoFocus
+          onPressEnter={() => onConfirm(password)}
+          aria-label="管理员密码"
+        />
+      </div>
+    </Modal>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// 主视图
+// ---------------------------------------------------------------------------
+
 function AdminSettingsInner() {
   const t = useTranslations('admin.settings')
   const translateDynamic = (key: string) => t(key as never)
@@ -378,6 +437,11 @@ function AdminSettingsInner() {
   const [history, setHistory] = useState<SettingHistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [showKeys, setShowKeys] = useState(false)
+
+  // Step-up 密码验证对话框状态：安全敏感配置（ssrf.*、security.rateLimit*）保存时
+  // 后端返回 stepUpRequired=true，前端弹出管理员密码框，输入后带 header 重试。
+  const [stepUpVisible, setStepUpVisible] = useState(false)
+  const stepUpResolver = useRef<((password: string | null) => void) | null>(null)
 
   // 竞态防护：用于取消旧请求，避免组件卸载后 setState
   const loadRequestId = useRef(0)
@@ -548,6 +612,34 @@ function AdminSettingsInner() {
     [settings, isDirty],
   )
 
+  // ---- Step-up 密码验证 ----
+
+  /**
+   * 弹出 step-up 密码验证对话框，返回用户输入的密码或 null（取消）。
+   *
+   * 安全敏感配置（ssrf.*、security.rateLimit*）保存时后端要求二次验证，
+   * 前端弹出管理员密码框，输入后带 x-step-up-password header 重试原始请求。
+   * 与 sub2api 的 useStepUp().prompt() 语义一致。
+   */
+  const promptStepUpPassword = useCallback((): Promise<string | null> => {
+    return new Promise<string | null>((resolve) => {
+      stepUpResolver.current = resolve
+      setStepUpVisible(true)
+    })
+  }, [])
+
+  const handleStepUpConfirm = useCallback((password: string) => {
+    setStepUpVisible(false)
+    stepUpResolver.current?.(password || null)
+    stepUpResolver.current = null
+  }, [])
+
+  const handleStepUpCancel = useCallback(() => {
+    setStepUpVisible(false)
+    stepUpResolver.current?.(null)
+    stepUpResolver.current = null
+  }, [])
+
   // ---- 保存 ----
 
   const handleSave = useCallback(
@@ -564,7 +656,17 @@ function AdminSettingsInner() {
 
       setSaving((p) => ({ ...p, [key]: true }))
       try {
-        const updated = await settingsApi.update(key, value)
+        let updated: SettingView
+        try {
+          updated = await settingsApi.update(key, value)
+        } catch (e) {
+          // 安全敏感配置（ssrf.*、security.rateLimit*）保存时后端返回 stepUpRequired，
+          // 弹出管理员密码框，输入后带 x-step-up-password header 重试。
+          if (!isStepUpRequired(e)) throw e
+          const password = await promptStepUpPassword()
+          if (!password) return // 用户取消
+          updated = await settingsApi.update(key, value, undefined, password)
+        }
         setSettings((prev) =>
           prev.map((s) =>
             s.key === key
@@ -584,7 +686,7 @@ function AdminSettingsInner() {
         setSaving((p) => ({ ...p, [key]: false }))
       }
     },
-    [drafts, settings, alert, flashSaved],
+    [drafts, settings, alert, flashSaved, promptStepUpPassword],
   )
 
   const handleBatchSave = useCallback(
@@ -606,7 +708,16 @@ function AdminSettingsInner() {
       const savingId = `batch:${id}`
       setSaving((p) => ({ ...p, [savingId]: true }))
       try {
-        const updated = await settingsApi.batchUpdate(dirtyItems)
+        let updated: SettingView[]
+        try {
+          updated = await settingsApi.batchUpdate(dirtyItems)
+        } catch (e) {
+          // 批量保存安全敏感配置时后端可能返回 stepUpRequired，弹出密码框重试。
+          if (!isStepUpRequired(e)) throw e
+          const password = await promptStepUpPassword()
+          if (!password) return // 用户取消
+          updated = await settingsApi.batchUpdate(dirtyItems, password)
+        }
         setSettings(updated)
         const d: Record<string, string> = {}
         for (const s of updated) {
@@ -624,7 +735,7 @@ function AdminSettingsInner() {
         setSaving((p) => ({ ...p, [savingId]: false }))
       }
     },
-    [drafts, settings, alert, flashSaved],
+    [drafts, settings, alert, flashSaved, promptStepUpPassword],
   )
 
   const handleClearSecret = useCallback(
@@ -636,7 +747,15 @@ function AdminSettingsInner() {
       if (!ok) return
       setSaving((p) => ({ ...p, [key]: true }))
       try {
-        await settingsApi.clearSecret(key)
+        try {
+          await settingsApi.clearSecret(key)
+        } catch (e) {
+          // 安全敏感配置的 Secret 清除可能触发 step-up，弹出密码框重试。
+          if (!isStepUpRequired(e)) throw e
+          const password = await promptStepUpPassword()
+          if (!password) return // 用户取消
+          await settingsApi.clearSecret(key, password)
+        }
         setSettings((prev) =>
           prev.map((s) => (s.key === key ? { ...s, value: '', configured: false, persisted: true } : s)),
         )
@@ -648,7 +767,7 @@ function AdminSettingsInner() {
         setSaving((p) => ({ ...p, [key]: false }))
       }
     },
-    [confirm, alert],
+    [confirm, alert, promptStepUpPassword],
   )
 
   const loadHistory = useCallback(
@@ -1110,6 +1229,13 @@ function AdminSettingsInner() {
           </div>
         )}
       </Modal>
+
+      {/* Step-up 密码验证 Modal：安全敏感配置保存时弹出 */}
+      <StepUpPasswordModal
+        visible={stepUpVisible}
+        onConfirm={handleStepUpConfirm}
+        onCancel={handleStepUpCancel}
+      />
 
       {/* settings-tabs CSS 在 globals.css 中定义 */}
     </div>

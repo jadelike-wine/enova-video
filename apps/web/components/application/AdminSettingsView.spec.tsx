@@ -60,6 +60,8 @@ vi.mock('antd', () => {
     void autoSize
     return element('textarea', { ...props, value, onChange })
   }
+  Input.Password = ({ value, onChange, ...props }: { value?: string; onChange?: (event: unknown) => void; [key: string]: unknown }) =>
+    element('input', { ...props, type: 'password', value, onChange })
   const InputNumber = ({ value, onChange, ...props }: { value?: string; onChange?: (value: string) => void; [key: string]: unknown }) =>
     element('input', { ...props, type: 'number', value, onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) })
   const Select = ({ value, onChange, options = [], ...props }: { value?: string; onChange?: (value: string) => void; options?: Array<{ value: string; label: string }>; [key: string]: unknown }) =>

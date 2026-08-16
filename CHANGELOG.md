@@ -10,6 +10,17 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.12] — 2026-08-16
+
+### Added
+- Admin account management: a flattened account list (credential + provider) with search/filter, account name/remark fields, and a connection-test endpoint that validates an API key with an SSRF-guarded request before or after saving.
+- `provider_credentials` gains admin-facing `name` and `remark` columns; `email_templates` table is included in the schema snapshot.
+
+### Changed
+- The system update publish-notes box now always collapses by default, showing only the title until expanded (instead of only collapsing when content exceeds a line threshold).
+
+---
+
 ## [1.7.11] — 2026-08-16
 
 ### Changed

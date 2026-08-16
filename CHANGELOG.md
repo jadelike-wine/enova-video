@@ -10,6 +10,17 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.9] — 2026-08-16
+
+### Fixed
+- API no longer fails to boot (`FST_ERR_CTP_ALREADY_PRESENT`) because the payment raw-body form parser was registered before Nest/Fastify initialization. The parser now lives in a reusable module and replaces the built-in parser only after `app.init()`, preserving raw form bytes for webhook signature verification.
+
+### Changed
+- Production upgrade/rollback is now deterministic and fail-fast: `APP_VERSION` is loaded from the deployment state before every Compose invocation (and required during interpolation), and the resolved api/worker/web image tags are verified before switching.
+- The switch phase is bounded: services are brought up without blocking on `depends_on: service_healthy`, then container state/health and the reported API version are polled explicitly. On switch, health, or version failure, the last log lines and container diagnostics are captured and a code-only rollback runs by default (database restore stays an explicit path). Rollback and failed states are recorded in deployment state/history.
+
+---
+
 ## [1.7.6] — 2026-08-16
 
 ### Fixed

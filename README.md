@@ -21,7 +21,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/ai-img-gen.png" alt="灵动创影 — AI 创作平台" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
+  <img src="docs/images/enova_motion.png" alt="灵动创影 — AI 创作平台" width="920" style="border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,0.18);"/>
 </p>
 
 <p align="center">

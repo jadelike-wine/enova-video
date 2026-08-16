@@ -10,6 +10,21 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.10] — 2026-08-16
+
+### Added
+- Admin can add an Agnes account with just an API key; the agnes provider is auto-created if missing, the credential is encrypted, and the action is step-up verified and audited.
+- Video generation now reports real poll progress from the provider, shown live in both the task list and detail views (instead of a fixed pulse bar).
+
+### Changed
+- Image generation uses native Agnes tiered resolution (1K/2K/3K/4K) plus aspect ratio instead of legacy exact pixel sizes; the UI shows the resulting output dimensions. Historical exact-size tasks are normalized to the new model.
+- Video generation supports text-to-video and image-to-video only (multi-image and keyframe modes removed from the UI).
+- Video duration and frame validation are shared across API/worker/billing/frontend via `packages/contracts` (seconds = numFrames / frameRate, 8n+1 frame rule, 1–60 frameRate).
+- Video polling prefers the Agnes `video_id` endpoint and reads the final result from `metadata.url` (task endpoint and `remixed_from_video_id` remain as fallbacks).
+- Language switcher is now available in the logged-in app shell, not only the marketing header.
+
+---
+
 ## [1.7.9] — 2026-08-16
 
 ### Fixed

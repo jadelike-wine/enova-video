@@ -14,6 +14,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyRequest } from 'fastify';
 import { PERMISSIONS, type GenerationType } from '@enova/contracts';
+import type { AdminModelPricingView } from './pricing.admin.service.js';
 import { AuthGuard } from '../common/guards/auth.guard.js';
 import { PermissionGuard } from '../common/guards/permission.guard.js';
 import { RequirePermission } from '../common/decorators/require-permission.decorator.js';
@@ -38,6 +39,15 @@ export class PricingAdminController {
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
     @Inject(SensitiveActionService) private readonly sensitiveAction: SensitiveActionService,
   ) {}
+
+  // ---- Model Pricing Overview ----
+
+  @Get('models/overview')
+  @RequirePermission(PERMISSIONS.PRICING_READ)
+  @ApiOperation({ summary: '模型定价概览（系统模型 LEFT JOIN 最新 PUBLISHED pricing）' })
+  listModelPricingOverview(@Query('generationType') generationType?: string): Promise<AdminModelPricingView[]> {
+    return this.service.listModelPricingOverview({ generationType });
+  }
 
   // ---- Pricing Rules ----
 

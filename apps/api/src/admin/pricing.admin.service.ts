@@ -5,6 +5,41 @@ import { pricingRules, pricingVersions, type Database } from '@enova/db';
 import { DATABASE } from '../database/database.module.js';
 import { PricingService, type PriceQuoteInput } from '../billing/pricing.service.js';
 
+/**
+ * 系统支持的模型目录。
+ *
+ * 这是后端权威的模型注册表，前端 `apps/web/lib/models.ts` 应与此保持一致。
+ * 定价管理页面从这里获取模型列表，再 LEFT JOIN pricing_versions，
+ * 确保未配置 pricing 的模型也能显示为「未配置」。
+ */
+export const SYSTEM_MODELS: ReadonlyArray<{
+  generationType: GenerationType;
+  provider: string;
+  model: string;
+  displayName: string;
+}> = [
+  { generationType: 'IMAGE', provider: 'agnes', model: 'agnes-image-2.1-flash', displayName: 'Agnes Image 2.1 Flash' },
+  { generationType: 'VIDEO', provider: 'agnes', model: 'agnes-video-v2.0', displayName: 'Agnes Video V2.0' },
+];
+
+/** 模型定价概览行：系统模型 + 最新 PUBLISHED pricing 信息（可能为 null）。 */
+export interface AdminModelPricingView {
+  generationType: string;
+  provider: string;
+  model: string;
+  displayName: string;
+  /** 最新 PUBLISHED 版本号；无则 null。 */
+  currentVersion: number | null;
+  /** 当前 Credits；无则 null。 */
+  currentCredits: number | null;
+  /** 当前版本 ID；无则 null。 */
+  pricingVersionId: string | null;
+  /** 发布时间；无则 null。 */
+  publishedAt: Date | null;
+  /** UI 状态：未配置 / 已发布 / 草稿 / 已归档。 */
+  status: 'UNCONFIGURED' | 'PUBLISHED' | 'DRAFT' | 'ARCHIVED';
+}
+
 export interface AdminPricingRuleView {
   id: string;
   generationType: string;
@@ -167,6 +202,63 @@ export class PricingAdminService {
   /** 预览报价。 */
   async previewQuote(input: PriceQuoteInput) {
     return this.pricing.previewQuote(input);
+  }
+
+  /**
+   * 模型定价概览：系统模型 LEFT JOIN 最新 PUBLISHED pricing_versions。
+   * 确保未配置 pricing 的模型也展示出来（status = UNCONFIGURED）。
+   */
+  async listModelPricingOverview(params?: {
+    generationType?: string;
+  }): Promise<AdminModelPricingView[]> {
+    const models = params?.generationType
+      ? SYSTEM_MODELS.filter((m) => m.generationType === params.generationType)
+      : SYSTEM_MODELS;
+
+    // 查询所有 PUBLISHED 版本，按 version 降序，取每个 model 的最新一条。
+    const publishedRows = await this.db
+      .select()
+      .from(pricingVersions)
+      .where(eq(pricingVersions.status, 'PUBLISHED'))
+      .orderBy(desc(pricingVersions.version));
+
+    // 按 `${generationType}:${provider}:${model}` 分组，取 version 最大的。
+    const latestMap = new Map<string, (typeof publishedRows)[number]>();
+    for (const row of publishedRows) {
+      const key = `${row.generationType}:${row.provider}:${row.model}`;
+      if (!latestMap.has(key)) {
+        latestMap.set(key, row);
+      }
+    }
+
+    return models.map((m) => {
+      const key = `${m.generationType}:${m.provider}:${m.model}`;
+      const latest = latestMap.get(key);
+      if (!latest) {
+        return {
+          generationType: m.generationType,
+          provider: m.provider,
+          model: m.model,
+          displayName: m.displayName,
+          currentVersion: null,
+          currentCredits: null,
+          pricingVersionId: null,
+          publishedAt: null,
+          status: 'UNCONFIGURED' as const,
+        };
+      }
+      return {
+        generationType: m.generationType,
+        provider: m.provider,
+        model: m.model,
+        displayName: m.displayName,
+        currentVersion: latest.version,
+        currentCredits: latest.credits,
+        pricingVersionId: latest.id,
+        publishedAt: latest.publishedAt,
+        status: 'PUBLISHED' as const,
+      };
+    });
   }
 
   /** 获取 rule 当前状态（审计 before）。 */

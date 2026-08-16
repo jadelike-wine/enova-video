@@ -291,6 +291,10 @@ export const providers = pgTable('providers', {
 export const providerCredentials = pgTable('provider_credentials', {
   id: uuid('id').primaryKey().defaultRandom(),
   providerId: uuid('provider_id').notNull().references(() => providers.id, { onDelete: 'cascade' }),
+  /** 管理员可读的账号名称，例如 "Agnes 主账号"。 */
+  name: varchar('name', { length: 200 }),
+  /** 管理员备注，多行可选。 */
+  remark: text('remark'),
   /** AES-GCM 加密后的 Secret（带 iv + tag），绝不存明文。 */
   encryptedSecret: text('encrypted_secret').notNull(),
   status: credentialStatus('status').notNull().default('ACTIVE'),

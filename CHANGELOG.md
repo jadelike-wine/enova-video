@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Git history is the ultimate source of truth; this file aggregates user-, developer-, and ops-relevant changes. Not every commit is listed — only changes that matter to consumers, operators, or maintainers.
 
+## [1.7.17] — 2026-08-16
+
+### Changed
+- Admin settings: step-up (admin password) verification is now required only for security-sensitive settings (`ssrf.*`, `security.rateLimit*`), not for ordinary settings like site logo/name. Ordinary updates still require base `SETTINGS_WRITE` permission plus audit logging; batch and secret-clear operations follow the same rule.
+- Admin settings view detects the backend `stepUpRequired` signal and prompts the admin for their password, then retries the request with the step-up header.
+- System update "发布信息" card is now collapsible and collapsed by default, matching the publish-notes style.
+
+---
+
 ## [1.7.16] — 2026-08-16
 
 ### Added

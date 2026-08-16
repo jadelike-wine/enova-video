@@ -1,5 +1,5 @@
 import { and, eq, gte, sql, count, inArray } from 'drizzle-orm';
-import { domainError, ERROR_CODES, type GenerationType } from '@enova/contracts';
+import { domainError, ERROR_CODES, type GenerationType, resolveVideoDurationFromInput, validateVideoFrames } from '@enova/contracts';
 import {
   plans,
   subscriptions,
@@ -159,6 +159,17 @@ export class EntitlementService {
       throw domainError(ERROR_CODES.VIDEO_DURATION_EXCEEDED, `Video duration ${duration}s exceeds plan max ${entitlement.maxDurationSeconds}s`, 403);
     }
 
+    // Video frames validation: numFrames/frameRate 必须在项目内部校验，不依赖上游。
+    // 即使 UI 只允许合法值，服务端也不能信任客户端输入。
+    if (params.type === 'VIDEO') {
+      const nf = Number(params.input.numFrames);
+      const fr = Number(params.input.frameRate);
+      const frameErr = validateVideoFrames(nf, fr);
+      if (frameErr) {
+        throw domainError(ERROR_CODES.VALIDATION_ERROR, `Invalid video parameters: ${frameErr}`, 422);
+      }
+    }
+
     // ---- 并发 + 日/月配额 + credits 配额（concurrency-safe，事务内锁 subscription） ----
     await this.checkRunningAndQuotaInTx(params.workspaceId, entitlement, params.expectedCredits, now);
 
@@ -295,10 +306,16 @@ export class EntitlementService {
     return null;
   }
 
-  /** 从 input 提取视频时长（秒）。 */
+  /**
+   * 从 input 提取视频时长（秒）。
+   *
+   * 使用共享的 resolveVideoDurationFromInput 统一计算：
+   * 优先从 numFrames / frameRate 推导（Agnes 原生参数），
+   * fallback 到显式 duration 字段。
+   *
+   * 这样 UI、entitlement、cost、provider 全部使用同一套 duration 语义。
+   */
   private resolveDuration(input: Record<string, unknown>): number | null {
-    const d = input.duration ? Number(input.duration) : NaN;
-    if (Number.isFinite(d) && d > 0) return d;
-    return null;
+    return resolveVideoDurationFromInput(input);
   }
 }

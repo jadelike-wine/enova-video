@@ -541,6 +541,10 @@ export interface AdminModelPricingView {
   pricingVersionId: string | null
   publishedAt: string | null
   status: 'UNCONFIGURED' | 'PUBLISHED' | 'DRAFT' | 'ARCHIVED'
+  /** 动态定价规则（如果配置了动态定价）。 */
+  dynamicRules: Record<string, unknown> | null
+  /** 是否为动态定价模式。 */
+  isDynamic: boolean
 }
 
 /** Publish pricing version 请求体。 */
@@ -548,9 +552,11 @@ export interface PublishPricingVersionInput {
   generationType: string
   provider: string
   model: string
-  credits: number
+  credits?: number
   pricingJson?: Record<string, unknown>
   dimensionsJson?: Record<string, unknown>
+  /** 动态定价规则。传入后自动嵌入 pricingJson.rules。 */
+  dynamicRules?: Record<string, unknown>
 }
 
 /** Publish 结果。 */
@@ -583,12 +589,11 @@ export const adminPricingApi = {
     if (params?.generationType) q.set('generationType', params.generationType)
     return json<AdminModelPricingView[]>(`/pricing/models/overview?${q.toString()}`)
   },
-  /** 发布新定价版本（需要 step-up 密码）。 */
-  publishVersion: (input: PublishPricingVersionInput, stepUpPassword: string) =>
+  /** 发布新定价版本。 */
+  publishVersion: (input: PublishPricingVersionInput) =>
     json<PublishPricingVersionResult>('/pricing/versions/publish', {
       method: 'POST',
       body: JSON.stringify(input),
-      headers: { 'x-step-up-password': stepUpPassword },
     }),
   /** 定价版本列表。 */
   listVersions: (params: {

@@ -10,6 +10,14 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.13] — 2026-08-16
+
+### Changed
+- The system update publish-notes box is now fully collapsible: by default only the title row (with an expand toggle) is shown, and the description/content/copy button appear only after expanding.
+- Video duration preset buttons in the generation view now keep their highlight in sync when the frame count changes or a saved task is loaded (previously the active preset highlight could be stale).
+
+---
+
 ## [1.7.12] — 2026-08-16
 
 ### Added

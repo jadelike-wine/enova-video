@@ -42,12 +42,18 @@ interface FpsEntry {
   multiplier: number
 }
 
+interface SizeEntry {
+  key: string
+  multiplier: number
+}
+
 interface DynamicRulesForm {
   baseCredits: number
   pricePerSecond?: number
   resolutions: ResolutionEntry[]
   qualities: QualityEntry[]
   fpsList: FpsEntry[]
+  sizes: SizeEntry[]
 }
 
 // ---------------------------------------------------------------------------
@@ -73,12 +79,13 @@ function dynamicRulesToForm(
   rules: Record<string, unknown> | null,
 ): DynamicRulesForm {
   if (!rules) {
-    return { baseCredits: 0, resolutions: [], qualities: [], fpsList: [] }
+    return { baseCredits: 0, resolutions: [], qualities: [], fpsList: [], sizes: [] }
   }
   const r = rules as Record<string, unknown>
   const baseCredits = Number(r.baseCredits ?? r.base_credits ?? 0)
   const duration = r.duration as { pricePerSecond?: number; price_per_second?: number } | undefined
   const pricePerSecond = duration ? Number(duration.pricePerSecond ?? duration.price_per_second) : undefined
+  const sizeMap = (r.size ?? {}) as Record<string, number>
   const resolutionMap = (r.resolution ?? {}) as Record<string, number>
   const qualityMap = (r.quality ?? {}) as Record<string, number>
   const fpsMap = (r.fps ?? {}) as Record<string, number>
@@ -86,6 +93,7 @@ function dynamicRulesToForm(
   return {
     baseCredits,
     pricePerSecond: pricePerSecond && pricePerSecond > 0 ? pricePerSecond : undefined,
+    sizes: Object.entries(sizeMap).map(([key, multiplier]) => ({ key, multiplier: Number(multiplier) })),
     resolutions: Object.entries(resolutionMap).map(([key, multiplier]) => ({ key, multiplier: Number(multiplier) })),
     qualities: Object.entries(qualityMap).map(([key, multiplier]) => ({ key, multiplier: Number(multiplier) })),
     fpsList: Object.entries(fpsMap).map(([key, multiplier]) => ({ key, multiplier: Number(multiplier) })),
@@ -98,6 +106,13 @@ function formToDynamicRules(form: DynamicRulesForm, generationType: string): Rec
   }
   if (generationType === 'VIDEO' && form.pricePerSecond && form.pricePerSecond > 0) {
     rules.duration = { pricePerSecond: form.pricePerSecond }
+  }
+  if (form.sizes.length > 0) {
+    const s: Record<string, number> = {}
+    for (const e of form.sizes) {
+      if (e.key.trim()) s[e.key.trim()] = e.multiplier
+    }
+    rules.size = s
   }
   if (form.resolutions.length > 0) {
     const res: Record<string, number> = {}
@@ -142,6 +157,7 @@ function DynamicPricingModal({
   const [submitting, setSubmitting] = useState(false)
   const [baseCredits, setBaseCredits] = useState(0)
   const [pricePerSecond, setPricePerSecond] = useState<number | undefined>(undefined)
+  const [sizes, setSizes] = useState<SizeEntry[]>([])
   const [resolutions, setResolutions] = useState<ResolutionEntry[]>([])
   const [qualities, setQualities] = useState<QualityEntry[]>([])
   const [fpsList, setFpsList] = useState<FpsEntry[]>([])
@@ -153,9 +169,10 @@ function DynamicPricingModal({
       const form = dynamicRulesToForm(model.dynamicRules)
       setBaseCredits(form.baseCredits)
       setPricePerSecond(form.pricePerSecond)
-      setResolutions(form.resolutions.length > 0 ? form.resolutions : defaultResolutions(model.generationType))
-      setQualities(form.qualities.length > 0 ? form.qualities : defaultQualities(model.generationType))
-      setFpsList(form.fpsList.length > 0 ? form.fpsList : defaultFps())
+      setSizes(form.sizes.length > 0 ? form.sizes : defaultSizes(model.generationType))
+      setResolutions(form.resolutions.length > 0 ? form.resolutions : defaultResolutions(model.generationType, model.model))
+      setQualities(form.qualities.length > 0 ? form.qualities : defaultQualities(model.generationType, model.model))
+      setFpsList(form.fpsList.length > 0 ? form.fpsList : defaultFps(model.model))
     }
   }, [open, model])
 
@@ -172,6 +189,7 @@ function DynamicPricingModal({
     const form: DynamicRulesForm = {
       baseCredits,
       pricePerSecond: isVideo ? pricePerSecond : undefined,
+      sizes,
       resolutions,
       qualities,
       fpsList: isVideo ? fpsList : [],
@@ -240,7 +258,11 @@ function DynamicPricingModal({
               placeholder="例如：10"
             />
             <div className="mt-1 text-xs text-gray-400">
-              {isVideo ? '视频公式：base + (时长 × 每秒价格) × 分辨率倍率 × 质量倍率 × FPS倍率' : '图片公式：base × 分辨率倍率 × 质量倍率'}
+              {isVideo
+                ? model?.model === 'agnes-video-v2.0'
+                  ? 'Agnes Video 公式：base + (时长 × 每秒价格) × 分辨率倍率。时长 = num_frames / frame_rate（精确浮点）。不使用 quality/fps 倍率。'
+                  : '视频公式：base + (时长 × 每秒价格) × 分辨率倍率 × 质量倍率 × FPS倍率'
+                : '图片公式：base × 尺寸倍率(或分辨率倍率) × 质量倍率。Agnes Image 使用 size 档位定价，不使用 quality。'}
             </div>
           </div>
 
@@ -259,9 +281,61 @@ function DynamicPricingModal({
             </div>
           )}
 
+          {/* Size (Agnes image native) */}
+          {!isVideo && (
+            <div>
+              <div className="mb-1 text-sm font-medium text-gray-700">尺寸档位倍率（Agnes 原生）</div>
+              <div className="text-xs text-gray-400 mb-2">
+                Agnes Image 2.1 Flash 使用 1K/2K/3K/4K 档位式 size 定价。同一档位下不同 ratio 价格相同。
+              </div>
+              <div className="space-y-2">
+                {sizes.map((entry, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <Input
+                      className="flex-1"
+                      value={entry.key}
+                      onChange={(e) => {
+                        const next = [...sizes]
+                        next[idx] = { ...entry, key: e.target.value }
+                        setSizes(next)
+                      }}
+                      placeholder="例如：1K / 2K / 3K / 4K"
+                    />
+                    <span className="text-gray-400 text-sm">x</span>
+                    <InputNumber
+                      className="w-24"
+                      value={entry.multiplier}
+                      onChange={(v) => {
+                        const next = [...sizes]
+                        next[idx] = { ...entry, multiplier: Number(v) || 1 }
+                        setSizes(next)
+                      }}
+                      min={0}
+                      step={0.1}
+                    />
+                    <Button
+                      type="text"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => setSizes(sizes.filter((_, i) => i !== idx))}
+                    />
+                  </div>
+                ))}
+                <Button
+                  type="dashed"
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={() => setSizes([...sizes, { key: '', multiplier: 1 }])}
+                >
+                  添加尺寸档位
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Resolution */}
           <div>
-            <div className="mb-1 text-sm font-medium text-gray-700">分辨率倍率</div>
+            <div className="mb-1 text-sm font-medium text-gray-700">分辨率倍率（可选，向后兼容）</div>
             <div className="space-y-2">
               {resolutions.map((entry, idx) => (
                 <div key={idx} className="flex items-center gap-2">
@@ -413,14 +487,31 @@ function DynamicPricingModal({
   )
 }
 
-function defaultResolutions(generationType: string): ResolutionEntry[] {
+function defaultSizes(generationType: string): SizeEntry[] {
   if (generationType === 'IMAGE') {
     return [
-      { key: '512x512', multiplier: 1 },
-      { key: '1024x1024', multiplier: 2 },
-      { key: '2048x2048', multiplier: 4 },
+      { key: '1K', multiplier: 1 },
+      { key: '2K', multiplier: 2 },
+      { key: '3K', multiplier: 3 },
+      { key: '4K', multiplier: 4 },
     ]
   }
+  return []
+}
+
+function defaultResolutions(generationType: string, model?: string): ResolutionEntry[] {
+  if (generationType === 'IMAGE') {
+    return []
+  }
+  // Agnes Video V2.0 只支持 480p/720p/1080p，不支持 4k
+  if (model === 'agnes-video-v2.0') {
+    return [
+      { key: '480p', multiplier: 1 },
+      { key: '720p', multiplier: 1 },
+      { key: '1080p', multiplier: 1 },
+    ]
+  }
+  // 其他视频模型保留历史默认值
   return [
     { key: '720p', multiplier: 1 },
     { key: '1080p', multiplier: 2 },
@@ -428,20 +519,29 @@ function defaultResolutions(generationType: string): ResolutionEntry[] {
   ]
 }
 
-function defaultQualities(generationType: string): QualityEntry[] {
+function defaultQualities(generationType: string, model?: string): QualityEntry[] {
   if (generationType === 'IMAGE') {
-    return [
-      { key: 'standard', multiplier: 1 },
-      { key: 'hd', multiplier: 2 },
-    ]
+    return []
   }
+  // Agnes Video V2.0 不支持 quality 参数，不默认生成 quality 定价规则
+  if (model === 'agnes-video-v2.0') {
+    return []
+  }
+  // 其他视频模型保留历史默认值
   return [
     { key: 'standard', multiplier: 1 },
     { key: 'high', multiplier: 2 },
   ]
 }
 
-function defaultFps(): FpsEntry[] {
+function defaultFps(model?: string): FpsEntry[] {
+  // Agnes Video V2.0 不配置 fps multiplier：
+  // duration = num_frames / frame_rate 已经自然反映了 fps 的影响，
+  // 额外的 fpsMultiplier 属于重复计费。Agnes 官方价格未声明不同 FPS 具有不同单价。
+  if (model === 'agnes-video-v2.0') {
+    return []
+  }
+  // 其他视频模型保留历史默认值
   return [
     { key: '24', multiplier: 1 },
     { key: '30', multiplier: 1.2 },
@@ -504,6 +604,7 @@ function PricingTable({
     const rules = r.dynamicRules as Record<string, unknown>
     const base = Number(rules.baseCredits ?? rules.base_credits ?? 0)
     const duration = rules.duration as { pricePerSecond?: number } | undefined
+    const size = rules.size as Record<string, number> | undefined
     const resolution = rules.resolution as Record<string, number> | undefined
     const quality = rules.quality as Record<string, number> | undefined
     const fps = rules.fps as Record<string, number> | undefined
@@ -513,6 +614,13 @@ function PricingTable({
         <div>基础: <span className="font-medium text-cyan-600">{base}</span> credits</div>
         {duration?.pricePerSecond && (
           <div>时长: <span className="font-medium">{duration.pricePerSecond}</span> credits/秒</div>
+        )}
+        {size && (
+          <div>
+            尺寸: {Object.entries(size).map(([k, v]) => (
+              <span key={k} className="mr-2">{k} x{v}</span>
+            ))}
+          </div>
         )}
         {resolution && (
           <div>

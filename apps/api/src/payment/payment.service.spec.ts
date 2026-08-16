@@ -96,7 +96,7 @@ function makeSettings() {
     ['payment.creditsPerCny', '100'],
     ['payment.minRechargeCents', '100'],
     ['payment.returnBaseUrl', 'http://localhost:3001'],
-    ['payment.notifyUrl', 'http://localhost:3001/api/v1/payment/notify'],
+    ['payment.notifyUrl', 'http://localhost:3001/api/v1/payment/notify/alipay'],
   ]);
   return {
     getMany: vi.fn(async (_keys: string[]) => paymentSnapshot),
@@ -108,7 +108,7 @@ function makeSettings() {
     getString: vi.fn(async (key: string) => {
       if (key === 'payment.mode') return 'sandbox';
       if (key === 'payment.returnBaseUrl') return 'http://localhost:3001';
-      if (key === 'payment.notifyUrl') return 'http://localhost:3001/api/v1/payment/notify';
+      if (key === 'payment.notifyUrl') return 'http://localhost:3001/api/v1/payment/notify/alipay';
       return null;
     }),
   };

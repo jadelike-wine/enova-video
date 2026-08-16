@@ -59,6 +59,7 @@ export class PaymentService {
     'payment.alipayPrivateKey',
     'payment.alipayPublicKey',
     'payment.alipayGateway',
+    'payment.alipaySellerId',
     'payment.wechatAppId',
     'payment.wechatMchId',
     'payment.wechatApiV3Key',
@@ -96,12 +97,16 @@ export class PaymentService {
     const creditsPerCny = getNum('payment.creditsPerCny', 100);
     const minRechargeCents = getNum('payment.minRechargeCents', 100);
     const returnBaseUrl = getStr('payment.returnBaseUrl', 'http://localhost:3001');
-    const notifyUrl = getStr('payment.notifyUrl', 'http://localhost:3001/api/v1/payment/notify');
+    // P1 修复：默认 notifyUrl 必须包含 :channel 段以匹配实际路由 POST /api/v1/payment/notify/:channel。
+    // 旧默认值 /api/v1/payment/notify 缺少 :channel，支付宝请求到不了 handler。
+    // 参考 sub2api：路由 /api/v1/payment/webhook/alipay，notify URL 指向同一具体路径。
+    const notifyUrl = getStr('payment.notifyUrl', 'http://localhost:3001/api/v1/payment/notify/alipay');
 
     const alipayAppId = getStr('payment.alipayAppId', '');
     const alipayPrivateKey = getStr('payment.alipayPrivateKey', '');
     const alipayPublicKey = getStr('payment.alipayPublicKey', '');
     const alipayGateway = getStr('payment.alipayGateway', 'https://openapi.alipay.com/gateway.do');
+    const alipaySellerId = getStr('payment.alipaySellerId', '');
     const wechatAppId = getStr('payment.wechatAppId', '');
     const wechatMchId = getStr('payment.wechatMchId', '');
     const wechatApiV3Key = getStr('payment.wechatApiV3Key', '');
@@ -118,7 +123,7 @@ export class PaymentService {
       notifyUrl,
       alipay:
         alipayAppId && alipayPrivateKey && alipayPublicKey
-          ? { appId: alipayAppId, privateKey: alipayPrivateKey, publicKey: alipayPublicKey, gateway: alipayGateway }
+          ? { appId: alipayAppId, privateKey: alipayPrivateKey, publicKey: alipayPublicKey, gateway: alipayGateway, sellerId: alipaySellerId || undefined }
           : undefined,
       wechat:
         wechatAppId && wechatMchId && wechatApiV3Key && wechatSerialNo && wechatPrivateKey
@@ -550,6 +555,23 @@ export class PaymentService {
   }
 
   // ---- P0-6: query / close（生产就绪支付契约）。产品策略：不支持自动退款。 ----
+
+  /**
+   * P2: 查询订单支付状态（前端 return 页轮询用）。
+   * 校验订单归属当前用户 workspace，返回订单状态供前端轮询。
+   */
+  async queryOrderForUser(
+    user: AuthUser,
+    orderId: string,
+  ): Promise<{ orderId: string; status: string; amountCents: number; credits: number }> {
+    const order = await this.requireOrderForWorkspace(orderId, user.workspaceId);
+    return {
+      orderId: order.id,
+      status: order.status,
+      amountCents: order.finalAmountCents ?? order.amountCents,
+      credits: order.credits,
+    };
+  }
 
   /** 查询渠道订单状态（对账用）。 */
   async queryPayment(orderId: string): Promise<{

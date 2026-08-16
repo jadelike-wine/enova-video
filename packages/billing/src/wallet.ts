@@ -469,20 +469,25 @@ export class WalletGateway {
       throw domainError(ERROR_CODES.PAYMENT_CREDITS_NOT_POSITIVE, 'recharge credits must be a positive integer', 400);
     }
 
-    // 幂等：该 idempotencyKey 已入账则直接返回当前余额，避免订单重复回调重复充值。
+    // P1 修复（TOCTOU 竞态）：先锁 wallet 行（SELECT ... FOR UPDATE），
+    // 再检查幂等。旧代码先查 ledger 再 FOR UPDATE，两个并发相同 out_trade_no 的
+    // notify 可能同时看到 ledger 不存在 → 同时拿到 wallet 锁 → 同时入账两次。
+    // 对照 refundCreditsInTx() 和 reserveCreditsInTx() 都是先 FOR UPDATE 再查幂等。
+    // 参考 sub2api：acquirePaymentFulfillmentLease + FOR UPDATE 先锁定再判断。
+    const rows = await tx.select().from(wallets).where(eq(wallets.workspaceId, workspaceId)).for('update');
+    const wallet = rows[0];
+    if (!wallet) throw domainError(ERROR_CODES.NOT_FOUND, 'Wallet not found', 404);
+
+    // 幂等（post-lock）：该 idempotencyKey 已入账则直接返回当前余额，
+    // 避免订单重复回调重复充值。锁后重查才能防止并发 TOCTOU。
     const existing = await tx
       .select({ id: walletLedger.id })
       .from(walletLedger)
       .where(eq(walletLedger.idempotencyKey, idempotencyKey))
       .limit(1);
     if (existing.length > 0) {
-      const w = await tx.select().from(wallets).where(eq(wallets.workspaceId, workspaceId)).limit(1);
-      return { balance: w[0]?.balance ?? 0 };
+      return { balance: wallet.balance };
     }
-
-    const rows = await tx.select().from(wallets).where(eq(wallets.workspaceId, workspaceId)).for('update');
-    const wallet = rows[0];
-    if (!wallet) throw domainError(ERROR_CODES.NOT_FOUND, 'Wallet not found', 404);
 
     const balanceAfter = wallet.balance + credits;
 

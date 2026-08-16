@@ -117,6 +117,8 @@ export interface AlipayConfig {
   privateKey: string;
   publicKey: string;
   gateway: string;
+  /** 可选：卖家 PID（seller_id），配置后异步通知会做字段级校验。 */
+  sellerId?: string;
 }
 
 /** 微信支付（APIv3）真实渠道配置（缺任一项视为未配置）。 */

@@ -108,6 +108,13 @@ export interface RechargeResult {
   qrCode?: string | null
 }
 
+export interface OrderStatus {
+  orderId: string
+  status: string
+  amountCents: number
+  credits: number
+}
+
 // ---------------------------------------------------------------------------
 // 底层请求
 // ---------------------------------------------------------------------------
@@ -294,6 +301,9 @@ export const paymentApi = {
     json<{ orderId: string; credits: number; balance: number }>(`/payment/sandbox/${orderId}/confirm`, {
       method: 'POST',
     }),
+  // P2: 查询订单支付状态（前端 return 页轮询用）
+  getOrderStatus: (orderId: string) =>
+    json<OrderStatus>(`/payment/orders/${encodeURIComponent(orderId)}`),
 }
 
 // ---------------------------------------------------------------------------

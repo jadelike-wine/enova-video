@@ -106,7 +106,7 @@ export class AlipayPaymentProvider implements PaymentProvider {
     rawBody: string,
     _headers: Record<string, string>,
   ): Promise<PaymentNotification | null> {
-    this.requireConfig();
+    const cfg = this.requireConfig();
     this.loadPublicKeyPem();
 
     // Alipay 异步通知为 form-encoded，不区分 content-type，统一按 form 解析。
@@ -134,6 +134,52 @@ export class AlipayPaymentProvider implements PaymentProvider {
       throw domainError(ERROR_CODES.PAYMENT_CALLBACK_INVALID, 'Alipay notification signature mismatch', 400);
     }
 
+    // P2 修复：字段级业务校验。
+    // 验签只检查签名本身，未校验 app_id 与当前配置是否一致，
+    // 攻击者可用另一个合法签名的通知冒充本商户入账。
+    // 参考 sub2api：service 层校验 appId/seller/金额一致。
+    const notifyAppId = String(params.app_id ?? '');
+    if (notifyAppId && notifyAppId !== cfg.appId) {
+      throw domainError(
+        ERROR_CODES.PAYMENT_CALLBACK_INVALID,
+        'Alipay notification app_id mismatch',
+        400,
+        { expected: cfg.appId, received: notifyAppId },
+      );
+    }
+
+    // seller_id 校验（如配置中指定了 seller_id）。
+    const notifySellerId = String(params.seller_id ?? '');
+    if (cfg.sellerId && notifySellerId && notifySellerId !== cfg.sellerId) {
+      throw domainError(
+        ERROR_CODES.PAYMENT_CALLBACK_INVALID,
+        'Alipay notification seller_id mismatch',
+        400,
+        { expected: cfg.sellerId, received: notifySellerId },
+      );
+    }
+
+    // P2-1: notify_time 有效期校验（防重放攻击）。
+    // 支付宝异步通知的 notify_time 格式为 yyyy-MM-dd HH:mm:ss（Asia/Shanghai 时区）。
+    // 如果通知时间距今超过 30 分钟，记录警告但不拒绝——因为支付宝重试机制可能导致延迟通知，
+    // 拒绝会导致合法支付无法入账。订单状态和金额校验仍作为额外保护。
+    const notifyTimeRaw = String(params.notify_time ?? '');
+    if (notifyTimeRaw) {
+      // 兼容 iOS Safari 不支持 yyyy-MM-dd HH:mm:ss 格式的 Date 解析：替换 - 为 /。
+      const notifyDate = new Date(notifyTimeRaw.replace(/-/g, '/'));
+      if (!Number.isNaN(notifyDate.getTime())) {
+        const now = Date.now();
+        const diffMinutes = (now - notifyDate.getTime()) / 1000 / 60;
+        if (Math.abs(diffMinutes) > 30) {
+          // 通知超时或时钟偏移过大，记录警告但不阻断入账。
+          // 使用 console.warn 而非 logger，因为 adapter 是纯领域包不依赖 NestJS logger。
+          console.warn(
+            `[Alipay] notification notify_time exceeds 30min window: notify_time=${notifyTimeRaw}, diff=${diffMinutes.toFixed(1)}min`,
+          );
+        }
+      }
+    }
+
     const tradeStatus = String(params.trade_status ?? '');
     const status: PaymentNotification['status'] =
       tradeStatus === 'TRADE_SUCCESS' || tradeStatus === 'TRADE_FINISHED' ? 'success' : 'failed';
@@ -147,6 +193,7 @@ export class AlipayPaymentProvider implements PaymentProvider {
       tradeNo: String(params.trade_no ?? params.out_trade_no),
       amountCents,
       status,
+      // P2 修复：回传 notify_id/seller_id/app_id 等字段供 service 层审计落库。
       raw: { ...params },
     };
   }
@@ -247,12 +294,25 @@ export class AlipayPaymentProvider implements PaymentProvider {
 
 /* ----------------------------- helpers ----------------------------- */
 
-/** 规范化 PEM：补齐 header/footer，兼容单行裸 base64。 */
+/**
+ * 规范化 PEM：补齐 header/footer，兼容单行裸 base64。
+ *
+ * P2 修复：增强 PEM 容错解析。
+ * - 同时替换转义的 `\\n` 和实际 `\n`（旧代码只替换 `\\n`）。
+ * - header/footer 检查大小写不敏感（旧代码只匹配 `-----BEGIN`）。
+ * - 兼容 PKCS#1 (`BEGIN RSA PRIVATE KEY`) 和 PKCS#8 (`BEGIN PRIVATE KEY`)。
+ */
 function normalizePem(key: string): string {
-  const trimmed = key.trim();
-  if (trimmed.includes('-----BEGIN')) return trimmed.endsWith('\n') ? trimmed : `${trimmed}\n`;
+  // 先统一处理换行符：替换转义的 \\n 为实际换行，再 trim。
+  const trimmed = key.replace(/\\n/g, '\n').trim();
+  // 大小写不敏感检查 PEM header。
+  if (/-----BEGIN[^-]*-----/i.test(trimmed)) {
+    return trimmed.endsWith('\n') ? trimmed : `${trimmed}\n`;
+  }
   // 单行裸 base64（无 header/footer） → 包成 PKCS#8 PEM。
-  return `-----BEGIN PRIVATE KEY-----\n${chunk(trimmed, 64)}\n-----END PRIVATE KEY-----\n`;
+  // 去除可能的空白和换行后重新分块。
+  const singleLine = trimmed.replace(/\s+/g, '');
+  return `-----BEGIN PRIVATE KEY-----\n${chunk(singleLine, 64)}\n-----END PRIVATE KEY-----\n`;
 }
 
 function chunk(s: string, size: number): string {

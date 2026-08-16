@@ -95,6 +95,37 @@ export default function WalletView() {
     void loadLedger()
   }, [loadWallet, loadLedger])
 
+  // P2 修复：如果有 pendingPaymentOrderId（用户从支付页返回），轮询订单状态。
+  // 处理时序 B（return 先到 notify 后到）：页面自动检测支付完成。
+  useEffect(() => {
+    const pendingOrderId = sessionStorage.getItem('pendingPaymentOrderId')
+    if (!pendingOrderId) return
+
+    let active = true
+    const poll = async () => {
+      try {
+        const result = await paymentApi.getOrderStatus(pendingOrderId)
+        if (!active) return
+        if (result.status === 'SUCCEEDED') {
+          sessionStorage.removeItem('pendingPaymentOrderId')
+          await Promise.all([loadWallet(), refresh(), loadLedger()])
+        }
+      } catch {
+        // 忽略错误，继续轮询
+      }
+    }
+    void poll()
+    const interval = setInterval(poll, 3000)
+    const timeout = setTimeout(() => {
+      clearInterval(interval)
+    }, 120_000) // 2 分钟后停止
+    return () => {
+      active = false
+      clearInterval(interval)
+      clearTimeout(timeout)
+    }
+  }, [loadWallet, loadLedger, refresh])
+
   const effectiveCny =
     customCny != null && !Number.isNaN(customCny) ? customCny : selectedCny
 
@@ -109,6 +140,11 @@ export default function WalletView() {
     try {
       const res = await paymentApi.recharge(Math.round(amountCny * 100))
       setRechargeResult(res)
+      // P2 修复：保存 orderId 到 sessionStorage 供 return 页轮询。
+      // 支付完成后支付宝/微信跳转回 returnUrl，return 页读取 orderId 轮询状态。
+      if (res.orderId) {
+        sessionStorage.setItem('pendingPaymentOrderId', res.orderId)
+      }
     } catch (e) {
       await alert({ title: t('createOrderFailed'), message: formatErrorMessage(e) })
     } finally {
@@ -124,6 +160,7 @@ export default function WalletView() {
       await alert({ title: t('paySuccess'), message: t('paySuccessMessage', { credits: Number(res.credits).toLocaleString() }) })
       setRechargeResult(null)
       setCustomCny(null)
+      sessionStorage.removeItem('pendingPaymentOrderId')
       await Promise.all([loadWallet(), refresh(), loadLedger()])
     } catch (e) {
       await alert({ title: t('payConfirmFailed'), message: formatErrorMessage(e) })

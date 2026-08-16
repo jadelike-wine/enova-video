@@ -208,6 +208,6 @@ describe('PricingService: dynamic pricing', () => {
         model: 'video-1',
         dimensions: { resolution: '1080p' },
       }),
-    ).rejects.toThrow('Video duration is required');
+    ).rejects.toThrow('Video duration is required for per-second pricing');
   });
 });

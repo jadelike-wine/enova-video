@@ -37,6 +37,46 @@ describe('SandboxPaymentProvider', () => {
   it('closePayment is a no-op', async () => {
     await expect(provider.closePayment('o1')).resolves.toBeUndefined();
   });
+
+  // BUG-004: Sandbox notify 鉴权测试
+  describe('sandbox secret authentication (BUG-004)', () => {
+    const secret = 'test-sandbox-secret-12345';
+    const providerWithSecret = new SandboxPaymentProvider(base, secret);
+
+    it('rejects notify without X-Sandbox-Secret when secret is configured', async () => {
+      await expect(
+        providerWithSecret.verifyNotification(
+          JSON.stringify({ orderId: 'o1', tradeNo: 'T1', amountCents: 1000, status: 'success' }),
+          {},
+        ),
+      ).rejects.toThrow('missing or invalid X-Sandbox-Secret');
+    });
+
+    it('rejects notify with wrong X-Sandbox-Secret', async () => {
+      await expect(
+        providerWithSecret.verifyNotification(
+          JSON.stringify({ orderId: 'o1', tradeNo: 'T1', amountCents: 1000, status: 'success' }),
+          { 'X-Sandbox-Secret': 'wrong-secret' },
+        ),
+      ).rejects.toThrow('missing or invalid X-Sandbox-Secret');
+    });
+
+    it('accepts notify with correct X-Sandbox-Secret', async () => {
+      const n = await providerWithSecret.verifyNotification(
+        JSON.stringify({ orderId: 'o1', tradeNo: 'T1', amountCents: 1000, status: 'success' }),
+        { 'X-Sandbox-Secret': secret },
+      );
+      expect(n).toMatchObject({ orderId: 'o1', tradeNo: 'T1', status: 'success' });
+    });
+
+    it('no secret configured → backward compatible (no auth required)', async () => {
+      const n = await provider.verifyNotification(
+        JSON.stringify({ orderId: 'o1', tradeNo: 'T1', amountCents: 1000, status: 'success' }),
+        {},
+      );
+      expect(n).toMatchObject({ orderId: 'o1', status: 'success' });
+    });
+  });
 });
 
 describe('buildPaymentRegistry', () => {

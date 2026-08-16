@@ -17,7 +17,7 @@ export function buildPaymentRegistry(cfg: PaymentEnvConfig): {
   const registry = new PaymentRegistry();
   const base = { returnBaseUrl: cfg.returnBaseUrl, notifyUrl: cfg.notifyUrl };
 
-  registry.register(new SandboxPaymentProvider(base));
+  registry.register(new SandboxPaymentProvider(base, cfg.sandboxSecret));
   if (cfg.alipay) registry.register(new AlipayPaymentProvider(cfg.alipay));
   if (cfg.wechat) registry.register(new WechatPaymentProvider(cfg.wechat));
 

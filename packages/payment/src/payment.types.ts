@@ -48,6 +48,14 @@ export interface CreatePaymentResult {
   qrCode?: string;
 }
 
+/** 回调验签上下文：供渠道适配器构造验签串使用（如 WeChat APIv3 需要 method + url）。 */
+export interface NotificationContext {
+  /** HTTP method（大写，如 POST）。 */
+  method?: string;
+  /** 请求路径（含 query string，如 /api/v1/payment/notify/wechat）。 */
+  url?: string;
+}
+
 /** 回调通知解析结果（已验签）。status 归一到 success/failed。 */
 export interface PaymentNotification {
   /** 第三方交易号。 */
@@ -88,6 +96,7 @@ export interface PaymentProvider {
   verifyNotification(
     rawBody: string,
     headers: Record<string, string>,
+    context?: NotificationContext,
   ): Promise<PaymentNotification | null>;
   /** 查询渠道订单状态。tradeNo 可选，至少传 orderId。 */
   queryPayment(tradeNo: string, orderId: string): Promise<PaymentQueryResult>;
@@ -138,4 +147,6 @@ export interface PaymentEnvConfig {
   notifyUrl: string;
   alipay?: AlipayConfig;
   wechat?: WechatConfig;
+  /** BUG-004: sandbox 回调鉴权密钥；配置后 sandbox notify 必须携带 X-Sandbox-Secret。 */
+  sandboxSecret?: string;
 }

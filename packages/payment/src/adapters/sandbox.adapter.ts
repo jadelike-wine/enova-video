@@ -3,6 +3,7 @@ import { domainError, ERROR_CODES } from '@enova/contracts';
 import type {
   CreatePaymentRequest,
   CreatePaymentResult,
+  NotificationContext,
   PaymentNotification,
   PaymentProvider,
   PaymentProviderConfig,
@@ -12,14 +13,18 @@ import type {
 /**
  * 沙箱支付适配器：本地演示用，无需商户密钥。
  * - createPayment：直接返回虚拟交易号 + 模拟支付页地址。
- * - verifyNotification：解析沙箱回调体（JSON），不做真实签名校验。
+ * - verifyNotification：解析沙箱回调体（JSON），校验 X-Sandbox-Secret header（BUG-004）。
  * - queryPayment / closePayment：返回 mock 数据，无真实副作用。
  */
 export class SandboxPaymentProvider implements PaymentProvider {
   readonly key = 'sandbox' as const;
   readonly name = 'Sandbox';
 
-  constructor(private readonly config: PaymentProviderConfig) {}
+  constructor(
+    private readonly config: PaymentProviderConfig,
+    /** BUG-004: 可选的 sandbox 共享密钥；配置后 notify 回调必须携带 X-Sandbox-Secret。 */
+    private readonly sandboxSecret?: string,
+  ) {}
 
   async createPayment(req: CreatePaymentRequest): Promise<CreatePaymentResult> {
     const tradeNo = `SANDBOX-${req.orderId}-${randomUUID().slice(0, 8)}`;
@@ -33,11 +38,22 @@ export class SandboxPaymentProvider implements PaymentProvider {
    * 解析沙箱异步通知。回调体形如：
    * `{ "orderId": "...", "tradeNo": "...", "amountCents": 100, "status": "success" }`
    * 沙箱模式下视为已由调用方（模拟端点）预置，仅做结构解析。
+   *
+   * BUG-004: 若配置了 sandboxSecret，则必须校验 X-Sandbox-Secret header，
+   * 防止外部伪造成功回调。未配置 secret 时保持向后兼容（无鉴权）。
    */
   async verifyNotification(
     rawBody: string,
-    _headers: Record<string, string>,
+    headers: Record<string, string>,
+    _context?: NotificationContext,
   ): Promise<PaymentNotification | null> {
+    // BUG-004: sandbox 回调鉴权
+    if (this.sandboxSecret) {
+      const provided = headers['x-sandbox-secret'] ?? headers['X-Sandbox-Secret'];
+      if (!provided || provided !== this.sandboxSecret) {
+        throw domainError(ERROR_CODES.PAYMENT_CALLBACK_INVALID, 'Sandbox notification missing or invalid X-Sandbox-Secret', 401);
+      }
+    }
     let data: Record<string, unknown>;
     try {
       data = JSON.parse(rawBody) as Record<string, unknown>;

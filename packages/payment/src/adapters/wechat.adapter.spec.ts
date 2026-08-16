@@ -137,8 +137,8 @@ describe('WechatPaymentProvider', () => {
       return { body, resource };
     }
 
-    function signWebhook(timestamp: string, nonce: string, body: string): string {
-      const signString = `${timestamp}\n${nonce}\n${body}\n`;
+    function signWebhook(method: string, url: string, timestamp: string, nonce: string, body: string): string {
+      const signString = `${method}\n${url}\n${timestamp}\n${nonce}\n${body}\n`;
       return createSign('RSA-SHA256').update(signString, 'utf8').sign(pair.privateKeyPem, 'base64');
     }
 
@@ -151,14 +151,15 @@ describe('WechatPaymentProvider', () => {
       });
       const timestamp = String(NOW_SEC);
       const nonce = 'nonce-abc';
-      const signature = signWebhook(timestamp, nonce, body);
+      const notifyUrl = '/api/v1/payment/notify/wechat';
+      const signature = signWebhook('POST', notifyUrl, timestamp, nonce, body);
 
       const n = await provider.verifyNotification(body, {
         'Wechatpay-Timestamp': timestamp,
         'Wechatpay-Nonce': nonce,
         'Wechatpay-Signature': signature,
         'Wechatpay-Serial': 'SERIAL-PLAT-001',
-      });
+      }, { method: 'POST', url: notifyUrl });
 
       expect(n).not.toBeNull();
       expect(n!.orderId).toBe('order-xyz');
@@ -181,7 +182,8 @@ describe('WechatPaymentProvider', () => {
       });
       const timestamp = String(NOW_SEC);
       const nonce = 'nonce-abc';
-      const signature = signWebhook(timestamp, nonce, body);
+      const notifyUrl = '/api/v1/payment/notify/wechat';
+      const signature = signWebhook('POST', notifyUrl, timestamp, nonce, body);
 
       // 篡改 envelope 的 id 字段（属于签名覆盖范围），签名应失效。
       const tampered = body.replace('"id":"evt-001"', '"id":"evt-002"');
@@ -190,7 +192,7 @@ describe('WechatPaymentProvider', () => {
           'Wechatpay-Timestamp': timestamp,
           'Wechatpay-Nonce': nonce,
           'Wechatpay-Signature': signature,
-        }),
+        }, { method: 'POST', url: notifyUrl }),
       ).rejects.toThrow('signature mismatch');
     });
 
@@ -204,12 +206,13 @@ describe('WechatPaymentProvider', () => {
       });
       const timestamp = String(NOW_SEC);
       const nonce = 'nonce-abc';
-      const signature = signWebhook(timestamp, nonce, body);
+      const notifyUrl = '/api/v1/payment/notify/wechat';
+      const signature = signWebhook('POST', notifyUrl, timestamp, nonce, body);
       const n = await provider.verifyNotification(body, {
         'Wechatpay-Timestamp': timestamp,
         'Wechatpay-Nonce': nonce,
         'Wechatpay-Signature': signature,
-      });
+      }, { method: 'POST', url: notifyUrl });
       expect(n!.status).toBe('failed');
     });
 
@@ -228,14 +231,15 @@ describe('WechatPaymentProvider', () => {
       const body = JSON.stringify({ id: 'evt', resource });
       const timestamp = String(NOW_SEC);
       const nonce = 'n';
-      const signature = signWebhook(timestamp, nonce, body);
+      const notifyUrl = '/api/v1/payment/notify/wechat';
+      const signature = signWebhook('POST', notifyUrl, timestamp, nonce, body);
 
       await expect(
         provider.verifyNotification(body, {
           'Wechatpay-Timestamp': timestamp,
           'Wechatpay-Nonce': nonce,
           'Wechatpay-Signature': signature,
-        }),
+        }, { method: 'POST', url: notifyUrl }),
       ).rejects.toThrow('AES-256-GCM decryption failed');
     });
 
@@ -249,14 +253,15 @@ describe('WechatPaymentProvider', () => {
       });
       const staleTs = String(NOW_SEC - 600); // 10 分钟前（超出 5 分钟窗口）
       const nonce = 'nonce-replay';
-      const signature = signWebhook(staleTs, nonce, body);
+      const notifyUrl = '/api/v1/payment/notify/wechat';
+      const signature = signWebhook('POST', notifyUrl, staleTs, nonce, body);
 
       await expect(
         provider.verifyNotification(body, {
           'Wechatpay-Timestamp': staleTs,
           'Wechatpay-Nonce': nonce,
           'Wechatpay-Signature': signature,
-        }),
+        }, { method: 'POST', url: notifyUrl }),
       ).rejects.toThrow('timestamp out of acceptable window');
     });
 
@@ -269,15 +274,60 @@ describe('WechatPaymentProvider', () => {
       });
       const futureTs = String(NOW_SEC + 3000); // 未来 50 分钟
       const nonce = 'nonce-future';
-      const signature = signWebhook(futureTs, nonce, body);
+      const notifyUrl = '/api/v1/payment/notify/wechat';
+      const signature = signWebhook('POST', notifyUrl, futureTs, nonce, body);
 
       await expect(
         provider.verifyNotification(body, {
           'Wechatpay-Timestamp': futureTs,
           'Wechatpay-Nonce': nonce,
           'Wechatpay-Signature': signature,
-        }),
+        }, { method: 'POST', url: notifyUrl }),
       ).rejects.toThrow('timestamp out of acceptable window');
+    });
+
+    it('rejects when method in context differs from signed method', async () => {
+      const { body } = buildWebhookBody({
+        out_trade_no: 'order-method',
+        transaction_id: 't',
+        trade_state: 'SUCCESS',
+        amount: { total: 100, payer_total: 100 },
+      });
+      const timestamp = String(NOW_SEC);
+      const nonce = 'nonce-method';
+      const notifyUrl = '/api/v1/payment/notify/wechat';
+      // 用 POST 签名，但验签时传入 GET → 签名串不同 → 验签失败
+      const signature = signWebhook('POST', notifyUrl, timestamp, nonce, body);
+
+      await expect(
+        provider.verifyNotification(body, {
+          'Wechatpay-Timestamp': timestamp,
+          'Wechatpay-Nonce': nonce,
+          'Wechatpay-Signature': signature,
+        }, { method: 'GET', url: notifyUrl }),
+      ).rejects.toThrow('signature mismatch');
+    });
+
+    it('rejects when url in context differs from signed url', async () => {
+      const { body } = buildWebhookBody({
+        out_trade_no: 'order-url',
+        transaction_id: 't',
+        trade_state: 'SUCCESS',
+        amount: { total: 100, payer_total: 100 },
+      });
+      const timestamp = String(NOW_SEC);
+      const nonce = 'nonce-url';
+      const signedUrl = '/api/v1/payment/notify/wechat';
+      const tamperedUrl = '/api/v1/payment/notify/alipay';
+      const signature = signWebhook('POST', signedUrl, timestamp, nonce, body);
+
+      await expect(
+        provider.verifyNotification(body, {
+          'Wechatpay-Timestamp': timestamp,
+          'Wechatpay-Nonce': nonce,
+          'Wechatpay-Signature': signature,
+        }, { method: 'POST', url: tamperedUrl }),
+      ).rejects.toThrow('signature mismatch');
     });
   });
 

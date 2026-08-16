@@ -3,6 +3,7 @@ import { domainError, ERROR_CODES } from '@enova/contracts';
 import type {
   CreatePaymentRequest,
   CreatePaymentResult,
+  NotificationContext,
   PaymentNotification,
   PaymentProvider,
   PaymentQueryResult,
@@ -19,7 +20,7 @@ import type {
  *
  * 签名：
  * - Authorization: WECHATPAY2-SHA256-RSA2048 mchid="..." nonce_str="..." timestamp="..." serial_no="..." signature="..."
- * - 签名串格式：`{method}\n{url}\n{timestamp}\n{nonce}\n{body}\n`（最后有换行）。
+ * - 签名串格式（请求与回调验签一致）：`{method}\n{url}\n{timestamp}\n{nonce}\n{body}\n`（最后有换行）。
  *
  * 依赖：仅 node:crypto + 全局 fetch（Node 20+），不引入新依赖。
  */
@@ -119,6 +120,7 @@ export class WechatPaymentProvider implements PaymentProvider {
   async verifyNotification(
     rawBody: string,
     headers: Record<string, string>,
+    context?: NotificationContext,
   ): Promise<PaymentNotification | null> {
     this.requireConfig();
 
@@ -144,8 +146,11 @@ export class WechatPaymentProvider implements PaymentProvider {
       );
     }
 
-    // 验签串：`timestamp\nnonce\nbody\n`（body 即原始 rawBody）。
-    const signString = `${timestamp}\n${nonce}\n${rawBody}\n`;
+    // APIv3 验签串格式与请求签名一致：`{method}\n{url}\n{timestamp}\n{nonce}\n{body}\n`。
+    // method 和 url 来自回调请求的 HTTP method 与请求路径（由调用方通过 context 传入）。
+    const method = context?.method ?? 'POST';
+    const url = context?.url ?? '';
+    const signString = `${method}\n${url}\n${timestamp}\n${nonce}\n${rawBody}\n`;
     const platformCertPem = this.loadPlatformCertPem();
     let valid: boolean;
     try {

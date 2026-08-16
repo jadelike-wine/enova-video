@@ -149,6 +149,26 @@ export class GenerationRepo {
   }
 
   /**
+   * 更新视频轮询进度到 output_json。
+   * 仅在 processing 状态时调用，把 Agnes 返回的真实 progress 持久化，
+   * 前端通过 GET /api/v1/generations/:id 读取。
+   */
+  async updateProgress(id: string, progress: number): Promise<void> {
+    const current = await this.db
+      .select({ outputJson: generationJobs.outputJson })
+      .from(generationJobs)
+      .where(eq(generationJobs.id, id))
+      .limit(1);
+    const existing = current[0]?.outputJson ?? {};
+    await this.db
+      .update(generationJobs)
+      .set({
+        outputJson: { ...existing, progress },
+      })
+      .where(eq(generationJobs.id, id));
+  }
+
+  /**
    * 解析定价规则中的供应商成本（微美元）。
    * 单一数据源= pricing_rules.pricingJson.providerCostUsd；未配置或缺失时默认 0（不伪造成本）。
    */

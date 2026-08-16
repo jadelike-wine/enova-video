@@ -3,6 +3,7 @@ import {
   GENERATION_JOB_NAMES,
   QUEUES,
   type GenerationJobPayload,
+  validateVideoFrames,
 } from '@enova/contracts';
 import type {
   AcquiredCredential,
@@ -171,7 +172,7 @@ export class GenerationPipeline {
     }
 
     if (status.status === 'processing') {
-      await this.handleVideoProcessing(job, payload);
+      await this.handleVideoProcessing(job, payload, status.progress);
     } else if (status.status === 'succeeded') {
       this.deps.logger.info('video succeeded', {
         generationJobId: job.id,
@@ -272,6 +273,15 @@ export class GenerationPipeline {
   // ---- VIDEO execute ----
 
   private async runVideoExecute(job: GenerationJobRow, payload: GenerationJobPayload): Promise<void> {
+    // Worker-side video validation: 不信任 API 层传来的参数，在 provider 调用前再次校验。
+    // 这与 entitlement.authorizeJob 中的校验互补，防止绕过 API 层直接投递的非法参数。
+    const videoInput = this.buildVideoInput(job);
+    const frameErr = validateVideoFrames(videoInput.numFrames, videoInput.frameRate);
+    if (frameErr) {
+      await this.fail(job, 'VALIDATION_ERROR', `Invalid video parameters: ${frameErr}`);
+      return;
+    }
+
     // 幂等：provider_job_id 已存在说明已提交过，不再重复提交（防重复计费）。
     let providerJobId = job.providerJobId;
     let submission: ProviderVideoSubmission | null = null;
@@ -327,7 +337,15 @@ export class GenerationPipeline {
 
   // ---- poll processing ----
 
-  private async handleVideoProcessing(job: GenerationJobRow, payload: GenerationJobPayload): Promise<void> {
+  private async handleVideoProcessing(job: GenerationJobRow, payload: GenerationJobPayload, progress?: number): Promise<void> {
+    // 持久化真实进度到 output_json，前端通过 GET /generations/:id 读取。
+    if (progress !== undefined && progress >= 0) {
+      try {
+        await this.deps.repo.updateProgress(job.id, progress);
+      } catch {
+        // best-effort: 进度更新失败不影响轮询流程。
+      }
+    }
     const pollCount = await this.deps.repo.incrementPoll(job.id);
     const startedAt = job.providerStartedAt ?? new Date();
     const wallElapsed = Date.now() - startedAt.getTime();
@@ -635,6 +653,7 @@ export class GenerationPipeline {
       model: job.model ?? '',
       prompt: String(input.prompt ?? ''),
       size: typeof input.size === 'string' ? input.size : undefined,
+      ratio: typeof input.ratio === 'string' ? input.ratio : undefined,
       mode: (input.mode as GenerateImageInput['mode']) ?? 'text2img',
       images: Array.isArray(input.images) ? (input.images as string[]) : undefined,
       responseFormat: (input.responseFormat as GenerateImageInput['responseFormat']) ?? 'url',

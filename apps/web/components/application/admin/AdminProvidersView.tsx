@@ -5,10 +5,12 @@ import {
   App,
   Button,
   Card,
+  Collapse,
   Drawer,
   Dropdown,
   Form,
   Input,
+  InputNumber,
   Modal,
   Select,
   Skeleton,
@@ -17,7 +19,7 @@ import {
   Table,
   Tag,
   Tooltip,
-  InputNumber,
+  Typography,
 } from 'antd'
 import type { MenuProps, TableProps } from 'antd'
 import {
@@ -25,49 +27,49 @@ import {
   ReloadOutlined,
   EllipsisOutlined,
   EditOutlined,
-  KeyOutlined,
-  CopyOutlined,
+  SettingOutlined,
+  ApiOutlined,
+  CheckCircleTwoTone,
+  CloseCircleTwoTone,
 } from '@ant-design/icons'
 import {
   adminProvidersApi,
   adminCredentialsApi,
+  adminAccountsApi,
   type AdminProviderView,
-  type AdminCredentialView,
-  type CreateProviderInput,
-  type UpdateProviderInput,
-  type CreateCredentialInput,
+  type AdminAccountRow,
   type UpdateCredentialInput,
+  type AdminTestConnectionResult,
+  type TestConnectionInput,
 } from '../../../lib/adminApi'
 import { formatErrorMessage } from '../../../lib/errorMessage'
 import { useTablePagination } from '../../../lib/useTablePagination'
 import { useSession } from '../../../lib/auth'
 import { fmtDate } from './AdminUi'
 
+const { Text } = Typography
+
 // ---------------------------------------------------------------------------
-// Provider status badge
+// Credential health status badge
 // ---------------------------------------------------------------------------
+
+function HealthStatusBadge({ status }: { status: string }) {
+  const s = (status ?? '').toUpperCase()
+  const map: Record<string, { color: string; text: string }> = {
+    ACTIVE: { color: 'success', text: '正常' },
+    COOLDOWN: { color: 'warning', text: '冷却中' },
+    ERROR: { color: 'error', text: '异常' },
+    DISABLED: { color: 'default', text: '已禁用' },
+  }
+  const cfg = map[s] ?? { color: 'default', text: s || '—' }
+  return <Tag color={cfg.color}>{cfg.text}</Tag>
+}
 
 function ProviderStatusBadge({ status }: { status: string }) {
   const s = (status ?? '').toUpperCase()
   if (s === 'ACTIVE') return <Tag color="success">正常</Tag>
   if (s === 'DISABLED') return <Tag color="default">停用</Tag>
   return <Tag color="error">异常</Tag>
-}
-
-// ---------------------------------------------------------------------------
-// Credential status badge
-// ---------------------------------------------------------------------------
-
-function CredentialStatusBadge({ status }: { status: string }) {
-  const s = (status ?? '').toUpperCase()
-  const map: Record<string, { color: string; text: string }> = {
-    ACTIVE: { color: 'success', text: '正常' },
-    COOLDOWN: { color: 'warning', text: '冷却' },
-    ERROR: { color: 'error', text: '异常' },
-    DISABLED: { color: 'default', text: '停用' },
-  }
-  const cfg = map[s] ?? { color: 'default', text: s || '—' }
-  return <Tag color={cfg.color}>{cfg.text}</Tag>
 }
 
 // ---------------------------------------------------------------------------
@@ -86,9 +88,206 @@ function friendlyTime(v: string | Date | null | undefined): string {
   return fmtDate(v)
 }
 
+// ---------------------------------------------------------------------------
+// Account Form Modal (Add / Edit)
+// ---------------------------------------------------------------------------
+
+interface AccountFormValues {
+  providerCode: string
+  name: string
+  secret: string
+  remark: string
+  enabled: boolean
+  priority: number
+  weight: number
+  maxConcurrency: number
+}
+
+function AccountFormModal({
+  open,
+  mode,
+  account,
+  providers,
+  onClose,
+  onSubmit,
+  submitting,
+  onTestConnection,
+  testing,
+  testResult,
+}: {
+  open: boolean
+  mode: 'create' | 'edit'
+  account: AdminAccountRow | null
+  providers: AdminProviderView[]
+  onClose: () => void
+  onSubmit: (values: AccountFormValues) => Promise<void>
+  submitting: boolean
+  onTestConnection: (secret: string, baseUrl?: string) => void
+  testing: boolean
+  testResult: AdminTestConnectionResult | null
+}) {
+  const [form] = Form.useForm<AccountFormValues>()
+  const isCreate = mode === 'create'
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    if (isCreate) {
+      form.resetFields()
+      form.setFieldsValue({
+        providerCode: 'agnes',
+        name: '',
+        secret: '',
+        remark: '',
+        enabled: true,
+        priority: 0,
+        weight: 1,
+        maxConcurrency: 1,
+      })
+      setAdvancedOpen(false)
+    } else if (account) {
+      form.setFieldsValue({
+        providerCode: account.providerCode,
+        name: account.name ?? '',
+        secret: '',
+        remark: account.remark ?? '',
+        enabled: account.status !== 'DISABLED',
+        priority: account.priority,
+        weight: account.weight,
+        maxConcurrency: account.maxConcurrency,
+      })
+      setAdvancedOpen(false)
+    }
+  }, [open, isCreate, account, form])
+
+  const handleSubmit = async (values: AccountFormValues) => {
+    await onSubmit(values)
+  }
+
+  const handleTest = () => {
+    const secret = form.getFieldValue('secret')?.trim()
+    if (!secret && isCreate) return
+    const providerCode = form.getFieldValue('providerCode')
+    const provider = providers.find((p) => p.code === providerCode)
+    onTestConnection(secret, provider?.baseUrl)
+  }
+
+  return (
+    <Modal
+      title={isCreate ? '添加账号' : '编辑账号'}
+      open={open}
+      onCancel={onClose}
+      onOk={() => form.submit()}
+      okText={isCreate ? '创建' : '保存'}
+      cancelText="取消"
+      confirmLoading={submitting}
+      destroyOnClose
+      width={560}
+    >
+      <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form.Item
+          name="providerCode"
+          label="Provider"
+          rules={[{ required: true, message: '请选择 Provider' }]}
+        >
+          <Select
+            placeholder="选择 Provider"
+            disabled={!isCreate && !!account}
+            options={providers.map((p) => ({
+              value: p.code,
+              label: `${p.name} (${p.code})`,
+            }))}
+          />
+        </Form.Item>
+
+        <Form.Item
+          name="name"
+          label="账号名称"
+          rules={[{ required: true, message: '请输入账号名称' }]}
+        >
+          <Input placeholder="例如：Agnes 主账号" />
+        </Form.Item>
+
+        <Form.Item
+          name="secret"
+          label="API Key"
+          rules={isCreate ? [{ required: true, message: '请输入 API Key' }] : []}
+          extra={!isCreate ? '留空则保持当前 API Key 不变' : undefined}
+        >
+          <Input.Password
+            placeholder={isCreate ? 'sk-...' : '••••••••（留空保持不变）'}
+            autoComplete="new-password"
+          />
+        </Form.Item>
+
+        <Form.Item name="remark" label="备注">
+          <Input.TextArea
+            placeholder="例如：生产环境主账号，购买于官方渠道。"
+            autoSize={{ minRows: 2, maxRows: 5 }}
+          />
+        </Form.Item>
+
+        {!isCreate && (
+          <Form.Item name="enabled" label="启用状态" valuePropName="checked">
+            <Switch checkedChildren="启用" unCheckedChildren="停用" />
+          </Form.Item>
+        )}
+
+        {/* 测试连接 */}
+        <div className="mb-4">
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Button
+              icon={<ApiOutlined />}
+              onClick={handleTest}
+              loading={testing}
+              disabled={isCreate && !form.getFieldValue('secret')}
+            >
+              测试连接
+            </Button>
+            {testResult && (
+              <div className="flex items-center gap-2 text-sm">
+                {testResult.success ? (
+                  <CheckCircleTwoTone twoToneColor="#52c41a" />
+                ) : (
+                  <CloseCircleTwoTone twoToneColor="#ff4d4f" />
+                )}
+                <Text type={testResult.success ? 'success' : 'danger'}>
+                  {testResult.message}
+                </Text>
+              </div>
+            )}
+          </Space>
+        </div>
+
+        <Collapse
+          ghost
+          activeKey={advancedOpen ? ['adv'] : []}
+          onChange={(keys) => setAdvancedOpen(keys.includes('adv'))}
+          items={[{
+            key: 'adv',
+            label: '高级设置',
+            children: (
+              <div className="grid grid-cols-3 gap-4">
+                <Form.Item name="priority" label="优先级">
+                  <InputNumber className="w-full" />
+                </Form.Item>
+                <Form.Item name="weight" label="权重">
+                  <InputNumber className="w-full" min={1} />
+                </Form.Item>
+                <Form.Item name="maxConcurrency" label="最大并发">
+                  <InputNumber className="w-full" min={1} max={100} />
+                </Form.Item>
+              </div>
+            ),
+          }]}
+        />
+      </Form>
+    </Modal>
+  )
+}
 
 // ---------------------------------------------------------------------------
-// Provider Form Drawer (Add / Edit)
+// Provider Config Drawer (渠道配置)
 // ---------------------------------------------------------------------------
 
 interface ProviderFormValues {
@@ -99,46 +298,62 @@ interface ProviderFormValues {
   configText: string
 }
 
-function ProviderFormDrawer({
+function ProviderConfigDrawer({
   open,
-  mode,
-  provider,
   onClose,
-  onSubmit,
-  submitting,
+  onChanged,
 }: {
   open: boolean
-  mode: 'create' | 'edit'
-  provider: AdminProviderView | null
   onClose: () => void
-  onSubmit: (values: CreateProviderInput | UpdateProviderInput) => Promise<void>
-  submitting: boolean
+  onChanged: () => void
 }) {
+  const { message } = App.useApp()
+  const [providers, setProviders] = useState<AdminProviderView[]>([])
+  const [loading, setLoading] = useState(false)
+  const [formOpen, setFormOpen] = useState(false)
+  const [formMode, setFormMode] = useState<'create' | 'edit'>('create')
+  const [editTarget, setEditTarget] = useState<AdminProviderView | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<AdminProviderView | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [form] = Form.useForm<ProviderFormValues>()
-  const isCreate = mode === 'create'
 
-  // Reset form when drawer opens
-  useEffect(() => {
-    if (!open) return
-    if (isCreate) {
-      form.resetFields()
-      form.setFieldsValue({
-        code: '',
-        name: '',
-        baseUrl: '',
-        status: 'ACTIVE',
-        configText: '',
-      })
-    } else if (provider) {
-      form.setFieldsValue({
-        code: provider.code,
-        name: provider.name,
-        baseUrl: provider.baseUrl,
-        status: provider.status,
-        configText: provider.config ? JSON.stringify(provider.config, null, 2) : '',
-      })
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const rows = await adminProvidersApi.list({ limit: 100, offset: 0 })
+      setProviders(rows)
+    } catch (e) {
+      message.error(formatErrorMessage(e))
+    } finally {
+      setLoading(false)
     }
-  }, [open, isCreate, provider, form])
+  }, [message])
+
+  useEffect(() => {
+    if (open) void load()
+  }, [open, load])
+
+  const handleCreate = () => {
+    setFormMode('create')
+    setEditTarget(null)
+    form.resetFields()
+    form.setFieldsValue({ code: '', name: '', baseUrl: '', status: 'ACTIVE', configText: '' })
+    setFormOpen(true)
+  }
+
+  const handleEdit = (provider: AdminProviderView) => {
+    setFormMode('edit')
+    setEditTarget(provider)
+    form.setFieldsValue({
+      code: provider.code,
+      name: provider.name,
+      baseUrl: provider.baseUrl,
+      status: provider.status,
+      configText: provider.config ? JSON.stringify(provider.config, null, 2) : '',
+    })
+    setFormOpen(true)
+  }
 
   const handleSubmit = async (values: ProviderFormValues) => {
     let config: Record<string, unknown> | undefined
@@ -147,329 +362,33 @@ function ProviderFormDrawer({
       try {
         config = JSON.parse(configStr)
       } catch {
-        form.setFields([
-          { name: 'configText', errors: ['JSON 格式错误'] },
-        ])
+        form.setFields([{ name: 'configText', errors: ['JSON 格式错误'] }])
         return
       }
     }
 
-    if (isCreate) {
-      await onSubmit({
-        code: values.code.trim(),
-        name: values.name.trim(),
-        baseUrl: values.baseUrl.trim(),
-        status: values.status,
-        config,
-      })
-    } else {
-      await onSubmit({
-        name: values.name.trim(),
-        baseUrl: values.baseUrl.trim(),
-        status: values.status,
-        config,
-      })
-    }
-  }
-
-  return (
-    <Drawer
-      title={isCreate ? '添加 Provider' : '编辑 Provider'}
-      open={open}
-      onClose={onClose}
-      width={560}
-      destroyOnClose
-      extra={
-        <Space>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="primary" loading={submitting} onClick={() => form.submit()}>
-            {isCreate ? '创建' : '保存'}
-          </Button>
-        </Space>
-      }
-    >
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleSubmit}
-        initialValues={{ status: 'ACTIVE', configText: '' }}
-      >
-        <Form.Item
-          name="code"
-          label="Provider Code"
-          rules={[{ required: true, message: '请输入 Provider Code' }]}
-        >
-          <Input placeholder="例如：openai" disabled={!isCreate} />
-        </Form.Item>
-
-        <Form.Item
-          name="name"
-          label="Provider 名称"
-          rules={[{ required: true, message: '请输入名称' }]}
-        >
-          <Input placeholder="例如：OpenAI" />
-        </Form.Item>
-
-        <Form.Item
-          name="baseUrl"
-          label="Base URL"
-          rules={[
-            { required: true, message: '请输入 Base URL' },
-            {
-              validator: async (_, value) => {
-                if (!value) return
-                try {
-                  const url = new URL(value)
-                  if (!['https:', 'http:'].includes(url.protocol)) {
-                    throw new Error('仅支持 http/https 协议')
-                  }
-                } catch {
-                  throw new Error('请输入合法的 URL')
-                }
-              },
-            },
-          ]}
-        >
-          <Input placeholder="https://api.openai.com/v1" />
-        </Form.Item>
-
-        <Form.Item name="status" label="状态">
-          <Select
-            options={[
-              { value: 'ACTIVE', label: '正常' },
-              { value: 'DISABLED', label: '停用' },
-            ]}
-          />
-        </Form.Item>
-
-        <Form.Item
-          name="configText"
-          label="Config (JSON, 可选)"
-          tooltip="Provider 额外配置，JSON 格式"
-        >
-          <Input.TextArea
-            placeholder='{ "key": "value" }'
-            autoSize={{ minRows: 3, maxRows: 8 }}
-          />
-        </Form.Item>
-      </Form>
-    </Drawer>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Credential Form (inside Credential Drawer)
-// ---------------------------------------------------------------------------
-
-interface CredentialFormValues {
-  secret: string
-  status: string
-  priority: number
-  weight: number
-  maxConcurrency: number
-  clearBackoff?: boolean
-}
-
-function CredentialFormModal({
-  open,
-  mode,
-  credential,
-  onClose,
-  onSubmit,
-  submitting,
-}: {
-  open: boolean
-  mode: 'create' | 'edit'
-  credential: AdminCredentialView | null
-  onClose: () => void
-  onSubmit: (values: CreateCredentialInput | UpdateCredentialInput) => Promise<void>
-  submitting: boolean
-}) {
-  const [form] = Form.useForm<CredentialFormValues>()
-  const isCreate = mode === 'create'
-
-  useEffect(() => {
-    if (!open) return
-    if (isCreate) {
-      form.resetFields()
-      form.setFieldsValue({
-        secret: '',
-        status: 'ACTIVE',
-        priority: 0,
-        weight: 1,
-        maxConcurrency: 1,
-        clearBackoff: false,
-      })
-    } else if (credential) {
-      form.setFieldsValue({
-        secret: '',
-        status: credential.status,
-        priority: credential.priority,
-        weight: credential.weight,
-        maxConcurrency: credential.maxConcurrency,
-        clearBackoff: false,
-      })
-    }
-  }, [open, isCreate, credential, form])
-
-  const handleSubmit = async (values: CredentialFormValues) => {
-    if (isCreate) {
-      await onSubmit({
-        secret: values.secret,
-        status: values.status,
-        priority: values.priority,
-        weight: values.weight,
-        maxConcurrency: values.maxConcurrency,
-      })
-    } else {
-      const update: UpdateCredentialInput = {
-        status: values.status,
-        priority: values.priority,
-        weight: values.weight,
-        maxConcurrency: values.maxConcurrency,
-      }
-      if (values.secret?.trim()) {
-        update.secret = values.secret
-      }
-      if (values.clearBackoff) {
-        update.clearBackoff = true
-      }
-      await onSubmit(update)
-    }
-  }
-
-  return (
-    <Modal
-      title={isCreate ? '添加 API Key' : '编辑 API Key'}
-      open={open}
-      onCancel={onClose}
-      onOk={() => form.submit()}
-      okText={isCreate ? '创建' : '保存'}
-      cancelText="取消"
-      confirmLoading={submitting}
-      destroyOnClose
-    >
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleSubmit}
-      >
-        <Form.Item
-          name="secret"
-          label="API Key / Secret"
-          rules={isCreate ? [{ required: true, message: '请输入 API Key' }] : []}
-          extra={!isCreate ? '留空则保持当前 API Key 不变' : undefined}
-        >
-          <Input.Password
-            placeholder={isCreate ? 'sk-...' : '••••••••（留空保持不变）'}
-          />
-        </Form.Item>
-
-        <Form.Item name="status" label="状态">
-          <Select
-            options={[
-              { value: 'ACTIVE', label: '正常' },
-              { value: 'COOLDOWN', label: '冷却' },
-              { value: 'ERROR', label: '异常' },
-              { value: 'DISABLED', label: '停用' },
-            ]}
-          />
-        </Form.Item>
-
-        <div className="grid grid-cols-3 gap-4">
-          <Form.Item name="priority" label="优先级">
-            <InputNumber className="w-full" />
-          </Form.Item>
-          <Form.Item name="weight" label="权重">
-            <InputNumber className="w-full" min={1} />
-          </Form.Item>
-          <Form.Item name="maxConcurrency" label="最大并发">
-            <InputNumber className="w-full" min={1} max={100} />
-          </Form.Item>
-        </div>
-
-        {!isCreate && (
-          <Form.Item name="clearBackoff" valuePropName="checked">
-            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-              <Switch size="small" />
-              清除冷却/错误状态（手动恢复）
-            </label>
-          </Form.Item>
-        )}
-      </Form>
-    </Modal>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Credential Drawer
-// ---------------------------------------------------------------------------
-
-function CredentialDrawer({
-  open,
-  provider,
-  onClose,
-  onChanged,
-}: {
-  open: boolean
-  provider: AdminProviderView | null
-  onClose: () => void
-  onChanged: () => void
-}) {
-  const { message } = App.useApp()
-  const [credentials, setCredentials] = useState<AdminCredentialView[]>([])
-  const [loading, setLoading] = useState(false)
-  const [formOpen, setFormOpen] = useState(false)
-  const [formMode, setFormMode] = useState<'create' | 'edit'>('create')
-  const [editTarget, setEditTarget] = useState<AdminCredentialView | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<AdminCredentialView | null>(null)
-  const [deleting, setDeleting] = useState(false)
-
-  const loadCredentials = useCallback(async () => {
-    if (!provider) return
-    setLoading(true)
-    try {
-      const rows = await adminCredentialsApi.listByProvider(provider.id)
-      setCredentials(rows)
-    } catch (e) {
-      message.error(formatErrorMessage(e))
-    } finally {
-      setLoading(false)
-    }
-  }, [provider, message])
-
-  useEffect(() => {
-    if (open && provider) {
-      void loadCredentials()
-    }
-  }, [open, provider, loadCredentials])
-
-  const handleCreate = () => {
-    setFormMode('create')
-    setEditTarget(null)
-    setFormOpen(true)
-  }
-
-  const handleEdit = (cred: AdminCredentialView) => {
-    setFormMode('edit')
-    setEditTarget(cred)
-    setFormOpen(true)
-  }
-
-  const handleSubmitCredential = async (values: CreateCredentialInput | UpdateCredentialInput) => {
-    if (!provider) return
     setSubmitting(true)
     try {
       if (formMode === 'create') {
-        await adminCredentialsApi.create(provider.id, values as CreateCredentialInput)
-        message.success('API Key 已创建')
+        await adminProvidersApi.create({
+          code: values.code.trim(),
+          name: values.name.trim(),
+          baseUrl: values.baseUrl.trim(),
+          status: values.status,
+          config,
+        })
+        message.success('Provider 已创建')
       } else if (editTarget) {
-        await adminCredentialsApi.update(editTarget.id, values as UpdateCredentialInput)
-        message.success('API Key 已更新')
+        await adminProvidersApi.update(editTarget.id, {
+          name: values.name.trim(),
+          baseUrl: values.baseUrl.trim(),
+          status: values.status,
+          config,
+        })
+        message.success('Provider 已更新')
       }
       setFormOpen(false)
-      await loadCredentials()
+      await load()
       onChanged()
     } catch (e) {
       message.error(formatErrorMessage(e))
@@ -482,10 +401,10 @@ function CredentialDrawer({
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      await adminCredentialsApi.delete(deleteTarget.id)
-      message.success('API Key 已删除')
+      await adminProvidersApi.delete(deleteTarget.id)
+      message.success('Provider 已删除')
       setDeleteTarget(null)
-      await loadCredentials()
+      await load()
       onChanged()
     } catch (e) {
       message.error(formatErrorMessage(e))
@@ -494,244 +413,228 @@ function CredentialDrawer({
     }
   }
 
-  const activeCount = credentials.filter((c) => c.status === 'ACTIVE').length
+  const columns: TableProps<AdminProviderView>['columns'] = [
+    {
+      title: '名称',
+      key: 'name',
+      width: 140,
+      render: (_, r) => (
+        <div>
+          <div className="font-medium text-gray-900 text-sm">{r.name}</div>
+          <div className="text-xs text-gray-400">{r.code}</div>
+        </div>
+      ),
+    },
+    {
+      title: 'Base URL',
+      dataIndex: 'baseUrl',
+      key: 'baseUrl',
+      width: 240,
+      render: (url: string) => (
+        <Tooltip title={url}>
+          <span className="text-xs text-gray-600 truncate max-w-[200px] inline-block align-bottom">
+            {url.length > 36 ? `${url.slice(0, 36)}...` : url}
+          </span>
+        </Tooltip>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 80,
+      render: (status: string) => <ProviderStatusBadge status={status} />,
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_, r) => (
+        <Space size={0}>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(r)}>
+            编辑
+          </Button>
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'delete',
+                  label: '删除',
+                  danger: true,
+                  onClick: () => setDeleteTarget(r),
+                },
+              ] as MenuProps['items'],
+            }}
+            trigger={['click']}
+          >
+            <Button type="link" size="small" icon={<EllipsisOutlined />}>
+              更多
+            </Button>
+          </Dropdown>
+        </Space>
+      ),
+    },
+  ]
 
   return (
-    <>
-      <Drawer
-        title={
-          provider ? (
-            <div>
-              <div className="font-semibold">{provider.name} · API 凭证</div>
-              <div className="text-xs text-gray-400 font-normal mt-0.5 truncate max-w-[400px]">
-                {provider.baseUrl}
-              </div>
-            </div>
-          ) : (
-            'API 凭证'
-          )
-        }
-        open={open}
-        onClose={onClose}
-        width={560}
-        destroyOnClose
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-            添加 API Key
-          </Button>
-        }
-      >
-        {loading ? (
-          <Skeleton active paragraph={{ rows: 4 }} />
-        ) : credentials.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <KeyOutlined style={{ fontSize: 32 }} />
-            <p className="mt-3 text-sm">暂无 API 凭证</p>
-            <p className="mt-1 text-xs">添加 API Key 后，系统才能调用该 Provider</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="text-sm text-gray-500 mb-2">
-              共 {credentials.length} 个密钥，{activeCount} 正常
-            </div>
-            {credentials.map((cred) => (
-              <div
-                key={cred.id}
-                className="rounded-lg border border-gray-100 p-4 hover:border-gray-300 transition-colors"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-700">
-                      Credential #{cred.id.slice(0, 8)}
-                    </span>
-                    {cred.hasSecret ? (
-                      <Tag color="blue">sk-••••••••</Tag>
-                    ) : (
-                      <Tag color="warning">无密钥</Tag>
-                    )}
-                  </div>
-                  <CredentialStatusBadge status={cred.status} />
-                </div>
+    <Drawer
+      title="渠道配置"
+      open={open}
+      onClose={onClose}
+      width={680}
+      destroyOnClose
+      extra={
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+          添加 Provider
+        </Button>
+      }
+    >
+      {loading ? (
+        <Skeleton active paragraph={{ rows: 4 }} />
+      ) : (
+        <Table<AdminProviderView>
+          rowKey="id"
+          columns={columns}
+          dataSource={providers}
+          pagination={false}
+          size="middle"
+          locale={{ emptyText: '暂无 Provider 配置' }}
+        />
+      )}
 
-                <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500 mb-2">
-                  <span>优先级 {cred.priority}</span>
-                  <span>权重 {cred.weight}</span>
-                  <span>最大并发 {cred.maxConcurrency}</span>
-                  <span>当前并发 {cred.currentConcurrency}</span>
-                </div>
-
-                {cred.lastError && (
-                  <div className="text-xs text-red-500 mb-1 truncate">
-                    错误：{cred.lastError}
-                  </div>
-                )}
-
-                {cred.cooldownUntil && (
-                  <div className="text-xs text-orange-500 mb-1">
-                    冷却至 {fmtDate(cred.cooldownUntil)}
-                  </div>
-                )}
-
-                <div className="text-xs text-gray-400 mb-3">
-                  最近使用：{friendlyTime(cred.lastUsedAt)}
-                </div>
-
-                <div className="flex justify-end gap-2">
-                  <Button size="small" onClick={() => handleEdit(cred)}>
-                    编辑
-                  </Button>
-                  <Button
-                    size="small"
-                    danger
-                    onClick={() => setDeleteTarget(cred)}
-                  >
-                    删除
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Drawer>
-
-      <CredentialFormModal
-        open={formOpen}
-        mode={formMode}
-        credential={editTarget}
-        onClose={() => setFormOpen(false)}
-        onSubmit={handleSubmitCredential}
-        submitting={submitting}
-      />
-
+      {/* Provider Form Modal */}
       <Modal
-        title="删除 API Key"
+        title={formMode === 'create' ? '添加 Provider' : '编辑 Provider'}
+        open={formOpen}
+        onCancel={() => setFormOpen(false)}
+        onOk={() => form.submit()}
+        okText={formMode === 'create' ? '创建' : '保存'}
+        cancelText="取消"
+        confirmLoading={submitting}
+        destroyOnClose
+        width={520}
+      >
+        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+          <Form.Item
+            name="code"
+            label="Provider Code"
+            rules={[{ required: true, message: '请输入 Provider Code' }]}
+          >
+            <Input placeholder="例如：agnes" disabled={formMode === 'edit'} />
+          </Form.Item>
+
+          <Form.Item
+            name="name"
+            label="Provider 名称"
+            rules={[{ required: true, message: '请输入名称' }]}
+          >
+            <Input placeholder="例如：Agnes" />
+          </Form.Item>
+
+          <Form.Item
+            name="baseUrl"
+            label="Base URL"
+            rules={[
+              { required: true, message: '请输入 Base URL' },
+              {
+                validator: async (_, value) => {
+                  if (!value) return
+                  try {
+                    const url = new URL(value)
+                    if (!['https:', 'http:'].includes(url.protocol)) {
+                      throw new Error('仅支持 http/https 协议')
+                    }
+                  } catch {
+                    throw new Error('请输入合法的 URL')
+                  }
+                },
+              },
+            ]}
+          >
+            <Input placeholder="https://apihub.agnes-ai.com" />
+          </Form.Item>
+
+          <Form.Item name="status" label="状态">
+            <Select
+              options={[
+                { value: 'ACTIVE', label: '正常' },
+                { value: 'DISABLED', label: '停用' },
+              ]}
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="configText"
+            label="Config (JSON, 可选)"
+            tooltip="Provider 额外配置，JSON 格式"
+          >
+            <Input.TextArea
+              placeholder='{ "key": "value" }'
+              autoSize={{ minRows: 3, maxRows: 8 }}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Delete Provider Modal */}
+      <Modal
+        title="删除 Provider"
         open={!!deleteTarget}
         onOk={handleDelete}
         onCancel={() => setDeleteTarget(null)}
-        okText="删除"
+        okText="确认删除"
         cancelText="取消"
         okButtonProps={{ danger: true }}
         confirmLoading={deleting}
       >
-        <div className="py-4">
-          <p className="text-sm text-gray-600">
-            删除后无法恢复，使用该凭证的任务将无法继续调度。
+        <div className="py-4 space-y-3">
+          <p className="text-sm text-gray-700">
+            删除 <strong>{deleteTarget?.name}</strong> 后，该 Provider 将无法继续承担新的生成任务。
+          </p>
+          <p className="text-sm text-gray-500">
+            删除 Provider 会级联删除其所有账号。已有任务和历史记录不会因此消失。
           </p>
         </div>
       </Modal>
-
-    </>
+    </Drawer>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Delete Provider Modal
+// Delete Account Modal
 // ---------------------------------------------------------------------------
 
-function DeleteProviderModal({
+function DeleteAccountModal({
   open,
-  provider,
+  account,
   onClose,
   onConfirm,
   deleting,
 }: {
   open: boolean
-  provider: AdminProviderView | null
+  account: AdminAccountRow | null
   onClose: () => void
   onConfirm: () => Promise<void>
   deleting: boolean
 }) {
   return (
     <Modal
-      title="删除 Provider"
+      title="删除账号"
       open={open}
       onOk={onConfirm}
       onCancel={onClose}
-      okText="确认删除"
+      okText="删除"
       cancelText="取消"
       okButtonProps={{ danger: true }}
       confirmLoading={deleting}
     >
       <div className="py-4 space-y-3">
         <p className="text-sm text-gray-700">
-          删除 <strong>{provider?.name}</strong> 后，该 Provider 将无法继续承担新的生成任务。
+          删除账号 <strong>{account?.name || account?.maskedApiKey || account?.id.slice(0, 8)}</strong> 后，该 API Key 将无法继续调度。
         </p>
         <p className="text-sm text-gray-500">
-          删除 Provider 会级联删除其所有 Credential。已有任务和历史记录不会因此消失。
+          删除后无法恢复，使用该凭证的任务将无法继续调度。
         </p>
-      </div>
-    </Modal>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Add Agnes Account Modal (simplified: only API Key needed)
-// ---------------------------------------------------------------------------
-
-function AddAgnesAccountModal({
-  open,
-  onClose,
-  onSuccess,
-}: {
-  open: boolean
-  onClose: () => void
-  onSuccess: () => void
-}) {
-  const { message } = App.useApp()
-  const [apiKey, setApiKey] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  const handleSubmit = async () => {
-    const key = apiKey.trim()
-    if (!key) {
-      message.warning('请输入 API Key')
-      return
-    }
-    setSubmitting(true)
-    try {
-      await adminProvidersApi.createAgnesAccount(key)
-      message.success('Agnes 账号已添加')
-      setApiKey('')
-      onClose()
-      onSuccess()
-    } catch (e) {
-      message.error(formatErrorMessage(e))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <Modal
-      title="添加 Agnes 账号"
-      open={open}
-      onCancel={onClose}
-      onOk={handleSubmit}
-      okText="保存"
-      cancelText="取消"
-      confirmLoading={submitting}
-      destroyOnClose
-    >
-      <div className="py-4 space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
-          <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-600">
-            Agnes (agnes.com)
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-          <Input.Password
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-xxxxxxxxxxxxxxxx"
-            onPressEnter={handleSubmit}
-            autoFocus
-          />
-          <p className="mt-1 text-xs text-gray-400">
-            API Key 将加密存储，不会暴露给前端
-          </p>
-        </div>
       </div>
     </Modal>
   )
@@ -746,40 +649,52 @@ export default function AdminProvidersView() {
   const { user } = useSession()
   const { defaultPageSize } = useTablePagination()
 
-  const [providers, setProviders] = useState<AdminProviderView[]>([])
+  const [accounts, setAccounts] = useState<AdminAccountRow[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [offset, setOffset] = useState(0)
   const [search, setSearch] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [providerFilter, setProviderFilter] = useState('')
 
-  // Drawer / Modal state
+  // Providers list (for provider filter dropdown and account form)
+  const [providers, setProviders] = useState<AdminProviderView[]>([])
+
+  // Account form modal state
   const [formOpen, setFormOpen] = useState(false)
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create')
-  const [editTarget, setEditTarget] = useState<AdminProviderView | null>(null)
+  const [editTarget, setEditTarget] = useState<AdminAccountRow | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // Add Agnes account modal
-  const [addAccountOpen, setAddAccountOpen] = useState(false)
+  // Test connection state
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<AdminTestConnectionResult | null>(null)
 
-  const [credDrawerOpen, setCredDrawerOpen] = useState(false)
-  const [credTarget, setCredTarget] = useState<AdminProviderView | null>(null)
-
-  const [deleteTarget, setDeleteTarget] = useState<AdminProviderView | null>(null)
+  // Delete account state
+  const [deleteTarget, setDeleteTarget] = useState<AdminAccountRow | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  // Provider config drawer state
+  const [providerConfigOpen, setProviderConfigOpen] = useState(false)
 
   // Status toggle busy state
   const [busyId, setBusyId] = useState<string | null>(null)
-
-  // Previous status for rollback
   const prevStatusRef = useRef<Record<string, string>>({})
 
   const load = useCallback(
     async (off: number) => {
       setLoading(true)
       try {
-        const rows = await adminProvidersApi.list({ limit: defaultPageSize, offset: off })
-        setProviders(rows)
+        const { items, total: t } = await adminAccountsApi.list({
+          limit: defaultPageSize,
+          offset: off,
+          search: search || undefined,
+          status: statusFilter || undefined,
+          providerCode: providerFilter || undefined,
+        })
+        setAccounts(items)
+        setTotal(t)
         setOffset(off)
       } catch (e) {
         message.error(formatErrorMessage(e))
@@ -787,53 +702,108 @@ export default function AdminProvidersView() {
         setLoading(false)
       }
     },
-    [defaultPageSize, message],
+    [defaultPageSize, message, search, statusFilter, providerFilter],
   )
+
+  const loadProviders = useCallback(async () => {
+    try {
+      const rows = await adminProvidersApi.list({ limit: 100, offset: 0 })
+      setProviders(rows)
+    } catch {
+      // silent
+    }
+  }, [])
 
   useEffect(() => {
     void load(0)
-  }, [load])
+    void loadProviders()
+  }, [load, loadProviders])
 
-  // Client-side search & filter
+  // Client-side search & filter (supplements server-side filtering)
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    let result = providers
+    let result = accounts
     if (q) {
       result = result.filter(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.code.toLowerCase().includes(q) ||
-          p.baseUrl.toLowerCase().includes(q),
+        (a) =>
+          (a.name ?? '').toLowerCase().includes(q) ||
+          a.providerName.toLowerCase().includes(q) ||
+          a.providerCode.toLowerCase().includes(q) ||
+          a.providerBaseUrl.toLowerCase().includes(q),
       )
     }
     if (statusFilter) {
-      result = result.filter((p) => p.status === statusFilter)
+      result = result.filter((a) => a.status === statusFilter)
+    }
+    if (providerFilter) {
+      result = result.filter((a) => a.providerCode === providerFilter)
     }
     return result
-  }, [providers, search, statusFilter])
+  }, [accounts, search, statusFilter, providerFilter])
 
   const handleAddAccount = () => {
-    setAddAccountOpen(true)
-  }
-
-  const handleEdit = (provider: AdminProviderView) => {
-    setFormMode('edit')
-    setEditTarget(provider)
+    setFormMode('create')
+    setEditTarget(null)
+    setTestResult(null)
     setFormOpen(true)
   }
 
-  const handleSubmitProvider = async (values: CreateProviderInput | UpdateProviderInput) => {
+  const handleEdit = (account: AdminAccountRow) => {
+    setFormMode('edit')
+    setEditTarget(account)
+    setTestResult(null)
+    setFormOpen(true)
+  }
+
+  const handleSubmitAccount = async (values: AccountFormValues) => {
     setSubmitting(true)
     try {
       if (formMode === 'create') {
-        await adminProvidersApi.create(values as CreateProviderInput)
-        message.success('Provider 已创建')
+        // Use the agnes shortcut if provider is agnes, otherwise use generic credential create
+        if (values.providerCode === 'agnes') {
+          await adminProvidersApi.createAgnesAccount({
+            apiKey: values.secret,
+            name: values.name,
+            remark: values.remark,
+            priority: values.priority,
+            weight: values.weight,
+            maxConcurrency: values.maxConcurrency,
+          })
+        } else {
+          // Find provider by code
+          const provider = providers.find((p) => p.code === values.providerCode)
+          if (!provider) {
+            message.error('Provider 不存在')
+            return
+          }
+          await adminCredentialsApi.create(provider.id, {
+            secret: values.secret,
+            name: values.name,
+            remark: values.remark,
+            priority: values.priority,
+            weight: values.weight,
+            maxConcurrency: values.maxConcurrency,
+          })
+        }
+        message.success('账号已创建')
       } else if (editTarget) {
-        await adminProvidersApi.update(editTarget.id, values as UpdateProviderInput)
-        message.success('Provider 已更新')
+        const update: UpdateCredentialInput = {
+          name: values.name,
+          remark: values.remark,
+          status: values.enabled ? 'ACTIVE' : 'DISABLED',
+          priority: values.priority,
+          weight: values.weight,
+          maxConcurrency: values.maxConcurrency,
+        }
+        if (values.secret?.trim()) {
+          update.secret = values.secret
+        }
+        await adminCredentialsApi.update(editTarget.id, update)
+        message.success('账号已更新')
       }
       setFormOpen(false)
       await load(offset)
+      await loadProviders()
     } catch (e) {
       message.error(formatErrorMessage(e))
     } finally {
@@ -841,24 +811,67 @@ export default function AdminProvidersView() {
     }
   }
 
-  const handleToggleStatus = async (provider: AdminProviderView) => {
-    // 防重入：双击会污染回滚基准（第二次读到的 provider.status 已是乐观值）。
-    if (busyId === provider.id) return
-    const newStatus = provider.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
-    setBusyId(provider.id)
-    // Optimistic update
-    prevStatusRef.current[provider.id] = provider.status
-    setProviders((prev) =>
-      prev.map((p) => (p.id === provider.id ? { ...p, status: newStatus } : p)),
+  const handleTestConnection = async (secret: string, baseUrl?: string) => {
+    if (!secret && formMode === 'create') {
+      message.warning('请先输入 API Key')
+      return
+    }
+    setTesting(true)
+    setTestResult(null)
+    try {
+      if (formMode === 'edit' && editTarget && !secret) {
+        // Test saved credential
+        const result = await adminAccountsApi.testConnectionById(editTarget.id)
+        setTestResult(result)
+      } else {
+        const input: TestConnectionInput = { secret }
+        if (baseUrl) input.baseUrl = baseUrl
+        const providerCode = providers.find((p) => p.baseUrl === baseUrl)?.code
+        if (providerCode) input.providerCode = providerCode
+        const result = await adminAccountsApi.testConnection(input)
+        setTestResult(result)
+      }
+    } catch (e) {
+      setTestResult({
+        success: false,
+        message: formatErrorMessage(e),
+      })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const handleTestConnectionById = async (account: AdminAccountRow) => {
+    const hide = message.loading('正在测试连接...', 0)
+    try {
+      const result = await adminAccountsApi.testConnectionById(account.id)
+      hide()
+      if (result.success) {
+        message.success(result.message)
+      } else {
+        message.error(result.message)
+      }
+    } catch (e) {
+      hide()
+      message.error(formatErrorMessage(e))
+    }
+  }
+
+  const handleToggleEnabled = async (account: AdminAccountRow) => {
+    if (busyId === account.id) return
+    const newStatus = account.status === 'DISABLED' ? 'ACTIVE' : 'DISABLED'
+    setBusyId(account.id)
+    prevStatusRef.current[account.id] = account.status
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === account.id ? { ...a, status: newStatus } : a)),
     )
     try {
-      await adminProvidersApi.update(provider.id, { status: newStatus })
-      message.success(`Provider 已${newStatus === 'ACTIVE' ? '启用' : '停用'}`)
+      await adminCredentialsApi.update(account.id, { status: newStatus })
+      message.success(`账号已${newStatus === 'ACTIVE' ? '启用' : '停用'}`)
     } catch (e) {
-      // Rollback
-      setProviders((prev) =>
-        prev.map((p) =>
-          p.id === provider.id ? { ...p, status: prevStatusRef.current[provider.id] ?? p.status } : p,
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.id === account.id ? { ...a, status: prevStatusRef.current[account.id] ?? a.status } : a,
         ),
       )
       message.error(formatErrorMessage(e))
@@ -867,12 +880,22 @@ export default function AdminProvidersView() {
     }
   }
 
+  const handleClearBackoff = async (account: AdminAccountRow) => {
+    try {
+      await adminCredentialsApi.update(account.id, { clearBackoff: true })
+      message.success('已清除冷却/错误状态')
+      await load(offset)
+    } catch (e) {
+      message.error(formatErrorMessage(e))
+    }
+  }
+
   const handleDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
     try {
-      await adminProvidersApi.delete(deleteTarget.id)
-      message.success('Provider 已删除')
+      await adminCredentialsApi.delete(deleteTarget.id)
+      message.success('账号已删除')
       setDeleteTarget(null)
       await load(offset)
     } catch (e) {
@@ -880,18 +903,6 @@ export default function AdminProvidersView() {
     } finally {
       setDeleting(false)
     }
-  }
-
-  const handleOpenCredentials = (provider: AdminProviderView) => {
-    setCredTarget(provider)
-    setCredDrawerOpen(true)
-  }
-
-  const handleCopyUrl = (url: string) => {
-    navigator.clipboard
-      .writeText(url)
-      .then(() => message.success('已复制 Base URL'))
-      .catch(() => message.error('复制失败'))
   }
 
   // Non-admin guard
@@ -903,93 +914,115 @@ export default function AdminProvidersView() {
     )
   }
 
-  const columns: TableProps<AdminProviderView>['columns'] = [
+  const columns: TableProps<AdminAccountRow>['columns'] = [
     {
-      title: '名称',
+      title: '账号名称',
       key: 'name',
-      width: 180,
+      width: 160,
       fixed: 'left' as const,
       render: (_, r) => (
         <div>
-          <div className="font-medium text-gray-900 text-sm">{r.name}</div>
-          <div className="text-xs text-gray-400">{r.code}</div>
+          <div className="font-medium text-gray-900 text-sm">
+            {r.name || `账号 #${r.id.slice(0, 8)}`}
+          </div>
+          {r.remark && (
+            <Tooltip title={r.remark}>
+              <div className="text-xs text-gray-400 truncate max-w-[140px]">
+                {r.remark}
+              </div>
+            </Tooltip>
+          )}
         </div>
+      ),
+    },
+    {
+      title: 'Provider',
+      key: 'provider',
+      width: 100,
+      render: (_, r) => (
+        <Tag color="blue">{r.providerName}</Tag>
       ),
     },
     {
       title: 'Base URL',
-      dataIndex: 'baseUrl',
       key: 'baseUrl',
-      width: 240,
-      render: (url: string) => (
-        <div className="flex items-center gap-1">
-          <Tooltip title={url}>
-            <span className="text-xs text-gray-600 truncate max-w-[180px] inline-block align-bottom">
-              {url.length > 32 ? `${url.slice(0, 32)}...` : url}
-            </span>
-          </Tooltip>
-          <Button
-            type="text"
-            size="small"
-            icon={<CopyOutlined />}
-            onClick={() => handleCopyUrl(url)}
-          />
-        </div>
-      ),
-    },
-    {
-      title: '凭证',
-      key: 'credentials',
-      width: 120,
+      width: 200,
       render: (_, r) => (
-        <Button
-          type="link"
-          size="small"
-          onClick={() => handleOpenCredentials(r)}
-        >
-          管理凭证
-        </Button>
+        <Tooltip title={r.providerBaseUrl}>
+          <span className="text-xs text-gray-600 truncate max-w-[160px] inline-block align-bottom">
+            {r.providerBaseUrl.length > 28 ? `${r.providerBaseUrl.slice(0, 28)}...` : r.providerBaseUrl}
+          </span>
+        </Tooltip>
       ),
     },
     {
-      title: '状态',
+      title: 'API Key',
+      key: 'apiKey',
+      width: 140,
+      render: (_, r) => (
+        <span className="text-xs font-mono text-gray-600">
+          {r.maskedApiKey || '—'}
+        </span>
+      ),
+    },
+    {
+      title: '健康状态',
       dataIndex: 'status',
-      key: 'status',
-      width: 80,
-      render: (status: string) => <ProviderStatusBadge status={status} />,
+      key: 'healthStatus',
+      width: 90,
+      render: (status: string) => <HealthStatusBadge status={status} />,
     },
     {
       title: '启用',
-      key: 'toggle',
+      key: 'enabled',
       width: 70,
       render: (_, r) => (
         <Switch
-          checked={r.status === 'ACTIVE'}
+          checked={r.status !== 'DISABLED'}
           loading={busyId === r.id}
           disabled={busyId === r.id}
-          onChange={() => void handleToggleStatus(r)}
+          onChange={() => void handleToggleEnabled(r)}
           size="small"
         />
       ),
     },
     {
-      title: '创建时间',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      width: 140,
-      render: (v: string) => <span className="text-xs text-gray-500">{fmtDate(v)}</span>,
+      title: '优先级',
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 70,
+      render: (v: number) => <span className="text-xs text-gray-600">{v}</span>,
     },
     {
-      title: '更新时间',
-      dataIndex: 'updatedAt',
-      key: 'updatedAt',
-      width: 140,
-      render: (v: string) => <span className="text-xs text-gray-500">{fmtDate(v)}</span>,
+      title: '权重',
+      dataIndex: 'weight',
+      key: 'weight',
+      width: 60,
+      render: (v: number) => <span className="text-xs text-gray-600">{v}</span>,
+    },
+    {
+      title: '并发',
+      key: 'concurrency',
+      width: 80,
+      render: (_, r) => (
+        <span className="text-xs text-gray-600">
+          {r.currentConcurrency} / {r.maxConcurrency}
+        </span>
+      ),
+    },
+    {
+      title: '最近使用',
+      dataIndex: 'lastUsedAt',
+      key: 'lastUsedAt',
+      width: 100,
+      render: (v: string | null) => (
+        <span className="text-xs text-gray-500">{friendlyTime(v)}</span>
+      ),
     },
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 130,
       fixed: 'right' as const,
       render: (_, r) => (
         <Space size={0}>
@@ -1005,13 +1038,22 @@ export default function AdminProvidersView() {
             menu={{
               items: [
                 {
-                  key: 'credentials',
-                  label: '管理凭证',
-                  onClick: () => handleOpenCredentials(r),
+                  key: 'test',
+                  label: '测试连接',
+                  icon: <ApiOutlined />,
+                  onClick: () => handleTestConnectionById(r),
                 },
+                ...(r.status === 'COOLDOWN' || r.status === 'ERROR' || r.lastError
+                  ? [{
+                      key: 'clearBackoff',
+                      label: '清除错误/冷却状态',
+                      onClick: () => void handleClearBackoff(r),
+                    }]
+                  : []),
+                { type: 'divider' as const },
                 {
                   key: 'delete',
-                  label: '删除',
+                  label: '删除账号',
                   danger: true,
                   onClick: () => setDeleteTarget(r),
                 },
@@ -1034,33 +1076,52 @@ export default function AdminProvidersView() {
       <div className="px-8 py-6 border-b border-gray-100">
         <h2 className="text-xl font-bold text-gray-900">AI Provider 管理</h2>
         <p className="mt-1 text-sm text-gray-500">
-          管理图片、视频等 AI 服务的 API 地址、密钥和调度配置
+          管理各 AI 服务账号、API Key、状态及调度配置
         </p>
       </div>
 
       {/* Toolbar */}
       <div className="px-8 py-4 flex flex-wrap items-center gap-3">
         <Input
-          className="max-w-[240px]"
-          placeholder="搜索名称、Code、Base URL..."
+          className="max-w-[260px]"
+          placeholder="搜索账号名称、Provider、Base URL..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          onPressEnter={() => setSearch(searchInput)}
+          onPressEnter={() => { setSearch(searchInput); void load(0) }}
           allowClear
-          onClear={() => setSearch('')}
+          onClear={() => { setSearch(''); void load(0) }}
         />
         <Select
           className="w-[140px]"
           placeholder="全部状态"
           value={statusFilter || undefined}
-          onChange={(v) => setStatusFilter(v ?? '')}
+          onChange={(v) => { setStatusFilter(v ?? ''); void load(0) }}
           allowClear
           options={[
             { value: 'ACTIVE', label: '正常' },
-            { value: 'DISABLED', label: '停用' },
+            { value: 'COOLDOWN', label: '冷却中' },
+            { value: 'ERROR', label: '异常' },
+            { value: 'DISABLED', label: '已禁用' },
           ]}
         />
+        <Select
+          className="w-[140px]"
+          placeholder="全部 Provider"
+          value={providerFilter || undefined}
+          onChange={(v) => { setProviderFilter(v ?? ''); void load(0) }}
+          allowClear
+          options={providers.map((p) => ({
+            value: p.code,
+            label: p.name,
+          }))}
+        />
         <div className="flex-1" />
+        <Button
+          icon={<SettingOutlined />}
+          onClick={() => setProviderConfigOpen(true)}
+        >
+          渠道配置
+        </Button>
         <Button
           icon={<ReloadOutlined />}
           onClick={() => void load(offset)}
@@ -1076,16 +1137,16 @@ export default function AdminProvidersView() {
       {/* Table Card */}
       <div className="px-8 pb-8">
         <Card className="!rounded-xl" styles={{ body: { padding: 0 } }}>
-          {loading && providers.length === 0 ? (
+          {loading && accounts.length === 0 ? (
             <div className="p-6">
               <Skeleton active paragraph={{ rows: 5 }} />
             </div>
           ) : (
             <>
               <div className="px-4 py-3 border-b border-gray-100 text-sm text-gray-500">
-                共 {filtered.length} 个 Provider
+                共 {total} 个账号
               </div>
-              <Table<AdminProviderView>
+              <Table<AdminAccountRow>
                 rowKey="id"
                 columns={columns}
                 dataSource={filtered}
@@ -1093,12 +1154,12 @@ export default function AdminProvidersView() {
                 pagination={false}
                 size="middle"
                 scroll={{ x: 'max-content' }}
-                locale={{ emptyText: '暂无 AI Provider' }}
+                locale={{ emptyText: '暂无 AI 账号，点击「添加账号」创建' }}
               />
               {/* Pagination */}
               <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
                 <span className="text-xs text-gray-400">
-                  第 {offset + 1} - {offset + filtered.length} 条
+                  第 {offset + 1} - {offset + filtered.length} 条（共 {total} 条）
                 </span>
                 <Space>
                   <Button
@@ -1110,7 +1171,7 @@ export default function AdminProvidersView() {
                   </Button>
                   <Button
                     size="small"
-                    disabled={providers.length < defaultPageSize || loading}
+                    disabled={offset + defaultPageSize >= total || loading}
                     onClick={() => void load(offset + defaultPageSize)}
                   >
                     下一页
@@ -1122,35 +1183,31 @@ export default function AdminProvidersView() {
         </Card>
       </div>
 
-      {/* Add Agnes Account Modal */}
-      <AddAgnesAccountModal
-        open={addAccountOpen}
-        onClose={() => setAddAccountOpen(false)}
-        onSuccess={() => void load(offset)}
-      />
-
-      {/* Provider Form Drawer */}
-      <ProviderFormDrawer
+      {/* Account Form Modal */}
+      <AccountFormModal
         open={formOpen}
         mode={formMode}
-        provider={editTarget}
+        account={editTarget}
+        providers={providers}
         onClose={() => setFormOpen(false)}
-        onSubmit={handleSubmitProvider}
+        onSubmit={handleSubmitAccount}
         submitting={submitting}
+        onTestConnection={handleTestConnection}
+        testing={testing}
+        testResult={testResult}
       />
 
-      {/* Credential Drawer */}
-      <CredentialDrawer
-        open={credDrawerOpen}
-        provider={credTarget}
-        onClose={() => setCredDrawerOpen(false)}
-        onChanged={() => void load(offset)}
+      {/* Provider Config Drawer */}
+      <ProviderConfigDrawer
+        open={providerConfigOpen}
+        onClose={() => setProviderConfigOpen(false)}
+        onChanged={() => void loadProviders()}
       />
 
-      {/* Delete Provider Modal */}
-      <DeleteProviderModal
+      {/* Delete Account Modal */}
+      <DeleteAccountModal
         open={!!deleteTarget}
-        provider={deleteTarget}
+        account={deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         deleting={deleting}

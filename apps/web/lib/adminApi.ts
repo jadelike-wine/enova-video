@@ -359,6 +359,8 @@ export interface AdminProviderView {
 export interface AdminCredentialView {
   id: string
   providerId: string
+  name: string | null
+  remark: string | null
   status: string
   priority: number
   weight: number
@@ -368,8 +370,41 @@ export interface AdminCredentialView {
   lastUsedAt: string | null
   lastError: string | null
   hasSecret: boolean
+  maskedApiKey: string | null
   createdAt: string
   updatedAt: string
+}
+
+/** 展平后的账号行：Credential + Provider 信息。 */
+export interface AdminAccountRow {
+  id: string
+  name: string | null
+  remark: string | null
+  providerId: string
+  providerCode: string
+  providerName: string
+  providerBaseUrl: string
+  providerStatus: string
+  status: string
+  priority: number
+  weight: number
+  maxConcurrency: number
+  currentConcurrency: number
+  cooldownUntil: string | null
+  lastUsedAt: string | null
+  lastError: string | null
+  hasSecret: boolean
+  maskedApiKey: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** 测试连接结果。 */
+export interface AdminTestConnectionResult {
+  success: boolean
+  message: string
+  statusCode?: number
+  category?: string
 }
 
 export interface CreateProviderInput {
@@ -389,6 +424,8 @@ export interface UpdateProviderInput {
 
 export interface CreateCredentialInput {
   secret: string
+  name?: string
+  remark?: string
   status?: string
   priority?: number
   weight?: number
@@ -397,11 +434,28 @@ export interface CreateCredentialInput {
 
 export interface UpdateCredentialInput {
   secret?: string
+  name?: string
+  remark?: string
   status?: string
   priority?: number
   weight?: number
   maxConcurrency?: number
   clearBackoff?: boolean
+}
+
+export interface CreateAgnesAccountInput {
+  apiKey: string
+  name?: string
+  remark?: string
+  priority?: number
+  weight?: number
+  maxConcurrency?: number
+}
+
+export interface TestConnectionInput {
+  secret?: string
+  providerCode?: string
+  baseUrl?: string
 }
 
 export const adminProvidersApi = {
@@ -422,10 +476,34 @@ export const adminProvidersApi = {
   /**
    * 简化的添加 Agnes 账号：只需 API Key，后端自动创建 Provider 和凭证。
    */
-  createAgnesAccount: (apiKey: string) =>
+  createAgnesAccount: (input: CreateAgnesAccountInput) =>
     json<AdminCredentialView>('/providers/agnes/account', {
       method: 'POST',
-      body: JSON.stringify({ apiKey }),
+      body: JSON.stringify(input),
+    }),
+}
+
+export const adminAccountsApi = {
+  /** 展平查询：列出所有账号（Credential + Provider join）。 */
+  list: (params: { limit?: number; offset?: number; search?: string; status?: string; providerCode?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.limit != null) q.set('limit', String(params.limit))
+    if (params.offset != null) q.set('offset', String(params.offset))
+    if (params.search) q.set('search', params.search)
+    if (params.status) q.set('status', params.status)
+    if (params.providerCode) q.set('providerCode', params.providerCode)
+    return json<{ items: AdminAccountRow[]; total: number }>(`/accounts?${q.toString()}`)
+  },
+  /** 测试连接（保存前）。 */
+  testConnection: (input: TestConnectionInput) =>
+    json<AdminTestConnectionResult>('/credentials/test-connection', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  /** 测试已保存凭证的连接。 */
+  testConnectionById: (id: string) =>
+    json<AdminTestConnectionResult>(`/credentials/${id}/test-connection`, {
+      method: 'POST',
     }),
 }
 
@@ -457,6 +535,7 @@ const adminApi = {
   adminAuditApi,
   adminProvidersApi,
   adminCredentialsApi,
+  adminAccountsApi,
 }
 
 export default adminApi

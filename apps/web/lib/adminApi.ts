@@ -526,6 +526,95 @@ export const adminCredentialsApi = {
     }),
 }
 
+// ---------------------------------------------------------------------------
+// Pricing 管理（与 pricing.admin.service / pricing.admin.controller 对齐）
+// ---------------------------------------------------------------------------
+
+/** 模型定价概览行：系统模型 + 最新 PUBLISHED pricing 信息。 */
+export interface AdminModelPricingView {
+  generationType: string
+  provider: string
+  model: string
+  displayName: string
+  currentVersion: number | null
+  currentCredits: number | null
+  pricingVersionId: string | null
+  publishedAt: string | null
+  status: 'UNCONFIGURED' | 'PUBLISHED' | 'DRAFT' | 'ARCHIVED'
+}
+
+/** Publish pricing version 请求体。 */
+export interface PublishPricingVersionInput {
+  generationType: string
+  provider: string
+  model: string
+  credits: number
+  pricingJson?: Record<string, unknown>
+  dimensionsJson?: Record<string, unknown>
+}
+
+/** Publish 结果。 */
+export interface PublishPricingVersionResult {
+  versionId: string
+  version: number
+}
+
+/** 后端 AdminPricingVersionView 对齐。 */
+export interface AdminPricingVersionView {
+  id: string
+  pricingRuleId: string | null
+  version: number
+  generationType: string
+  provider: string
+  model: string
+  dimensionsJson: Record<string, unknown> | null
+  credits: number
+  pricingJson: Record<string, unknown> | null
+  status: string
+  effectiveAt: string | null
+  publishedAt: string | null
+  createdAt: string
+}
+
+export const adminPricingApi = {
+  /** 模型定价概览（系统模型 LEFT JOIN pricing_versions）。 */
+  modelOverview: (params?: { generationType?: string }) => {
+    const q = new URLSearchParams()
+    if (params?.generationType) q.set('generationType', params.generationType)
+    return json<AdminModelPricingView[]>(`/pricing/models/overview?${q.toString()}`)
+  },
+  /** 发布新定价版本（需要 step-up 密码）。 */
+  publishVersion: (input: PublishPricingVersionInput, stepUpPassword: string) =>
+    json<PublishPricingVersionResult>('/pricing/versions/publish', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      headers: { 'x-step-up-password': stepUpPassword },
+    }),
+  /** 定价版本列表。 */
+  listVersions: (params: {
+    generationType?: string
+    provider?: string
+    model?: string
+    status?: string
+    limit?: number
+    offset?: number
+  } = {}) => {
+    const q = new URLSearchParams()
+    if (params.limit != null) q.set('limit', String(params.limit))
+    if (params.offset != null) q.set('offset', String(params.offset))
+    if (params.generationType) q.set('generationType', params.generationType)
+    if (params.provider) q.set('provider', params.provider)
+    if (params.model) q.set('model', params.model)
+    if (params.status) q.set('status', params.status)
+    return json<AdminPricingVersionView[]>(`/pricing/versions?${q.toString()}`)
+  },
+  /** 归档定价版本。 */
+  archiveVersion: (versionId: string) =>
+    json<{ versionId: string; status: string }>(`/pricing/versions/${versionId}/archive`, {
+      method: 'POST',
+    }),
+}
+
 const adminApi = {
   adminStatsApi,
   adminUsersApi,
@@ -536,6 +625,7 @@ const adminApi = {
   adminProvidersApi,
   adminCredentialsApi,
   adminAccountsApi,
+  adminPricingApi,
 }
 
 export default adminApi

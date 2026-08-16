@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Git history is the ultimate source of truth; this file aggregates user-, developer-, and ops-relevant changes. Not every commit is listed — only changes that matter to consumers, operators, or maintainers.
 
+## [1.7.18] — 2026-08-16
+
+### Added
+- Generation history moved to dedicated routes (`/app/images/history`, `/app/videos/history`) with a shared `GenerationHistory` component; the app nav now groups images/videos into expandable sections with "Generate" and "History" entries.
+- Site logo configured in admin settings is now used as the browser favicon (with cache busting); added a default app icon.
+
+### Changed
+- Video pricing normalizes width×height into resolution tiers (e.g. 1280×720 → 720p) using max(width, height) so portrait and landscape both match; unknown resolutions keep their exact dimensions.
+- Image pricing can derive a canonical resolution from size+ratio when only a resolution table is configured, and raises a clearer error for unsupported size/ratio combinations.
+- Generation views no longer show the inline history sidebar (history is on its own page).
+- README drops the deprecated `agnes-1.5-flash` text model.
+
+---
+
 ## [1.7.17] — 2026-08-16
 
 ### Changed

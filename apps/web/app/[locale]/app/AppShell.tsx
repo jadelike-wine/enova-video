@@ -197,17 +197,20 @@ function ShellInner({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
       <aside className="w-80 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col">
-        <Link href="/" className="p-6 border-b border-gray-100 block">
-          <div className="flex items-center gap-4">
-            <SiteLogo logoUrl={siteConfig.siteLogo} fallbackMark={BRAND.logoMarkZh} />
-            <div>
-              <h1 className="font-bold text-lg leading-tight text-[#111827]">{siteConfig.siteName || BRAND.nameZh}</h1>
-              {siteConfig.siteSubtitle && (
-                <p className="text-xs text-gray-500 mt-0.5">{siteConfig.siteSubtitle}</p>
-              )}
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between gap-3">
+          <Link href="/" className="block min-w-0">
+            <div className="flex items-center gap-4">
+              <SiteLogo logoUrl={siteConfig.siteLogo} fallbackMark={BRAND.logoMarkZh} />
+              <div className="min-w-0">
+                <h1 className="font-bold text-lg leading-tight text-[#111827] truncate">{siteConfig.siteName || BRAND.nameZh}</h1>
+                {siteConfig.siteSubtitle && (
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">{siteConfig.siteSubtitle}</p>
+                )}
+              </div>
             </div>
-          </div>
-        </Link>
+          </Link>
+          <LanguageSwitcher />
+        </div>
 
         <nav
           ref={navRef}
@@ -296,12 +299,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
             <div className="min-w-0">
               <p className="text-sm text-gray-700 truncate">{user.email}</p>
             </div>
-            <div className="flex items-center gap-1">
-              <LanguageSwitcher />
-              <Button type="text" size="small" danger onClick={() => void logout()} title={t('appShell.logoutTitle')}>
-                {t('appShell.logout')}
-              </Button>
-            </div>
+            <Button type="text" size="small" danger onClick={() => void logout()} title={t('appShell.logoutTitle')}>
+              {t('appShell.logout')}
+            </Button>
           </div>
           <p className="text-xs text-gray-400 text-center">
             © {new Date().getFullYear()} {siteConfig.siteName || BRAND.nameZh} · {BRAND.name}

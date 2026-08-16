@@ -439,6 +439,16 @@ export const adminProvidersApi = {
     }),
   delete: (id: string) =>
     json<{ ok: true }>(`/providers/${id}`, { method: 'DELETE' }),
+  /**
+   * 简化的添加 Agnes 账号：只需 API Key，后端自动创建 Provider 和凭证。
+   * 需要 step-up 密码验证。
+   */
+  createAgnesAccount: (apiKey: string, stepUpPassword: string) =>
+    jsonWithStepUp<AdminCredentialView>('/providers/agnes/account', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey }),
+      stepUpPassword,
+    }),
 }
 
 export const adminCredentialsApi = {

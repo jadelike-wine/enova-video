@@ -742,6 +742,88 @@ function DeleteProviderModal({
 }
 
 // ---------------------------------------------------------------------------
+// Add Agnes Account Modal (simplified: only API Key needed)
+// ---------------------------------------------------------------------------
+
+function AddAgnesAccountModal({
+  open,
+  onClose,
+  onSuccess,
+}: {
+  open: boolean
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const { message } = App.useApp()
+  const { request: requestStepUp, modalElement: stepUpModal } = useStepUpPassword()
+  const [apiKey, setApiKey] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const handleSubmit = async () => {
+    const key = apiKey.trim()
+    if (!key) {
+      message.warning('请输入 API Key')
+      return
+    }
+    const stepUpPw = await requestStepUp()
+    if (!stepUpPw) {
+      message.warning('操作已取消')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await adminProvidersApi.createAgnesAccount(key, stepUpPw)
+      message.success('Agnes 账号已添加')
+      setApiKey('')
+      onClose()
+      onSuccess()
+    } catch (e) {
+      message.error(formatErrorMessage(e))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <Modal
+        title="添加 Agnes 账号"
+        open={open}
+        onCancel={onClose}
+        onOk={handleSubmit}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={submitting}
+        destroyOnClose
+      >
+        <div className="py-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+            <div className="px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-600">
+              Agnes (agnes.com)
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+            <Input.Password
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-xxxxxxxxxxxxxxxx"
+              onPressEnter={handleSubmit}
+              autoFocus
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              API Key 将加密存储，不会暴露给前端
+            </p>
+          </div>
+        </div>
+      </Modal>
+      {stepUpModal}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main AdminProvidersView
 // ---------------------------------------------------------------------------
 
@@ -762,6 +844,9 @@ export default function AdminProvidersView() {
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create')
   const [editTarget, setEditTarget] = useState<AdminProviderView | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // Add Agnes account modal
+  const [addAccountOpen, setAddAccountOpen] = useState(false)
 
   const [credDrawerOpen, setCredDrawerOpen] = useState(false)
   const [credTarget, setCredTarget] = useState<AdminProviderView | null>(null)
@@ -813,10 +898,8 @@ export default function AdminProvidersView() {
     return result
   }, [providers, search, statusFilter])
 
-  const handleCreate = () => {
-    setFormMode('create')
-    setEditTarget(null)
-    setFormOpen(true)
+  const handleAddAccount = () => {
+    setAddAccountOpen(true)
   }
 
   const handleEdit = (provider: AdminProviderView) => {
@@ -1071,8 +1154,8 @@ export default function AdminProvidersView() {
         >
           刷新
         </Button>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-          添加 Provider
+        <Button type="primary" icon={<PlusOutlined />} onClick={handleAddAccount}>
+          添加账号
         </Button>
       </div>
 
@@ -1124,6 +1207,13 @@ export default function AdminProvidersView() {
           )}
         </Card>
       </div>
+
+      {/* Add Agnes Account Modal */}
+      <AddAgnesAccountModal
+        open={addAccountOpen}
+        onClose={() => setAddAccountOpen(false)}
+        onSuccess={() => void load(offset)}
+      />
 
       {/* Provider Form Drawer */}
       <ProviderFormDrawer

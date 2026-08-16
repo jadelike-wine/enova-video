@@ -14,7 +14,7 @@ import { useDialog } from './DialogProvider'
 import { useApiKeyGuard } from './useApiKeyGuard'
 import { usePaginatedTaskHistory, type TaskItem } from './usePaginatedTaskHistory'
 import { formatErrorMessage } from '../../lib/errorMessage'
-import { IMAGE_MODELS, IMAGE_MODES, IMAGE_SIZES, DEFAULT_IMAGE_MODEL, modelDisplayName } from '../../lib/models'
+import { IMAGE_MODELS, IMAGE_MODES, IMAGE_QUALITY_SIZES, IMAGE_RATIOS, getImageOutputDimensions, legacySizeToNative, DEFAULT_IMAGE_MODEL, modelDisplayName } from '../../lib/models'
 
 /** 新架构统一状态：PENDING/QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELED */
 const ACTIVE_STATUSES = ['PENDING', 'QUEUED', 'RUNNING']
@@ -24,6 +24,7 @@ interface ImageTask extends TaskItem {
   prompt?: string
   mode?: string
   size?: string
+  ratio?: string
   model?: string
   input_images?: string[]
   output_url?: string
@@ -41,6 +42,7 @@ interface ImageFormValues {
   mode: string
   prompt: string
   size: string
+  ratio: string
 }
 
 function statusLabel(t: (k: string) => string, status: string): string {
@@ -84,29 +86,32 @@ function modeTagColor(mode?: string): string {
   return map[mode || ''] || 'default'
 }
 
-function formatSizeLabel(t: ReturnType<typeof useTranslations<'image'>>, size: string): string {
-  const parts = size.split('x').map(Number)
-  const w = parts[0]
-  const h = parts[1]
-  if (!w || !h) return size
-  const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a)
-  const g = gcd(w, h)
-  const ratio = `${w / g}:${h / g}`
-  if (w === h) return `${size} (${ratio} ${t('squareImage')})`
-  if (w > h) return `${size} (${ratio} ${t('landscapeImage')})`
-  return `${size} (${ratio} ${t('portraitImage')})`
+function formatSizeRatioLabel(size?: string, ratio?: string): string {
+  if (!size) return '—'
+  if (!ratio) return size
+  const dims = getImageOutputDimensions(size, ratio)
+  return dims ? `${size} · ${ratio} · ${dims}` : `${size} · ${ratio}`
 }
 
 /** 将后端 Generation 归一化为视图所需的 ImageTask。 */
 function toImageTask(g: Generation): ImageTask {
   const input = (g.input ?? {}) as Record<string, unknown>
   const images = input.images
+  let size = typeof input.size === 'string' ? input.size : undefined
+  let ratio = typeof input.ratio === 'string' ? input.ratio : undefined
+  // Backward compatibility: 如果历史任务只有精确尺寸（如 1280x720），归一化为 native size+ratio。
+  if (size && !ratio && legacySizeToNative(size)) {
+    const native = legacySizeToNative(size)!
+    ratio = native.ratio
+    size = native.size
+  }
   return {
     id: g.id,
     status: g.status,
     prompt: typeof input.prompt === 'string' ? input.prompt : undefined,
     mode: typeof input.mode === 'string' ? input.mode : undefined,
-    size: typeof input.size === 'string' ? input.size : undefined,
+    size,
+    ratio,
     model: g.model ?? undefined,
     input_images: Array.isArray(images) ? (images as string[]) : undefined,
     output_url: g.output?.url ?? undefined,
@@ -229,6 +234,7 @@ export default function ImageView() {
       prompt: values.prompt,
       mode: values.mode,
       size: values.size,
+      ratio: values.ratio,
       model: values.model,
       _optimistic: true,
     }
@@ -250,6 +256,7 @@ export default function ImageView() {
           prompt: values.prompt,
           mode: values.mode,
           size: values.size,
+          ratio: values.ratio,
           ...(images ? { images } : {}),
         },
       }
@@ -280,7 +287,8 @@ export default function ImageView() {
       model: task.model || DEFAULT_IMAGE_MODEL,
       mode: task.mode || 'text2img',
       prompt: task.prompt || '',
-      size: task.size || '1024x768',
+      size: task.size || '1K',
+      ratio: task.ratio || '1:1',
     })
     setCurrentMode(task.mode || 'text2img')
     inputImages.forEach(revokePreview)
@@ -371,7 +379,7 @@ export default function ImageView() {
                       <Tag color={modeTagColor(task.mode)} className="!m-0 !text-[10px]">
                         {modeLabel(task.mode)}
                       </Tag>
-                      <span className="text-xs text-gray-400">{formatSizeLabel(t, task.size || '')}</span>
+                      <span className="text-xs text-gray-400">{formatSizeRatioLabel(task.size, task.ratio)}</span>
                     </div>
                     {task.status === 'FAILED' && (
                       <p className="text-xs text-rose-600 mt-1.5 truncate">{taskErrorMessage(task)}</p>
@@ -430,7 +438,8 @@ export default function ImageView() {
                     model: DEFAULT_IMAGE_MODEL,
                     mode: 'text2img',
                     prompt: '',
-                    size: '1024x768',
+                    size: '1K',
+                    ratio: '1:1',
                   }}
                 >
                   <Form.Item label={t('generationMode')} name="mode">
@@ -449,14 +458,27 @@ export default function ImageView() {
                     />
                   </Form.Item>
 
-                  <Form.Item label={t('size')} name="size">
-                    <Select
-                      options={IMAGE_SIZES.map((s) => ({
-                        value: s,
-                        label: formatSizeLabel(t, s),
-                      }))}
-                    />
-                  </Form.Item>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Form.Item label={t('size')} name="size">
+                      <Select
+                        options={IMAGE_QUALITY_SIZES.map((s) => ({ value: s.id, label: s.label }))}
+                      />
+                    </Form.Item>
+
+                    <Form.Item label={t('ratio') || 'Ratio'} name="ratio">
+                      <Select
+                        options={IMAGE_RATIOS.map((r) => ({ value: r.id, label: r.label }))}
+                      />
+                    </Form.Item>
+                  </div>
+                  {(() => {
+                    const sz = form.getFieldValue('size')
+                    const rt = form.getFieldValue('ratio')
+                    const dims = sz && rt ? getImageOutputDimensions(sz, rt) : null
+                    return dims ? (
+                      <p className="text-xs text-gray-400 mb-3">{t('outputSize') || 'Output'}: {dims}</p>
+                    ) : null
+                  })()}
 
                   <Form.Item label={t('prompt')} name="prompt">
                     <Input.TextArea rows={3} placeholder={t('promptPlaceholder')} />
@@ -547,7 +569,7 @@ export default function ImageView() {
                           preview={{ mask: false }}
                         />
                         <div className="mt-3 text-xs text-gray-500 flex flex-wrap gap-4">
-                          <span>{formatSizeLabel(t, selectedTask.size || '')}</span>
+                          <span>{formatSizeRatioLabel(selectedTask.size, selectedTask.ratio)}</span>
                         </div>
                       </div>
                     )}
@@ -581,7 +603,7 @@ export default function ImageView() {
                           </div>
                           <div>
                             <span className="text-gray-400">{t('size')}</span>{' '}
-                            <span className="text-gray-700">{formatSizeLabel(t, selectedTask.size || '')}</span>
+                            <span className="text-gray-700">{formatSizeRatioLabel(selectedTask.size, selectedTask.ratio)}</span>
                           </div>
                           <div className="col-span-2">
                             <span className="text-gray-400">{t('model')}</span>{' '}

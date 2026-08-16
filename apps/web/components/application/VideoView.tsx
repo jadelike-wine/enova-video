@@ -39,6 +39,7 @@ interface VideoTask extends TaskItem {
   seed?: number | string | null
   input_images?: string[]
   output_url?: string
+  progress?: number
   error_message?: unknown
   created_at?: string
 }
@@ -90,8 +91,6 @@ function modeTagColor(mode?: string): string {
   const map: Record<string, string> = {
     text2video: 'cyan',
     img2video: 'purple',
-    multi_img: 'orange',
-    keyframes: 'pink',
   }
   return map[mode || ''] || 'default'
 }
@@ -115,6 +114,7 @@ function toVideoTask(g: Generation): VideoTask {
     seed: input.seed != null ? (input.seed as number | string) : null,
     input_images: Array.isArray(images) ? (images as string[]) : undefined,
     output_url: g.output?.url ?? undefined,
+    progress: typeof g.output?.progress === 'number' ? g.output.progress : undefined,
     error_message: g.errorMessage,
     created_at: g.completedAt ?? g.createdAt,
   }
@@ -134,6 +134,8 @@ function formatResolution(task: VideoTask): string {
 }
 
 function formatDuration(task: VideoTask): string {
+  // 与 packages/contracts/src/video.ts 中的 resolveVideoDuration 保持同一语义：
+  // seconds = numFrames / frameRate（Agnes 协议定义）。
   if (!task?.num_frames || !task?.frame_rate) return '—'
   return `${(task.num_frames / task.frame_rate).toFixed(1)}s`
 }
@@ -312,10 +314,6 @@ export default function VideoView() {
       setError(t('uploadImageRequired'))
       return
     }
-    if (['multi_img', 'keyframes'].includes(values.mode) && inputImages.length < 2) {
-      setError(t('atLeastTwoImages'))
-      return
-    }
     if (!(await requireApiKey())) return
 
     setError('')
@@ -330,9 +328,7 @@ export default function VideoView() {
     const optimisticInputImages =
       values.mode === 'img2video' && inputImages.length
         ? [inputImages[0]]
-        : ['multi_img', 'keyframes'].includes(values.mode) && inputImages.length
-          ? [...inputImages]
-          : undefined
+        : undefined
 
     const optimisticTask: VideoTask = {
       id: tempId,
@@ -365,8 +361,6 @@ export default function VideoView() {
       if (values.seed != null) input.seed = values.seed
       if (values.mode === 'img2video' && inputImages.length) {
         input.image = inputImages[0]
-      } else if (['multi_img', 'keyframes'].includes(values.mode) && inputImages.length) {
-        input.images = inputImages
       }
 
       const payload: CreateGenerationPayload = {
@@ -519,9 +513,15 @@ export default function VideoView() {
                     {ACTIVE_STATUSES.includes(task.status) && (
                       <div className="mt-3">
                         <div className="progress-bar">
-                          <div className="progress-fill animate-pulse" style={{ width: '40%' }} />
+                          <div
+                            className="progress-fill animate-pulse"
+                            style={{ width: task.progress != null ? `${Math.min(100, Math.max(0, task.progress))}%` : '100%' }}
+                          />
                         </div>
-                        <p className="text-xs text-gray-400 mt-1.5">{statusLabel(tc, task.status)}...</p>
+                        <p className="text-xs text-gray-400 mt-1.5">
+                          {statusLabel(tc, task.status)}
+                          {task.progress != null ? ` ${task.progress}%` : '...'}
+                        </p>
                       </div>
                     )}
 
@@ -722,10 +722,14 @@ export default function VideoView() {
                     {ACTIVE_STATUSES.includes(selectedTask.status) && (
                       <div className="mb-5">
                         <div className="progress-bar h-3">
-                          <div className="progress-fill animate-pulse" style={{ width: '40%' }} />
+                          <div
+                            className="progress-fill animate-pulse"
+                            style={{ width: selectedTask.progress != null ? `${Math.min(100, Math.max(0, selectedTask.progress))}%` : '100%' }}
+                          />
                         </div>
                         <p className="text-sm text-gray-500 mt-2">
                           {t('generatingWithStatus', { status: statusLabel(tc, selectedTask.status) })}
+                          {selectedTask.progress != null ? ` ${selectedTask.progress}%` : ''}
                         </p>
                       </div>
                     )}

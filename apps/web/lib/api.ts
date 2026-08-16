@@ -72,6 +72,7 @@ export interface Generation {
     duration?: number | null
     mimeType?: string | null
     storageProvider?: string | null
+    progress?: number | null
   } | null
   errorCode?: string | null
   errorMessage?: string | null

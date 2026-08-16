@@ -10,6 +10,13 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.14] — 2026-08-16
+
+### Added
+- Admin pricing management page (`/app/admin/pricing`): a model pricing overview showing each system model with its latest published credits/version and status (unconfigured/published), plus a publish-price modal (step-up protected). Adds an authoritative system-model registry and a backend overview endpoint.
+
+---
+
 ## [1.7.13] — 2026-08-16
 
 ### Changed

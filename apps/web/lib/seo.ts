@@ -61,6 +61,79 @@ export async function absoluteUrl(path: string): Promise<string> {
   return `${base}${p}`
 }
 
+/**
+ * 从管理员后台「系统设置」获取站点 Logo（运行时，异步）。
+ *
+ * 与 `getSiteUrl()` 同源，都通过 `/api/v1/public/site-config` 获取。
+ * 后台配置的 `general.siteLogo` 可能是：
+ * - 远程图片 URL（`https://...` / `http://...`）
+ * - base64 data URI（`data:image/png;base64,...`）
+ * - 空字符串（未配置）
+ *
+ * @returns 站点 Logo URL 或 data URI；未配置时返回空字符串。
+ */
+export async function getSiteLogo(): Promise<string> {
+  try {
+    const resp = await fetch(
+      `${process.env.BACKEND_URL || 'http://127.0.0.1:3001'}/api/v1/public/site-config`,
+      { cache: 'no-store' },
+    )
+    if (resp.ok) {
+      const data = (await resp.json()) as { siteLogo?: string }
+      return data.siteLogo?.trim() ?? ''
+    }
+  } catch {
+    // API 不可用时静默返回空字符串（使用默认 favicon fallback）。
+  }
+  return ''
+}
+
+/**
+ * 判断 Logo 值是否可直接用作 favicon `href`。
+ *
+ * 浏览器 `<link rel="icon">` 支持的图片格式有限：
+ * - ICO / PNG / GIF / SVG（现代浏览器支持）
+ * - base64 data URI（`data:image/png;base64,...` 等）
+ * - 远程 http(s) URL
+ *
+ * 后台允许上传 PNG / JPG / SVG。JPG 虽然不是所有浏览器作为 favicon
+ * 的首选格式，但现代 Chrome / Firefox / Safari 都能显示 JPG favicon。
+ * 因此直接复用 `siteLogo` 即可，无需单独的 favicon 配置。
+ */
+function isUsableAsFavicon(logo: string): boolean {
+  if (!logo) return false
+  // data URI 或 http(s) URL
+  return /^data:image\//i.test(logo) || /^https?:\/\//i.test(logo)
+}
+
+/**
+ * 构建 favicon icons metadata。
+ *
+ * - 如果后台配置了 `general.siteLogo` 且格式可用，则用作 favicon。
+ * - 附带时间戳 query 参数作为 cache buster，确保管理员更新 Logo 后
+ *   浏览器能获取新图标（避免浏览器长期强缓存旧 favicon）。
+ * - 未配置 Logo 时返回 `undefined`，由 Next.js 默认 `/favicon.ico` fallback。
+ *
+ * @param logo - 站点 Logo URL 或 data URI（来自后台配置）
+ * @returns Next.js Metadata.icons 对象，或 undefined
+ */
+export function buildFaviconIcons(logo: string): Metadata['icons'] {
+  if (!isUsableAsFavicon(logo)) return undefined
+
+  // data URI 不需要 cache busting（内容本身即唯一标识）。
+  if (logo.startsWith('data:')) {
+    return { icon: [{ url: logo }] }
+  }
+
+  // 远程 URL：附加时间戳 query 参数，确保管理员更换 Logo 后浏览器重新拉取。
+  const separator = logo.includes('?') ? '&' : '?'
+  const versionedUrl = `${logo}${separator}v=${Date.now()}`
+
+  return {
+    icon: [{ url: versionedUrl }],
+  }
+}
+
 interface BuildMetadataOptions {
   title: string | { absolute: string }
   description: string

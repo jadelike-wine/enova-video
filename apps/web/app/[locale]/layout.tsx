@@ -6,7 +6,7 @@ import { AntdRegistry } from '@ant-design/nextjs-registry'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import 'dayjs/locale/en'
-import { getSiteUrl } from '@/lib/seo'
+import { buildFaviconIcons, getSiteLogo, getSiteUrl } from '@/lib/seo'
 import { BRAND } from '@/lib/brand'
 import { locales, type Locale } from '@/i18n.config'
 import AntdProvider from '@/components/AntdProvider'
@@ -32,6 +32,7 @@ export async function generateMetadata({
   const { locale } = await params
   const t = await getTranslations({ locale, namespace: 'metadata' })
   const baseUrl = await getSiteUrl()
+  const siteLogo = await getSiteLogo()
   const isZh = locale === 'zh-CN'
   const siteName = isZh ? BRAND.nameZh : BRAND.name
   const tagline = t('tagline')
@@ -46,6 +47,7 @@ export async function generateMetadata({
     description,
     applicationName: siteName,
     authors: [{ name: siteName }],
+    icons: buildFaviconIcons(siteLogo),
     openGraph: {
       siteName,
       type: 'website',

@@ -6,8 +6,15 @@
  * - 规则优先级：dynamic pricing rules > fixed credits pricing > no pricing error。
  * - 计算过程生成 CalculationBreakdown，写入 price_quotes.calculation_snapshot 供审计。
  *
- * 图片公式：
- *   credits = baseCredits * resolutionMultiplier * qualityMultiplier
+ * 图片公式（统一）：
+ *   credits = ceil(baseCredits * dimensionMultiplier * qualityMultiplier)
+ *
+ *   其中 dimensionMultiplier 按以下优先级取值：
+ *   1. size rule → sizeMultiplier（Agnes 原生 1K/2K/3K/4K）
+ *   2. resolution rule → resolutionMultiplier（历史精确尺寸）
+ *   3. width × height → resolutionMultiplier（含通配匹配）
+ *
+ *   Agnes 不使用 quality 参数，qualityMultiplier 默认为 1。
  *
  * 视频公式：
  *   credits = baseCredits + (duration * pricePerSecond) * resolutionMultiplier * qualityMultiplier * fpsMultiplier
@@ -17,6 +24,107 @@
 
 import { domainError, ERROR_CODES } from '@enova/contracts';
 import { resolveVideoDurationFromInput } from '@enova/contracts';
+
+// ---------------------------------------------------------------------------
+// Agnes Image canonical resolution mapping
+// ---------------------------------------------------------------------------
+
+/**
+ * Agnes Image 2.1 Flash 原生输出尺寸映射表。
+ *
+ * 集中维护 size × ratio → canonical resolution 的映射，避免数字散落在业务代码中。
+ * 与协议文档 `agnes-image-2.1-flash.md` 的「输出尺寸参考」表完全一致。
+ *
+ * 用途：
+ * - 审计快照中的 canonicalResolution 字段
+ * - 从精确分辨率反向识别 size + ratio
+ * - 显示和规格校验
+ */
+export const AGNES_IMAGE_DIMENSIONS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  '1K': {
+    '1:1': '1024x1024',
+    '3:4': '864x1152',
+    '4:3': '1152x864',
+    '16:9': '1312x736',
+    '9:16': '736x1312',
+    '2:3': '832x1248',
+    '3:2': '1248x832',
+    '21:9': '1568x672',
+  },
+  '2K': {
+    '1:1': '2048x2048',
+    '3:4': '1728x2304',
+    '4:3': '2304x1728',
+    '16:9': '2624x1472',
+    '9:16': '1472x2624',
+    '2:3': '1664x2496',
+    '3:2': '2496x1664',
+    '21:9': '3136x1344',
+  },
+  '3K': {
+    '1:1': '3072x3072',
+    '3:4': '2592x3456',
+    '4:3': '3456x2592',
+    '16:9': '3936x2208',
+    '9:16': '2208x3936',
+    '2:3': '2496x3744',
+    '3:2': '3744x2496',
+    '21:9': '4704x2016',
+  },
+  '4K': {
+    '1:1': '4096x4096',
+    '3:4': '3456x4608',
+    '4:3': '4608x3456',
+    '16:9': '5248x2944',
+    '9:16': '2944x5248',
+    '2:3': '3328x4992',
+    '3:2': '4992x3328',
+    '21:9': '6272x2688',
+  },
+};
+
+/** Agnes 支持的 size 档位列表。 */
+export const AGNES_IMAGE_SIZES = Object.keys(AGNES_IMAGE_DIMENSIONS); // ['1K', '2K', '3K', '4K']
+
+/** Agnes 支持的 ratio 列表。 */
+export const AGNES_IMAGE_RATIOS = Object.keys(AGNES_IMAGE_DIMENSIONS['1K']); // ['1:1', '3:4', ...]
+
+/** Agnes ratio 默认值。 */
+export const AGNES_DEFAULT_RATIO = '1:1';
+
+/**
+ * 从精确分辨率（如 "2624x1472"）反向识别 Agnes canonical size + ratio。
+ *
+ * 仅匹配 AGNES_IMAGE_DIMENSIONS 中登记的原生尺寸。
+ * 非原生尺寸（如 1920x1080、2560x1440）返回 null，不猜测 Agnes 的服务端映射。
+ */
+export function reverseLookupAgnesResolution(
+  resolution: string,
+): { size: string; ratio: string; canonicalResolution: string } | null {
+  const normalized = resolution.toLowerCase().replace(/\s/g, '');
+  for (const [size, ratioMap] of Object.entries(AGNES_IMAGE_DIMENSIONS)) {
+    for (const [ratio, canonical] of Object.entries(ratioMap)) {
+      if (canonical.toLowerCase() === normalized) {
+        return { size, ratio, canonicalResolution: canonical };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * 获取 Agnes canonical resolution（用于审计快照）。
+ * 如果 size + ratio 组合不在映射表中，返回 null。
+ */
+export function getAgnesCanonicalResolution(size: string, ratio: string): string | null {
+  const ratioMap = AGNES_IMAGE_DIMENSIONS[size];
+  if (!ratioMap) return null;
+  // 大小写不敏感匹配 ratio
+  for (const [r, canonical] of Object.entries(ratioMap)) {
+    if (r.toLowerCase() === ratio.toLowerCase()) return canonical;
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +138,12 @@ export interface DynamicPricingRules {
   duration?: {
     pricePerSecond: number;
   };
+  /**
+   * Agnes 图片尺寸档位倍率表。key = 尺寸档位（如 "1K", "2K", "3K", "4K"）。
+   * 这是 Agnes Image 2.1 Flash 的首选定价维度。
+   * 同一 size 档位下不同 ratio 使用相同倍率。
+   */
+  size?: Record<string, number>;
   /** 分辨率倍率表。key = 分辨率标识（如 "720p", "1080p", "4k", "512x512"）。 */
   resolution?: Record<string, number>;
   /** 质量倍率表。key = 质量标识（如 "standard", "high", "hd"）。 */
@@ -56,10 +170,29 @@ export interface CalculationBreakdown {
   duration?: number;
   /** 每秒单价。 */
   pricePerSecond?: number;
+
+  // ---- Agnes size 维度（首选） ----
+  /** Agnes size 倍率。 */
+  sizeMultiplier?: number;
+  /** 匹配的 size key。 */
+  sizeKey?: string;
+  /** 请求中的原始 size 值。 */
+  requestedSize?: string;
+  /** 请求中的原始 ratio 值。 */
+  requestedRatio?: string;
+  /** 规范化后的 size（大写形式）。 */
+  normalizedSize?: string;
+  /** 规范化后的 ratio。 */
+  normalizedRatio?: string;
+  /** Agnes canonical resolution（如 "2624x1472"），从 size + ratio 推导。 */
+  canonicalResolution?: string;
+
+  // ---- resolution 维度（向后兼容） ----
   /** 分辨率倍率。 */
   resolutionMultiplier?: number;
   /** 匹配的分辨率 key。 */
   resolutionKey?: string;
+
   /** 质量倍率。 */
   qualityMultiplier?: number;
   /** 匹配的质量 key。 */
@@ -68,6 +201,22 @@ export interface CalculationBreakdown {
   fpsMultiplier?: number;
   /** 匹配的 FPS key。 */
   fpsKey?: string;
+
+  // ---- 视频审计：原始请求参数 ----
+  /** 请求的 numFrames（Agnes 原生参数）。 */
+  requestedNumFrames?: number;
+  /** 请求的 frameRate（Agnes 原生参数）。 */
+  requestedFrameRate?: number;
+  /** 请求的视频宽度。 */
+  requestedWidth?: number;
+  /** 请求的视频高度。 */
+  requestedHeight?: number;
+
+  // ---- 审计：匹配方式 ----
+  /** 标识该笔报价通过哪种维度规则完成匹配：'size' | 'resolution' | 'width_height'。 */
+  matchedDimension?: 'size' | 'resolution' | 'width_height';
+  /** 匹配到的规则 key。 */
+  matchedKey?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +280,9 @@ function normalizeRules(raw: DynamicPricingRules | Record<string, unknown>): Dyn
       rules.duration = { pricePerSecond: pps };
     }
   }
+  if (r.size && typeof r.size === 'object') {
+    rules.size = normalizeMultiplierMap(r.size as Record<string, unknown>);
+  }
   if (r.resolution && typeof r.resolution === 'object') {
     rules.resolution = normalizeMultiplierMap(r.resolution as Record<string, unknown>);
   }
@@ -159,23 +311,41 @@ function normalizeMultiplierMap(raw: Record<string, unknown>): Record<string, nu
 // ---------------------------------------------------------------------------
 
 export interface ImagePricingInput {
-  width?: number;
-  height?: number;
-  /** 分辨率标识（如 "512x512"），优先使用；否则从 width/height 推导。 */
+  /**
+   * Agnes 尺寸档位（如 "1K", "2K", "3K", "4K"）。
+   * 这是 Agnes Image 2.1 Flash 的首选定价参数。
+   * 大小写不敏感：2k 与 2K 均可匹配。
+   */
+  size?: string;
+  /**
+   * Agnes 宽高比（如 "1:1", "16:9", "9:16"）。
+   * 不作为价格倍率，仅用于审计和 canonical resolution 推导。
+   * 未传时默认 "1:1"。
+   */
+  ratio?: string;
+  /** 分辨率标识（如 "512x512"），向后兼容。 */
   resolution?: string;
-  /** 质量标识（如 "standard", "hd", "high"）。 */
+  /** 图片宽度（像素），向后兼容。 */
+  width?: number;
+  /** 图片高度（像素），向后兼容。 */
+  height?: number;
+  /** 质量标识（如 "standard", "hd", "high"）。Agnes 不使用此参数。 */
   quality?: string;
 }
 
 /**
  * 计算图片动态价格。
  *
- * 公式：credits = ceil(baseCredits * resolutionMultiplier * qualityMultiplier)
+ * 统一公式：credits = ceil(baseCredits * dimensionMultiplier * qualityMultiplier)
  *
- * 分辨率匹配优先级：
- * 1. 显式 resolution 参数
- * 2. `${width}x${height}` 组合
- * 3. 通配匹配（如 "1024x*" 或 "*x1024"）
+ * 尺寸倍率匹配优先级：
+ * 1. size rule → input.size（Agnes 原生档位 1K/2K/3K/4K）
+ *    - 同时支持从 canonical resolution 反向识别 size
+ * 2. resolution rule → input.resolution（历史精确尺寸标识）
+ * 3. resolution rule → input.width × input.height（含通配匹配）
+ *
+ * 如果规则配置了 size 表但请求未提供 size 且无法从 resolution 反向推导，则报 MISSING_PRICING_DIMENSION。
+ * Agnes 不使用 quality 参数；qualityMultiplier 默认为 1，不影响计算。
  */
 export function calculateImagePrice(
   rules: DynamicPricingRules,
@@ -183,49 +353,151 @@ export function calculateImagePrice(
 ): PricingCalculationResult {
   const baseCredits = rules.baseCredits ?? 0;
 
-  // ---- Resolution multiplier ----
-  let resolutionKey: string | undefined;
-  let resolutionMultiplier = 1;
+  // ---- Agnes ratio 规范化（默认 1:1） ----
+  const requestedRatio = input.ratio ?? AGNES_DEFAULT_RATIO;
 
-  if (rules.resolution) {
-    // 优先使用显式 resolution 参数
-    if (input.resolution) {
-      const match = lookupMultiplier(rules.resolution, input.resolution);
+  // 当 input.size 不是直接档位但可能是 canonical resolution 时，
+  // 反向识别失败后将其作为 resolution 传递给 resolution rule fallback。
+  let effectiveResolution = input.resolution;
+
+  // ---- 尺寸倍率匹配（优先级：size > resolution > width×height） ----
+  let sizeMultiplier = 1;
+  let sizeKey: string | undefined;
+  let normalizedSize: string | undefined;
+  let normalizedRatio: string | undefined;
+  let canonicalResolution: string | undefined;
+  let resolutionMultiplier = 1;
+  let resolutionKey: string | undefined;
+  let matchedDimension: 'size' | 'resolution' | 'width_height' | undefined;
+  let matchedKey: string | undefined;
+
+  // ===== 第一优先级：size rule =====
+  if (rules.size) {
+    // 尝试直接从 input.size 匹配
+    if (input.size) {
+      const match = lookupMultiplier(rules.size, input.size);
       if (match !== null) {
-        resolutionKey = input.resolution;
+        sizeMultiplier = match;
+        sizeKey = lookupExactKey(rules.size, input.size);
+        normalizedSize = sizeKey;
+        normalizedRatio = normalizeRatio(requestedRatio);
+        canonicalResolution = getAgnesCanonicalResolution(sizeKey!, normalizedRatio) ?? undefined;
+        matchedDimension = 'size';
+        matchedKey = sizeKey;
+      } else {
+        // input.size 不是直接档位，尝试反向识别是否是 Agnes canonical resolution
+        const reverse = reverseLookupAgnesResolution(input.size);
+        if (reverse) {
+          const reverseMatch = lookupMultiplier(rules.size, reverse.size);
+          if (reverseMatch !== null) {
+            sizeMultiplier = reverseMatch;
+            sizeKey = reverse.size;
+            normalizedSize = reverse.size;
+            normalizedRatio = reverse.ratio;
+            canonicalResolution = reverse.canonicalResolution;
+            matchedDimension = 'size';
+            matchedKey = reverse.size;
+          }
+        }
+
+        // 反向识别也失败 → 检查是否还有 resolution rule 可作为 fallback
+        if (!sizeKey && rules.resolution) {
+          // 落入第二/第三优先级处理（把 input.size 当作 resolution 处理）
+          if (!effectiveResolution) {
+            effectiveResolution = input.size;
+          }
+        } else if (!sizeKey) {
+          // size 提供了但无法匹配规则表，也无法反向识别 → PRICING_NOT_FOUND
+          throw domainError(
+            ERROR_CODES.PRICING_NOT_FOUND,
+            `No size pricing rule found for "${input.size}"`,
+            422,
+            { dimension: 'size', value: input.size },
+          );
+        }
+      }
+    } else {
+      // input.size 未提供，尝试从 resolution / width×height 反向识别 Agnes canonical size
+      const resolutionToCheck = input.resolution ?? ((input.width != null && input.height != null) ? `${input.width}x${input.height}` : undefined);
+      if (resolutionToCheck) {
+        const reverse = reverseLookupAgnesResolution(resolutionToCheck);
+        if (reverse) {
+          // 找到 canonical resolution，用 size 定价
+          const match = lookupMultiplier(rules.size, reverse.size);
+          if (match !== null) {
+            sizeMultiplier = match;
+            sizeKey = reverse.size;
+            normalizedSize = reverse.size;
+            normalizedRatio = reverse.ratio;
+            canonicalResolution = reverse.canonicalResolution;
+            matchedDimension = 'size';
+            matchedKey = reverse.size;
+          }
+        }
+      }
+
+      // 反向识别也失败 → 检查是否还有 resolution rule 可作为 fallback
+      if (!sizeKey && rules.resolution) {
+        // 落入第二/第三优先级处理
+      } else if (!sizeKey) {
+        // size rule 存在但无法从任何字段推导出 size
+        throw domainError(
+          ERROR_CODES.MISSING_PRICING_DIMENSION,
+          'Image size is required for pricing calculation. Provide size (e.g. "2K") or a compatible resolution.',
+          422,
+          { dimension: 'size' },
+        );
+      }
+    }
+  }
+
+  // ===== 第二/第三优先级：resolution rule（向后兼容） =====
+  // 仅当 size rule 未匹配（或不存在 size rule）时执行
+  if (!matchedDimension && rules.resolution) {
+    // 优先使用显式 resolution 参数（或从 size fallback 的 effectiveResolution）
+    if (effectiveResolution) {
+      const match = lookupMultiplier(rules.resolution, effectiveResolution);
+      if (match !== null) {
         resolutionMultiplier = match;
+        resolutionKey = lookupExactKey(rules.resolution, effectiveResolution);
+        matchedDimension = 'resolution';
+        matchedKey = resolutionKey;
       }
     }
 
     // 其次从 width x height 推导
-    if (!resolutionKey && input.width != null && input.height != null) {
+    if (!matchedDimension && input.width != null && input.height != null) {
       const dimensionKey = `${input.width}x${input.height}`;
       const exactMatch = lookupMultiplier(rules.resolution, dimensionKey);
       if (exactMatch !== null) {
-        resolutionKey = dimensionKey;
         resolutionMultiplier = exactMatch;
+        resolutionKey = lookupExactKey(rules.resolution, dimensionKey);
+        matchedDimension = 'width_height';
+        matchedKey = resolutionKey;
       } else {
         // 尝试通配匹配
         const wildcardMatch = lookupWildcardMatch(rules.resolution, input.width, input.height);
         if (wildcardMatch) {
-          resolutionKey = wildcardMatch.key;
           resolutionMultiplier = wildcardMatch.multiplier;
+          resolutionKey = wildcardMatch.key;
+          matchedDimension = 'width_height';
+          matchedKey = wildcardMatch.key;
         }
       }
     }
 
-    // 如果规则有 resolution 但无法匹配，且请求也包含尺寸参数 → 报错
-    if (!resolutionKey && (input.resolution || (input.width != null && input.height != null))) {
+    // 如果 resolution 规则存在但无法匹配，且请求也包含尺寸参数 → 报错
+    if (!matchedDimension && (effectiveResolution || (input.width != null && input.height != null))) {
       throw domainError(
         ERROR_CODES.PRICING_NOT_FOUND,
-        `No resolution pricing rule found for ${input.resolution ?? `${input.width}x${input.height}`}`,
+        `No resolution pricing rule found for ${effectiveResolution ?? `${input.width}x${input.height}`}`,
         422,
-        { dimension: 'resolution', value: input.resolution ?? `${input.width}x${input.height}` },
+        { dimension: 'resolution', value: effectiveResolution ?? `${input.width}x${input.height}` },
       );
     }
 
     // 如果规则有 resolution 表但请求未传任何尺寸参数 → 缺少参数错误
-    if (!resolutionKey && !(input.resolution || (input.width != null && input.height != null))) {
+    if (!matchedDimension && !(effectiveResolution || (input.width != null && input.height != null))) {
       throw domainError(
         ERROR_CODES.MISSING_PRICING_DIMENSION,
         'Image resolution is required for pricing calculation. Provide width+height or resolution.',
@@ -236,6 +508,8 @@ export function calculateImagePrice(
   }
 
   // ---- Quality multiplier ----
+  // Agnes 不使用 quality 参数。如果规则没有 quality 配置，qualityMultiplier 默认 1。
+  // 其他支持 quality 的模型仍正常计算。
   let qualityKey: string | undefined;
   let qualityMultiplier = 1;
 
@@ -243,7 +517,7 @@ export function calculateImagePrice(
     if (input.quality) {
       const match = lookupMultiplier(rules.quality, input.quality);
       if (match !== null) {
-        qualityKey = input.quality;
+        qualityKey = lookupExactKey(rules.quality, input.quality);
         qualityMultiplier = match;
       } else {
         throw domainError(
@@ -259,15 +533,33 @@ export function calculateImagePrice(
   }
 
   // ---- Calculate ----
-  const rawCredits = baseCredits * resolutionMultiplier * qualityMultiplier;
+  // 统一公式：baseCredits * dimensionMultiplier * qualityMultiplier
+  // dimensionMultiplier 取 sizeMultiplier 或 resolutionMultiplier
+  const dimensionMultiplier = matchedDimension === 'size' ? sizeMultiplier : resolutionMultiplier;
+  const rawCredits = baseCredits * dimensionMultiplier * qualityMultiplier;
   const credits = Math.ceil(rawCredits);
 
   const breakdown: CalculationBreakdown = {
     baseCredits,
-    resolutionMultiplier,
-    resolutionKey,
+    // size 维度审计字段（仅 size 匹配时填充）
+    ...(matchedDimension === 'size' && {
+      sizeMultiplier,
+      sizeKey,
+      requestedSize: input.size,
+      requestedRatio: input.ratio,
+      normalizedSize,
+      normalizedRatio,
+      canonicalResolution,
+    }),
+    // resolution 维度审计字段（仅 resolution/width_height 匹配时填充）
+    ...(matchedDimension !== 'size' && {
+      resolutionMultiplier,
+      resolutionKey,
+    }),
     qualityMultiplier,
     qualityKey,
+    matchedDimension,
+    matchedKey,
   };
 
   return { credits, breakdown };
@@ -280,16 +572,20 @@ export function calculateImagePrice(
 export interface VideoPricingInput {
   /** 视频时长（秒）。如果未传，尝试从 numFrames/frameRate 推导。 */
   duration?: number;
-  /** 帧数（Agnes 原生参数）。 */
+  /** 帧数（Agnes 原生参数，camelCase）。 */
   numFrames?: number;
-  /** 帧率（Agnes 原生参数）。 */
+  /** 帧率（Agnes 原生参数，camelCase）。 */
   frameRate?: number;
   /** 分辨率标识（如 "720p", "1080p", "4k"）。 */
   resolution?: string;
-  /** FPS 值（如 24, 30, 60）。 */
+  /** FPS 值（如 24, 30, 60）。等同于 frameRate，用于 fps 倍率匹配。 */
   fps?: number;
   /** 质量标识。 */
   quality?: string;
+  /** 视频宽度（像素）。Agnes Video V2.0 使用 width/height 而非 resolution 参数。 */
+  width?: number;
+  /** 视频高度（像素）。 */
+  height?: number;
 }
 
 /**
@@ -317,11 +613,9 @@ export function calculateVideoPrice(
   if (rules.duration?.pricePerSecond) {
     pricePerSecond = rules.duration.pricePerSecond;
 
-    // 优先使用显式 duration
-    if (input.duration != null) {
-      duration = Number(input.duration);
-    } else if (input.numFrames != null && input.frameRate != null) {
-      // 从 numFrames + frameRate 推导
+    // 优先使用 numFrames / frameRate 推导（Agnes 原生参数，精确浮点）
+    // 这与 resolveVideoDurationFromInput 的优先级一致
+    if (input.numFrames != null && input.frameRate != null) {
       const derived = resolveVideoDurationFromInput({
         numFrames: input.numFrames,
         frameRate: input.frameRate,
@@ -329,10 +623,15 @@ export function calculateVideoPrice(
       if (derived !== null) duration = derived;
     }
 
+    // Fallback：显式 duration 字段（历史兼容或非 Agnes provider）
+    if (duration == null && input.duration != null) {
+      duration = Number(input.duration);
+    }
+
     if (duration == null || !Number.isFinite(duration) || duration <= 0) {
       throw domainError(
         ERROR_CODES.MISSING_PRICING_DIMENSION,
-        'Video duration is required for pricing calculation. Provide duration or numFrames+frameRate.',
+        'Video duration is required for per-second pricing: num_frames and frame_rate are required for per-second pricing, or provide an explicit duration.',
         422,
         { dimension: 'duration' },
       );
@@ -346,23 +645,74 @@ export function calculateVideoPrice(
   let resolutionMultiplier = 1;
 
   if (rules.resolution) {
+    // 优先使用显式 resolution 参数
     if (input.resolution) {
       const match = lookupMultiplier(rules.resolution, input.resolution);
       if (match !== null) {
-        resolutionKey = input.resolution;
+        resolutionKey = lookupExactKey(rules.resolution, input.resolution);
         resolutionMultiplier = match;
       } else {
-        throw domainError(
-          ERROR_CODES.PRICING_NOT_FOUND,
-          `No resolution pricing rule found for "${input.resolution}"`,
-          422,
-          { dimension: 'resolution', value: input.resolution },
-        );
+        // 尝试通配匹配（如 "1280x*"）
+        const parts = input.resolution.toLowerCase().split('x');
+        if (parts.length === 2) {
+          const w = Number(parts[0]);
+          const h = Number(parts[1]);
+          if (Number.isFinite(w) && Number.isFinite(h)) {
+            const wildcardMatch = lookupWildcardMatch(rules.resolution, w, h);
+            if (wildcardMatch) {
+              resolutionKey = wildcardMatch.key;
+              resolutionMultiplier = wildcardMatch.multiplier;
+            } else {
+              throw domainError(
+                ERROR_CODES.PRICING_NOT_FOUND,
+                `No resolution pricing rule found for "${input.resolution}"`,
+                422,
+                { dimension: 'resolution', value: input.resolution },
+              );
+            }
+          } else {
+            throw domainError(
+              ERROR_CODES.PRICING_NOT_FOUND,
+              `No resolution pricing rule found for "${input.resolution}"`,
+              422,
+              { dimension: 'resolution', value: input.resolution },
+            );
+          }
+        } else {
+          throw domainError(
+            ERROR_CODES.PRICING_NOT_FOUND,
+            `No resolution pricing rule found for "${input.resolution}"`,
+            422,
+            { dimension: 'resolution', value: input.resolution },
+          );
+        }
+      }
+    } else if (input.width != null && input.height != null) {
+      // 从 width × height 推导 resolution（Agnes Video V2.0 使用 width/height 而非 resolution）
+      const dimensionKey = `${input.width}x${input.height}`;
+      const exactMatch = lookupMultiplier(rules.resolution, dimensionKey);
+      if (exactMatch !== null) {
+        resolutionKey = lookupExactKey(rules.resolution, dimensionKey);
+        resolutionMultiplier = exactMatch;
+      } else {
+        // 尝试通配匹配
+        const wildcardMatch = lookupWildcardMatch(rules.resolution, input.width, input.height);
+        if (wildcardMatch) {
+          resolutionKey = wildcardMatch.key;
+          resolutionMultiplier = wildcardMatch.multiplier;
+        } else {
+          throw domainError(
+            ERROR_CODES.PRICING_NOT_FOUND,
+            `No resolution pricing rule found for ${dimensionKey}`,
+            422,
+            { dimension: 'resolution', value: dimensionKey },
+          );
+        }
       }
     } else {
       throw domainError(
         ERROR_CODES.MISSING_PRICING_DIMENSION,
-        'Video resolution is required for pricing calculation.',
+        'Video resolution is required for pricing calculation. Provide resolution or width+height.',
         422,
         { dimension: 'resolution' },
       );
@@ -378,7 +728,7 @@ export function calculateVideoPrice(
       const fpsStr = String(input.fps);
       const match = lookupMultiplier(rules.fps, fpsStr);
       if (match !== null) {
-        fpsKey = fpsStr;
+        fpsKey = lookupExactKey(rules.fps, fpsStr);
         fpsMultiplier = match;
       } else {
         throw domainError(
@@ -401,7 +751,7 @@ export function calculateVideoPrice(
     if (input.quality) {
       const match = lookupMultiplier(rules.quality, input.quality);
       if (match !== null) {
-        qualityKey = input.quality;
+        qualityKey = lookupExactKey(rules.quality, input.quality);
         qualityMultiplier = match;
       } else {
         throw domainError(
@@ -429,6 +779,11 @@ export function calculateVideoPrice(
     qualityKey,
     fpsMultiplier,
     fpsKey,
+    // 视频审计：记录原始请求参数（仅在相关参数存在时填充）
+    ...(input.numFrames != null && { requestedNumFrames: input.numFrames }),
+    ...(input.frameRate != null && { requestedFrameRate: input.frameRate }),
+    ...(input.width != null && { requestedWidth: input.width }),
+    ...(input.height != null && { requestedHeight: input.height }),
   };
 
   return { credits, breakdown };
@@ -451,6 +806,33 @@ function lookupMultiplier(map: Record<string, number>, key: string): number | nu
     if (k.toLowerCase() === lowerKey) return v;
   }
   return null;
+}
+
+/**
+ * 从倍率表中查找匹配的原始 key（大小写不敏感）。
+ * 用于审计快照记录实际匹配到的规则 key。
+ */
+function lookupExactKey(map: Record<string, number>, key: string): string | undefined {
+  if (key in map) return key;
+  const lowerKey = key.toLowerCase();
+  for (const k of Object.keys(map)) {
+    if (k.toLowerCase() === lowerKey) return k;
+  }
+  return undefined;
+}
+
+/**
+ * 规范化 Agnes ratio（保留原始格式，但确保是支持的值）。
+ * 不做非法 ratio 的静默转换——非法 ratio 应在请求校验层拒绝。
+ */
+function normalizeRatio(ratio: string): string {
+  // 大小写不敏感匹配支持的 ratio
+  const supported = AGNES_IMAGE_RATIOS;
+  for (const r of supported) {
+    if (r.toLowerCase() === ratio.toLowerCase()) return r;
+  }
+  // 非法 ratio 原样返回（不静默转换），审计快照会记录原始值
+  return ratio;
 }
 
 /**
@@ -491,6 +873,8 @@ export function extractPricingDimensions(
 ): ImagePricingInput | VideoPricingInput {
   if (type === 'IMAGE') {
     return {
+      size: extractString(dimensions.size),
+      ratio: extractString(dimensions.ratio),
       width: extractNumber(dimensions.width),
       height: extractNumber(dimensions.height),
       resolution: extractString(dimensions.resolution),
@@ -499,13 +883,21 @@ export function extractPricingDimensions(
   }
 
   if (type === 'VIDEO') {
+    // 归一化 Agnes snake_case 参数到统一 camelCase pricing input。
+    // 事实来源：前端/Agnes adapter 只发送 num_frames/frame_rate/width/height（snake_case）
+    // 或 numFrames/frameRate/width/height（camelCase），billing engine 统一接收 camelCase。
+    const numFrames = extractNumber(dimensions.numFrames) ?? extractNumber(dimensions.num_frames);
+    const frameRate = extractNumber(dimensions.frameRate) ?? extractNumber(dimensions.frame_rate);
     return {
       duration: extractNumber(dimensions.duration),
-      numFrames: extractNumber(dimensions.numFrames),
-      frameRate: extractNumber(dimensions.frameRate),
+      numFrames,
+      frameRate,
+      // fps 等同于 frameRate，用于 fps 倍率表匹配
+      fps: extractNumber(dimensions.fps) ?? frameRate,
       resolution: extractString(dimensions.resolution),
-      fps: extractNumber(dimensions.fps) ?? extractNumber(dimensions.frameRate),
       quality: extractString(dimensions.quality),
+      width: extractNumber(dimensions.width),
+      height: extractNumber(dimensions.height),
     };
   }
 

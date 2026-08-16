@@ -28,6 +28,7 @@ const adminNavItems = [
   { path: '/app/admin/orders', labelKey: 'navigation.adminOrders', icon: '💳' },
   { path: '/app/admin/generations', labelKey: 'navigation.adminGenerations', icon: '🎬' },
   { path: '/app/admin/providers', labelKey: 'navigation.adminProviders', icon: '🔌' },
+  { path: '/app/admin/pricing', labelKey: 'navigation.adminPricing', icon: '💰' },
   { path: '/app/admin/audit', labelKey: 'navigation.adminAudit', icon: '🧾' },
   { path: '/app/admin/settings', labelKey: 'navigation.adminSettings', icon: '🛠️' },
   { path: '/app/admin/system-update', labelKey: 'navigation.adminSystemUpdate', icon: '🔄' },

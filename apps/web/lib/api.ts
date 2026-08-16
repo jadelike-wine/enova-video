@@ -141,9 +141,10 @@ export class ApiError extends Error {
   readonly code: string
   readonly requestId?: string
   readonly status: number
+  readonly details?: unknown
   constructor(status: number, body: unknown, fallback: string) {
     const b = (body ?? {}) as {
-      error?: { code?: string; message?: string; requestId?: string }
+      error?: { code?: string; message?: string; requestId?: string; details?: unknown }
     }
     const msg = b.error?.message ?? (status >= 500 ? '服务器内部错误' : fallback)
     super(msg)
@@ -151,7 +152,20 @@ export class ApiError extends Error {
     this.status = status
     this.code = b.error?.code ?? 'UNKNOWN'
     this.requestId = b.error?.requestId
+    this.details = b.error?.details
   }
+}
+
+/**
+ * 检测 API 错误是否为 step-up 密码二次验证要求。
+ *
+ * 后端对安全敏感操作（如修改 SSRF 配置）返回 403 + details.stepUpRequired=true。
+ * 前端据此弹出管理员密码验证框，输入后带 x-step-up-password header 重试。
+ */
+export function isStepUpRequired(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false
+  const details = err.details as { stepUpRequired?: boolean; method?: string } | undefined
+  return err.code === 'FORBIDDEN' && Boolean(details?.stepUpRequired)
 }
 
 async function request(url: string, options: RequestInit = {}): Promise<Response> {
@@ -351,19 +365,22 @@ export interface StorageTestResult {
 
 export const settingsApi = {
   list: () => json<SettingView[]>('/admin/settings'),
-  update: (key: string, value: string, expectedVersion?: number) =>
+  update: (key: string, value: string, expectedVersion?: number, stepUpPassword?: string) =>
     json<SettingView>(`/admin/settings/${encodeURIComponent(key)}`, {
       method: 'PATCH',
       body: JSON.stringify({ value, expectedVersion }),
+      headers: stepUpPassword ? { 'x-step-up-password': stepUpPassword } : undefined,
     }),
-  batchUpdate: (items: Array<{ key: string; value: string }>) =>
+  batchUpdate: (items: Array<{ key: string; value: string }>, stepUpPassword?: string) =>
     json<SettingView[]>('/admin/settings/batch', {
       method: 'POST',
       body: JSON.stringify({ items }),
+      headers: stepUpPassword ? { 'x-step-up-password': stepUpPassword } : undefined,
     }),
-  clearSecret: (key: string) =>
+  clearSecret: (key: string, stepUpPassword?: string) =>
     json<SettingView>(`/admin/settings/${encodeURIComponent(key)}/secret`, {
       method: 'DELETE',
+      headers: stepUpPassword ? { 'x-step-up-password': stepUpPassword } : undefined,
     }),
   history: (key: string, limit?: number) =>
     json<SettingHistoryEntry[]>(`/admin/settings/${encodeURIComponent(key)}/history${limit ? `?limit=${limit}` : ''}`),

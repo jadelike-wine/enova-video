@@ -30,30 +30,6 @@
 
 > 面向 Codex/Agent 的产品与工程文档入口：[`docs/README.md`](docs/README.md)；产品事实参考：[`docs/product-reference.md`](docs/product-reference.md)。
 
-## 界面预览
-
-<table cellpadding="6">
-  <tr>
-    <td width="50%" align="center" valign="top">
-      <img src="docs/images/ai-img-gen.png" alt="图片生成界面" width="100%" style="display:block;margin-bottom:6px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
-      <strong>🎨 图片生成</strong><br/>
-      <span style="font-size:13px">文生图 · 单图编辑 · 多图合成 · 历史回看</span>
-    </td>
-    <td width="50%" align="center" valign="top">
-      <img src="docs/images/ai-video-gen.png" alt="视频生成界面" width="100%" style="display:block;margin-bottom:6px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
-      <strong>🎬 视频生成</strong><br/>
-      <span style="font-size:13px">文/图生视频 · 关键帧动画 · 内置播放器 · 媒体转存</span>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center" valign="top">
-      <img src="docs/images/settings.png" alt="账户设置界面" width="100%" style="display:block;margin-bottom:6px;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.15);"/>
-      <strong>⚙️ 账户与钱包</strong><br/>
-      <span style="font-size:13px">登录注册 · Credits 余额 · Wallet 充值 · 账户设置</span>
-    </td>
-  </tr>
-</table>
-
 ## 功能特性
 
 | 模块 | 能力 |

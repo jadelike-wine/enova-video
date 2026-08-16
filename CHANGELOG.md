@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Git history is the ultimate source of truth; this file aggregates user-, developer-, and ops-relevant changes. Not every commit is listed — only changes that matter to consumers, operators, or maintainers.
 
-## Unreleased
+## [1.7.16] — 2026-08-16
+
+### Added
+- Dynamic pricing now supports Agnes size/ratio-tiered image pricing (1K/2K/3K/4K) and video width×height resolution pricing, with a canonical resolution mapping from size+ratio for the audit snapshot. Dimension matching falls back through size → resolution → width×height and records the matched dimension.
+- Pricing audit breakdown now includes the requested size, canonical resolution, and matched size key.
+- Admin pricing editor gains a size/ratio multiplier table (with Agnes Image 2.1 Flash tiered note) alongside the existing resolution/quality/fps tables.
+- Redesigned the image and video generation views (workspace/generation-records layout, prompt composer with AI enhance, size/ratio/duration/advanced settings, estimated-credit display, upload/regenerate/variation interactions).
+
+### Changed
+- Pricing quote now raises `MISSING_PRICING_DIMENSION` when a size table is configured but no size is provided and it cannot be reverse-derived from resolution; video per-second pricing clarifies that duration is required.
 
 ---
 

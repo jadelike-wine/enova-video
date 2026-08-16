@@ -156,6 +156,18 @@ export class UpdateCredentialDto {
   clearBackoff?: boolean;
 }
 
+/**
+ * 简化的添加 Agnes 账号 DTO。
+ * 第一版只支持 Agnes，管理员只需输入 API Key。
+ */
+export class CreateAgnesAccountDto {
+  @ApiProperty({ example: 'sk-xxxxxxxxxxxxxxxx', description: 'Agnes API Key' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  apiKey!: string;
+}
+
 export class SetUserStatusDto {
   @ApiProperty({ enum: USER_STATUSES })
   @IsEnum(USER_STATUSES)

@@ -23,8 +23,10 @@ import {
   ProvidersAdminService,
   type ProviderView,
 } from './providers.admin.service.js';
+import { CredentialsAdminService, type CredentialView } from './credentials.admin.service.js';
 import { AdminAuditService } from './admin.audit.service.js';
-import { CreateProviderDto, ListQueryDto, UpdateProviderDto } from './dto/admin.dto.js';
+import { SensitiveActionService } from '../common/services/sensitive-action.service.js';
+import { CreateProviderDto, ListQueryDto, UpdateProviderDto, CreateAgnesAccountDto } from './dto/admin.dto.js';
 
 @ApiTags('admin/providers')
 @Controller('api/v1/admin/providers')
@@ -32,7 +34,9 @@ import { CreateProviderDto, ListQueryDto, UpdateProviderDto } from './dto/admin.
 export class ProvidersAdminController {
   constructor(
     @Inject(ProvidersAdminService) private readonly service: ProvidersAdminService,
+    @Inject(CredentialsAdminService) private readonly credentialsService: CredentialsAdminService,
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
+    @Inject(SensitiveActionService) private readonly sensitiveAction: SensitiveActionService,
   ) {}
 
   @Get()
@@ -107,6 +111,52 @@ export class ProvidersAdminController {
       userAgent: req.headers['user-agent'],
     });
     return { ok: true };
+  }
+
+  /**
+   * 简化的添加 Agnes 账号接口。
+   * 第一版只支持 Agnes：管理员只需输入 API Key，后端自动确保 Provider 存在并创建凭证。
+   * Provider / Base URL / Code 等信息固定，不需要管理员手动填写。
+   */
+  @Post('agnes/account')
+  @RequirePermission(PERMISSIONS.CREDENTIALS_ROTATE)
+  @ApiOperation({ summary: '添加 Agnes 账号（只需 API Key，自动创建 Provider）' })
+  async createAgnesAccount(
+    @CurrentUser() user: AuthUser,
+    @Req() req: FastifyRequest,
+    @Body() dto: CreateAgnesAccountDto,
+  ): Promise<CredentialView> {
+    // step-up 验证：创建凭证属于敏感操作。
+    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
+    await this.sensitiveAction.execute({
+      actorUserId: user.userId,
+      permission: PERMISSIONS.CREDENTIALS_ROTATE,
+      target: 'provider:agnes',
+      reason: 'Create Agnes account (simplified)',
+      requestId: req.id,
+      stepUpPassword,
+    });
+
+    // 1. 确保 agnes Provider 存在（不存在则自动创建）。
+    const provider = await this.service.ensureAgnesProvider();
+
+    // 2. 创建凭证（API Key 加密入库）。
+    const credential = await this.credentialsService.create(provider.id, {
+      secret: dto.apiKey,
+    });
+
+    // 3. 审计。
+    await this.audit.record({
+      actorUserId: user.userId,
+      action: 'credential.create',
+      resourceType: 'credential',
+      resourceId: credential.id,
+      after: credential as unknown as Record<string, unknown>,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return credential;
   }
 
   /** 审计脱敏：不记录 provider.config（可能含敏感配置）。 */

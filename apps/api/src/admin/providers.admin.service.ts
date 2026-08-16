@@ -33,6 +33,11 @@ export interface UpdateProviderInput {
   config?: Record<string, unknown>;
 }
 
+/** Agnes Provider 固定配置（第一版只支持 Agnes，不做多 Provider 适配）。 */
+export const AGNES_PROVIDER_CODE = 'agnes';
+export const AGNES_PROVIDER_NAME = 'Agnes';
+export const AGNES_PROVIDER_BASE_URL = 'https://apihub.agnes-ai.com';
+
 /**
  * Provider 管理（Admin）。
  * base_url 必须经过 SSRF 校验（仅 https、非私网），防止管理员配置出可达内网的 URL。
@@ -44,6 +49,31 @@ export class ProvidersAdminService {
     @Inject(ENV) private readonly env: Env,
     @Inject(SettingsService) private readonly settings: SettingsService,
   ) {}
+
+  /**
+   * 确保 Agnes Provider 存在。
+   * 第一版只支持 Agnes，管理员添加账号时无需手动创建 Provider。
+   * 如果数据库中还没有 agnes Provider，自动创建；已存在则返回现有记录。
+   */
+  async ensureAgnesProvider(): Promise<ProviderView> {
+    const existing = await this.db
+      .select()
+      .from(providers)
+      .where(eq(providers.code, AGNES_PROVIDER_CODE))
+      .limit(1);
+    if (existing.length > 0) return this.toView(existing[0]);
+
+    const [row] = await this.db
+      .insert(providers)
+      .values({
+        code: AGNES_PROVIDER_CODE,
+        name: AGNES_PROVIDER_NAME,
+        baseUrl: AGNES_PROVIDER_BASE_URL,
+        status: PROVIDER_STATUSES.ACTIVE,
+      })
+      .returning();
+    return this.toView(row);
+  }
 
   async list(limit: number, offset: number): Promise<ProviderView[]> {
     const limitSafe = Math.min(Math.max(limit, 1), 100);

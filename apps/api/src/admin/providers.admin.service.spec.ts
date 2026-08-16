@@ -104,6 +104,38 @@ describe('ProvidersAdminService', () => {
     });
   });
 
+  describe('ensureAgnesProvider', () => {
+    it('returns existing provider if already present', async () => {
+      const svc = new ProvidersAdminService(
+        createDb({ 'sel:providers': () => [providerRow] }),
+        env,
+        mockSettings,
+      );
+      const view = await svc.ensureAgnesProvider();
+      expect(view.id).toBe('p1');
+      expect(view.code).toBe('agnes');
+    });
+
+    it('creates agnes provider with fixed config if not present', async () => {
+      const agnesRow = {
+        ...providerRow,
+        baseUrl: 'https://apihub.agnes-ai.com',
+        name: 'Agnes',
+      };
+      const svc = new ProvidersAdminService(
+        createDb({ 'sel:providers': () => [], 'write:providers': () => [agnesRow] }),
+        env,
+        mockSettings,
+      );
+      const view = await svc.ensureAgnesProvider();
+      expect(view.id).toBe('p1');
+      expect(view.code).toBe('agnes');
+      expect(view.name).toBe('Agnes');
+      expect(view.baseUrl).toBe('https://apihub.agnes-ai.com');
+      expect(view.status).toBe(PROVIDER_STATUSES.ACTIVE);
+    });
+  });
+
   describe('get', () => {
     it('throws 404 when provider not found', async () => {
       const svc = new ProvidersAdminService(createDb(emptySel), env, mockSettings);

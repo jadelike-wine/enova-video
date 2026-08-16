@@ -4,8 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Button, Result, Spin } from 'antd'
 import { useTranslations } from 'next-intl'
-import { paymentApi, type OrderStatus } from '../../../../lib/api'
-import { useSession } from '../../../../lib/auth'
+import { paymentApi, authApi, type OrderStatus } from '../../../../lib/api'
 
 /**
  * 支付返回页（return URL）。
@@ -21,7 +20,16 @@ const POLL_TIMEOUT_MS = 120_000 // 2 分钟超时
 
 export default function PaymentResultPage() {
   const t = useTranslations('paymentResult')
-  const { refresh } = useSession()
+  // 支付成功后刷新后端 session（用户余额）。
+  // 本页面不在 SessionProvider 内（独立支付返回路由），
+  // 用户跳转到 /app/* 时 AppShell 会自动重新获取最新 session。
+  const refreshSession = useCallback(async () => {
+    try {
+      await authApi.me()
+    } catch {
+      // 忽略：用户跳转后 AppShell 会自动重试
+    }
+  }, [])
 
   // 从 URL query string 获取 orderId。
   const [orderId, setOrderId] = useState<string | null>(null)
@@ -56,7 +64,7 @@ export default function PaymentResultPage() {
       if (result.status === 'SUCCEEDED') {
         setStatus('success')
         sessionStorage.removeItem('pendingPaymentOrderId')
-        await refresh()
+        await refreshSession()
         // 停止轮询
         if (pollRef.current) {
           clearInterval(pollRef.current)
@@ -86,7 +94,7 @@ export default function PaymentResultPage() {
         pollRef.current = null
       }
     }
-  }, [refresh])
+  }, [refreshSession])
 
   // 开始轮询
   useEffect(() => {

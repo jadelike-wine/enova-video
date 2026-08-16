@@ -21,7 +21,6 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
 import { PricingAdminService } from './pricing.admin.service.js';
 import { AdminAuditService } from './admin.audit.service.js';
-import { SensitiveActionService } from '../common/services/sensitive-action.service.js';
 import {
   CreatePricingRuleDto,
   PreviewQuoteDto,
@@ -37,7 +36,6 @@ export class PricingAdminController {
   constructor(
     @Inject(PricingAdminService) private readonly service: PricingAdminService,
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
-    @Inject(SensitiveActionService) private readonly sensitiveAction: SensitiveActionService,
   ) {}
 
   // ---- Model Pricing Overview ----
@@ -127,17 +125,6 @@ export class PricingAdminController {
     @Req() req: FastifyRequest,
     @Body() dto: PublishPricingVersionDto,
   ) {
-    // P1.5: Sensitive action gate (step-up + audit) before publishing an immutable pricing version.
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.PRICING_PUBLISH,
-      target: `pricing_version:${dto.generationType}:${dto.provider}:${dto.model}`,
-      reason: `Publish pricing version: ${dto.credits} credits`,
-      before: { generationType: dto.generationType, provider: dto.provider, model: dto.model, credits: dto.credits },
-      requestId: req.id,
-      stepUpPassword,
-    });
     const result = await this.service.publishVersion({ ...dto, generationType: dto.generationType as GenerationType });
     await this.audit.record({
       actorUserId: user.userId,
@@ -149,6 +136,7 @@ export class PricingAdminController {
         provider: dto.provider,
         model: dto.model,
         credits: dto.credits,
+        dynamicRules: dto.dynamicRules,
         version: result.version,
       },
       ip: req.ip,

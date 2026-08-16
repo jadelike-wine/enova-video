@@ -452,12 +452,13 @@ export class PublishPricingVersionDto {
   @MaxLength(100)
   model!: string;
 
-  @ApiProperty({ example: 120 })
+  @ApiPropertyOptional({ example: 120, description: '固定 Credits。动态定价模式下可为 0 或省略。' })
+  @IsOptional()
   @IsInt()
   @Min(0)
-  credits!: number;
+  credits?: number;
 
-  @ApiPropertyOptional({ type: Object })
+  @ApiPropertyOptional({ type: Object, description: '完整定价配置。动态规则放在 pricingJson.rules 中。' })
   @IsOptional()
   @IsObject()
   pricingJson?: Record<string, unknown>;
@@ -466,6 +467,14 @@ export class PublishPricingVersionDto {
   @IsOptional()
   @IsObject()
   dimensionsJson?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    type: Object,
+    description: '动态定价规则。包含 baseCredits、duration、resolution、quality、fps 等。传入后自动嵌入 pricingJson.rules。',
+  })
+  @IsOptional()
+  @IsObject()
+  dynamicRules?: Record<string, unknown>;
 }
 
 export class PricingVersionListQueryDto extends ListQueryDto {
@@ -505,7 +514,10 @@ export class PreviewQuoteDto {
   @MaxLength(100)
   model!: string;
 
-  @ApiPropertyOptional({ type: Object })
+  @ApiPropertyOptional({
+    type: Object,
+    description: '定价维度参数（width/height/resolution/quality/duration/numFrames/frameRate/fps 等）',
+  })
   @IsOptional()
   @IsObject()
   dimensions?: Record<string, unknown>;

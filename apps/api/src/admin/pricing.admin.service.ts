@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 import { domainError, ERROR_CODES, type GenerationType } from '@enova/contracts';
 import { pricingRules, pricingVersions, type Database } from '@enova/db';
+import { extractDynamicRules } from '@enova/billing';
 import { DATABASE } from '../database/database.module.js';
 import { PricingService, type PriceQuoteInput } from '../billing/pricing.service.js';
 
@@ -38,6 +39,10 @@ export interface AdminModelPricingView {
   publishedAt: Date | null;
   /** UI 状态：未配置 / 已发布 / 草稿 / 已归档。 */
   status: 'UNCONFIGURED' | 'PUBLISHED' | 'DRAFT' | 'ARCHIVED';
+  /** 动态定价规则（如果配置了动态定价）。 */
+  dynamicRules: Record<string, unknown> | null;
+  /** 是否为动态定价模式。 */
+  isDynamic: boolean;
 }
 
 export interface AdminPricingRuleView {
@@ -182,16 +187,34 @@ export class PricingAdminService {
     }));
   }
 
-  /** 发布新版本（不可变）。 */
+  /** 发布新版本（不可变）。支持动态规则。 */
   async publishVersion(input: {
     generationType: GenerationType;
     provider: string;
     model: string;
-    credits: number;
+    credits?: number;
     pricingJson?: Record<string, unknown>;
     dimensionsJson?: Record<string, unknown>;
+    dynamicRules?: Record<string, unknown>;
   }): Promise<{ versionId: string; version: number }> {
-    return this.pricing.publishVersion(input);
+    // 如果传入了 dynamicRules，将其嵌入 pricingJson.rules
+    let pricingJson = input.pricingJson ?? {};
+    if (input.dynamicRules) {
+      pricingJson = {
+        ...pricingJson,
+        rules: input.dynamicRules,
+      };
+    }
+    // 动态定价时 credits 默认为 0（实际在 quote 时按参数计算）
+    const credits = input.credits ?? 0;
+    return this.pricing.publishVersion({
+      generationType: input.generationType,
+      provider: input.provider,
+      model: input.model,
+      credits,
+      pricingJson,
+      dimensionsJson: input.dimensionsJson,
+    });
   }
 
   /** 归档版本（禁止删除）。 */
@@ -245,8 +268,12 @@ export class PricingAdminService {
           pricingVersionId: null,
           publishedAt: null,
           status: 'UNCONFIGURED' as const,
+          dynamicRules: null,
+          isDynamic: false,
         };
       }
+      // 检查是否有动态定价规则
+      const dynamicRules = extractDynamicRules(latest.pricingJson, latest.dimensionsJson);
       return {
         generationType: m.generationType,
         provider: m.provider,
@@ -257,6 +284,8 @@ export class PricingAdminService {
         pricingVersionId: latest.id,
         publishedAt: latest.publishedAt,
         status: 'PUBLISHED' as const,
+        dynamicRules: dynamicRules as Record<string, unknown> | null,
+        isDynamic: dynamicRules !== null,
       };
     });
   }

@@ -8,7 +8,9 @@ import {
   extractDynamicRules,
   extractPricingDimensions,
   getAgnesCanonicalResolution,
+  normalizeVideoResolutionTier,
   reverseLookupAgnesResolution,
+  VIDEO_RESOLUTION_TIERS,
   type DynamicPricingRules,
   type VideoPricingInput,
 } from './pricing-engine';
@@ -362,6 +364,135 @@ describe('Backward compatibility: resolution-based image pricing', () => {
     expect(result.credits).toBe(20);
     expect(result.breakdown.qualityMultiplier).toBe(2);
     expect(result.breakdown.qualityKey).toBe('hd');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Size+ratio → resolution rule fallback (the bug fix)
+// ---------------------------------------------------------------------------
+
+describe('Size+ratio → resolution rule fallback (resolution-only rules)', () => {
+  // This simulates the production scenario where agnes-image-2.1-flash has
+  // only a `resolution` pricing table (no `size` table), but the request
+  // sends Agnes-native `size` + `ratio` format.
+  const resolutionOnlyRules: DynamicPricingRules = {
+    baseCredits: 5,
+    resolution: {
+      '1024x1024': 1,
+      '2048x2048': 2,
+      '2624x1472': 3,
+    },
+  };
+
+  it('size=1K + ratio=1:1 → canonical 1024x1024 → resolution rule match', () => {
+    const result = calculateImagePrice(resolutionOnlyRules, { size: '1K', ratio: '1:1' });
+    expect(result.credits).toBe(5); // 5 * 1 = 5
+    expect(result.breakdown.matchedDimension).toBe('resolution');
+    expect(result.breakdown.resolutionKey).toBe('1024x1024');
+    expect(result.breakdown.canonicalResolution).toBe('1024x1024');
+    expect(result.breakdown.normalizedSize).toBe('1K');
+    expect(result.breakdown.normalizedRatio).toBe('1:1');
+  });
+
+  it('size=2K + ratio=1:1 → canonical 2048x2048 → resolution rule match', () => {
+    const result = calculateImagePrice(resolutionOnlyRules, { size: '2K', ratio: '1:1' });
+    expect(result.credits).toBe(10); // 5 * 2 = 10
+    expect(result.breakdown.resolutionKey).toBe('2048x2048');
+  });
+
+  it('size=2K + ratio=16:9 → canonical 2624x1472 → resolution rule match', () => {
+    const result = calculateImagePrice(resolutionOnlyRules, { size: '2K', ratio: '16:9' });
+    expect(result.credits).toBe(15); // 5 * 3 = 15
+    expect(result.breakdown.resolutionKey).toBe('2624x1472');
+    expect(result.breakdown.canonicalResolution).toBe('2624x1472');
+  });
+
+  it('size=1K without ratio → defaults to 1:1 → 1024x1024', () => {
+    const result = calculateImagePrice(resolutionOnlyRules, { size: '1K' });
+    expect(result.credits).toBe(5); // 5 * 1 = 5
+    expect(result.breakdown.canonicalResolution).toBe('1024x1024');
+  });
+
+  it('case insensitive size: 2k matches 2K', () => {
+    const result = calculateImagePrice(resolutionOnlyRules, { size: '2k', ratio: '1:1' });
+    expect(result.credits).toBe(10);
+    expect(result.breakdown.normalizedSize).toBe('2K');
+  });
+
+  it('non-1:1 ratio with size=1K → correct canonical resolution', () => {
+    // 1K + 16:9 → 1312x736 (not in resolution table → PRICING_NOT_FOUND)
+    expect(() => calculateImagePrice(resolutionOnlyRules, { size: '1K', ratio: '16:9' })).toThrow(DomainError);
+    try {
+      calculateImagePrice(resolutionOnlyRules, { size: '1K', ratio: '16:9' });
+      expect.fail('Should have thrown');
+    } catch (e) {
+      const err = e as DomainError;
+      expect(err.code).toBe(ERROR_CODES.PRICING_NOT_FOUND);
+      expect((err.details as { dimension: string }).dimension).toBe('resolution');
+    }
+  });
+
+  it('unsupported size (8K) → PRICING_NOT_FOUND (not MISSING_PRICING_DIMENSION)', () => {
+    expect(() => calculateImagePrice(resolutionOnlyRules, { size: '8K', ratio: '1:1' })).toThrow(DomainError);
+    try {
+      calculateImagePrice(resolutionOnlyRules, { size: '8K', ratio: '1:1' });
+      expect.fail('Should have thrown');
+    } catch (e) {
+      const err = e as DomainError;
+      // Should get PRICING_NOT_FOUND because size is provided but not a valid Agnes size
+      expect(err.code).toBe(ERROR_CODES.PRICING_NOT_FOUND);
+      expect((err.details as { dimension: string }).dimension).toBe('size');
+    }
+  });
+
+  it('unsupported ratio (5:3) → PRICING_NOT_FOUND (not MISSING_PRICING_DIMENSION)', () => {
+    expect(() => calculateImagePrice(resolutionOnlyRules, { size: '2K', ratio: '5:3' })).toThrow(DomainError);
+    try {
+      calculateImagePrice(resolutionOnlyRules, { size: '2K', ratio: '5:3' });
+      expect.fail('Should have thrown');
+    } catch (e) {
+      const err = e as DomainError;
+      expect(err.code).toBe(ERROR_CODES.PRICING_NOT_FOUND);
+      expect((err.details as { dimension: string }).dimension).toBe('size');
+    }
+  });
+
+  it('width+height input still works (no regression)', () => {
+    const result = calculateImagePrice(resolutionOnlyRules, { width: 1024, height: 1024 });
+    expect(result.credits).toBe(5);
+    expect(result.breakdown.matchedDimension).toBe('width_height');
+  });
+
+  it('resolution string input still works (no regression)', () => {
+    const result = calculateImagePrice(resolutionOnlyRules, { resolution: '1024x1024' });
+    expect(result.credits).toBe(5);
+    expect(result.breakdown.matchedDimension).toBe('resolution');
+  });
+
+  it('no size/resolution/width/height → MISSING_PRICING_DIMENSION', () => {
+    expect(() => calculateImagePrice(resolutionOnlyRules, {})).toThrow(DomainError);
+    try {
+      calculateImagePrice(resolutionOnlyRules, {});
+      expect.fail('Should have thrown');
+    } catch (e) {
+      const err = e as DomainError;
+      expect(err.code).toBe(ERROR_CODES.MISSING_PRICING_DIMENSION);
+      expect((err.details as { dimension: string }).dimension).toBe('resolution');
+    }
+  });
+
+  it('audit snapshot has correct fields when matched via size→canonical→resolution', () => {
+    const result = calculateImagePrice(resolutionOnlyRules, { size: '2K', ratio: '16:9' });
+    const b = result.breakdown;
+    expect(b.requestedSize).toBe('2K');
+    expect(b.requestedRatio).toBe('16:9');
+    expect(b.normalizedSize).toBe('2K');
+    expect(b.normalizedRatio).toBe('16:9');
+    expect(b.canonicalResolution).toBe('2624x1472');
+    expect(b.resolutionMultiplier).toBe(3);
+    expect(b.resolutionKey).toBe('2624x1472');
+    expect(b.matchedDimension).toBe('resolution');
+    expect(b.matchedKey).toBe('2624x1472');
   });
 });
 
@@ -812,6 +943,259 @@ describe('Agnes Video V2.0 pricing', () => {
     });
     // 121/24 = 5.0416666667, not 99
     expect(result.breakdown.duration).toBeCloseTo(5.0416666667, 6);
+  });
+
+  // ---- Resolution normalization: width/height → tier key ----
+
+  it('1280x720 (landscape) matches "720p" tier rule', () => {
+    const rules: DynamicPricingRules = {
+      baseCredits: 0,
+      duration: { pricePerSecond: 5 },
+      resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+    };
+    const result = calculateVideoPrice(rules, {
+      numFrames: 121,
+      frameRate: 24,
+      width: 1280,
+      height: 720,
+    });
+    // 0 + (5.0416666667 * 5) * 1.5 = 37.8125 → ceil = 38
+    expect(result.credits).toBe(38);
+    expect(result.breakdown.resolutionKey).toBe('720p');
+    expect(result.breakdown.resolutionMultiplier).toBe(1.5);
+  });
+
+  it('720x1280 (portrait) also matches "720p" tier rule', () => {
+    const rules: DynamicPricingRules = {
+      baseCredits: 0,
+      duration: { pricePerSecond: 5 },
+      resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+    };
+    const result = calculateVideoPrice(rules, {
+      numFrames: 121,
+      frameRate: 24,
+      width: 720,
+      height: 1280,
+    });
+    expect(result.credits).toBe(38);
+    expect(result.breakdown.resolutionKey).toBe('720p');
+    expect(result.breakdown.resolutionMultiplier).toBe(1.5);
+  });
+
+  it('1920x1080 (landscape) matches "1080p" tier rule', () => {
+    const rules: DynamicPricingRules = {
+      baseCredits: 0,
+      duration: { pricePerSecond: 5 },
+      resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+    };
+    const result = calculateVideoPrice(rules, {
+      numFrames: 121,
+      frameRate: 24,
+      width: 1920,
+      height: 1080,
+    });
+    // 0 + (5.0416666667 * 5) * 2 = 50.41666... → ceil = 51
+    expect(result.credits).toBe(51);
+    expect(result.breakdown.resolutionKey).toBe('1080p');
+    expect(result.breakdown.resolutionMultiplier).toBe(2);
+  });
+
+  it('1080x1920 (portrait) also matches "1080p" tier rule', () => {
+    const rules: DynamicPricingRules = {
+      baseCredits: 0,
+      duration: { pricePerSecond: 5 },
+      resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+    };
+    const result = calculateVideoPrice(rules, {
+      numFrames: 121,
+      frameRate: 24,
+      width: 1080,
+      height: 1920,
+    });
+    expect(result.credits).toBe(51);
+    expect(result.breakdown.resolutionKey).toBe('1080p');
+    expect(result.breakdown.resolutionMultiplier).toBe(2);
+  });
+
+  it('854x480 matches "480p" tier rule', () => {
+    const rules: DynamicPricingRules = {
+      baseCredits: 0,
+      duration: { pricePerSecond: 5 },
+      resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+    };
+    const result = calculateVideoPrice(rules, {
+      numFrames: 121,
+      frameRate: 24,
+      width: 854,
+      height: 480,
+    });
+    // 0 + (5.0416666667 * 5) * 1 = 25.20833... → ceil = 26
+    expect(result.credits).toBe(26);
+    expect(result.breakdown.resolutionKey).toBe('480p');
+    expect(result.breakdown.resolutionMultiplier).toBe(1);
+  });
+
+  it('480x854 (portrait 480p) also matches "480p" tier rule', () => {
+    const rules: DynamicPricingRules = {
+      baseCredits: 0,
+      duration: { pricePerSecond: 5 },
+      resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+    };
+    const result = calculateVideoPrice(rules, {
+      numFrames: 121,
+      frameRate: 24,
+      width: 480,
+      height: 854,
+    });
+    expect(result.credits).toBe(26);
+    expect(result.breakdown.resolutionKey).toBe('480p');
+    expect(result.breakdown.resolutionMultiplier).toBe(1);
+  });
+
+  it('resolution string "1280x720" also normalizes to "720p" tier', () => {
+    const rules: DynamicPricingRules = {
+      baseCredits: 0,
+      duration: { pricePerSecond: 5 },
+      resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+    };
+    const result = calculateVideoPrice(rules, {
+      numFrames: 121,
+      frameRate: 24,
+      resolution: '1280x720',
+    });
+    expect(result.credits).toBe(38);
+    expect(result.breakdown.resolutionKey).toBe('720p');
+    expect(result.breakdown.resolutionMultiplier).toBe(1.5);
+  });
+
+  it('exact dimension key takes priority over tier normalization', () => {
+    // If rules.resolution has "1280x720" as an exact key, it should match
+    // before tier normalization kicks in
+    const rules: DynamicPricingRules = {
+      baseCredits: 0,
+      duration: { pricePerSecond: 5 },
+      resolution: { '1280x720': 3, '720p': 1.5 },
+    };
+    const result = calculateVideoPrice(rules, {
+      numFrames: 121,
+      frameRate: 24,
+      width: 1280,
+      height: 720,
+    });
+    // Should match exact "1280x720": 3, not tier "720p": 1.5
+    expect(result.breakdown.resolutionKey).toBe('1280x720');
+    expect(result.breakdown.resolutionMultiplier).toBe(3);
+  });
+
+  it('wildcard match takes priority over tier normalization', () => {
+    const rules: DynamicPricingRules = {
+      baseCredits: 0,
+      duration: { pricePerSecond: 5 },
+      resolution: { '1280x*': 2.5, '720p': 1.5 },
+    };
+    const result = calculateVideoPrice(rules, {
+      numFrames: 121,
+      frameRate: 24,
+      width: 1280,
+      height: 720,
+    });
+    // Should match wildcard "1280x*": 2.5, not tier "720p": 1.5
+    expect(result.breakdown.resolutionKey).toBe('1280x*');
+    expect(result.breakdown.resolutionMultiplier).toBe(2.5);
+  });
+
+  it('still throws PRICING_NOT_FOUND for unknown resolution beyond tiers', () => {
+    const rules: DynamicPricingRules = {
+      baseCredits: 0,
+      duration: { pricePerSecond: 5 },
+      resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+    };
+    // 3840x2160 exceeds 1080p tier, no exact or wildcard match
+    expect(() =>
+      calculateVideoPrice(rules, {
+        numFrames: 121,
+        frameRate: 24,
+        width: 3840,
+        height: 2160,
+      }),
+    ).toThrow(DomainError);
+    try {
+      calculateVideoPrice(rules, {
+        numFrames: 121,
+        frameRate: 24,
+        width: 3840,
+        height: 2160,
+      });
+      expect.fail('Should have thrown');
+    } catch (e) {
+      const err = e as DomainError;
+      expect(err.code).toBe(ERROR_CODES.PRICING_NOT_FOUND);
+      expect((err.details as { dimension: string }).dimension).toBe('resolution');
+    }
+  });
+
+  it('full scenario: Agnes Video V2.0 text2video request from issue report', () => {
+    // This replicates the exact request from the bug report
+    const rules: DynamicPricingRules = {
+      baseCredits: 2,
+      duration: { pricePerSecond: 5 },
+      resolution: { '480p': 1, '720p': 1.5, '1080p': 2 },
+    };
+    const result = calculateVideoPrice(rules, {
+      numFrames: 121,
+      frameRate: 24,
+      width: 1280,
+      height: 720,
+    });
+    // base=2, duration=5.0416667, pricePerSec=5, resolutionMul=1.5
+    // credits = ceil(2 + (5.0416667 * 5) * 1.5) = ceil(2 + 37.8125) = ceil(39.8125) = 40
+    expect(result.credits).toBe(40);
+    expect(result.breakdown.resolutionKey).toBe('720p');
+    expect(result.breakdown.resolutionMultiplier).toBe(1.5);
+    expect(result.breakdown.baseCredits).toBe(2);
+    expect(result.breakdown.pricePerSecond).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// normalizeVideoResolutionTier unit tests
+// ---------------------------------------------------------------------------
+
+describe('normalizeVideoResolutionTier', () => {
+  it('1280x720 → 720p (landscape)', () => {
+    expect(normalizeVideoResolutionTier(1280, 720)).toBe('720p');
+  });
+
+  it('720x1280 → 720p (portrait)', () => {
+    expect(normalizeVideoResolutionTier(720, 1280)).toBe('720p');
+  });
+
+  it('1920x1080 → 1080p (landscape)', () => {
+    expect(normalizeVideoResolutionTier(1920, 1080)).toBe('1080p');
+  });
+
+  it('1080x1920 → 1080p (portrait)', () => {
+    expect(normalizeVideoResolutionTier(1080, 1920)).toBe('1080p');
+  });
+
+  it('854x480 → 480p (landscape)', () => {
+    expect(normalizeVideoResolutionTier(854, 480)).toBe('480p');
+  });
+
+  it('480x854 → 480p (portrait)', () => {
+    expect(normalizeVideoResolutionTier(480, 854)).toBe('480p');
+  });
+
+  it('640x480 → 480p (smaller dimension)', () => {
+    expect(normalizeVideoResolutionTier(640, 480)).toBe('480p');
+  });
+
+  it('3840x2160 → "3840x2160" (beyond all tiers)', () => {
+    expect(normalizeVideoResolutionTier(3840, 2160)).toBe('3840x2160');
+  });
+
+  it('VIDEO_RESOLUTION_TIERS has 3 tiers', () => {
+    expect(VIDEO_RESOLUTION_TIERS).toHaveLength(3);
   });
 });
 

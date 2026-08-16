@@ -6,7 +6,6 @@ import {
   Alert,
   Button,
   Divider,
-  Dropdown,
   Form,
   Input,
   Image as AntdImage,
@@ -18,16 +17,13 @@ import {
   Typography,
   Upload,
 } from 'antd'
-import type { MenuProps } from 'antd'
 import {
   CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
   ExclamationCircleOutlined,
-  FileImageOutlined,
   InboxOutlined,
-  MoreOutlined,
   PictureOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -114,34 +110,6 @@ type PreviewState = 'empty' | 'generating' | 'success' | 'error'
 // 辅助函数
 // ---------------------------------------------------------------------------
 
-function statusLabel(t: (k: string) => string, status: string): string {
-  const map: Record<string, string> = {
-    PENDING: t('status.PENDING'),
-    QUEUED: t('status.QUEUED'),
-    RUNNING: t('status.RUNNING'),
-    SUCCEEDED: t('status.SUCCEEDED'),
-    FAILED: t('status.FAILED'),
-    CANCELED: t('status.CANCELED'),
-  }
-  return map[status] || status
-}
-
-function statusBadgeColor(status: string): 'processing' | 'success' | 'error' | 'default' {
-  switch (status) {
-    case 'PENDING':
-    case 'QUEUED':
-    case 'RUNNING':
-      return 'processing'
-    case 'SUCCEEDED':
-      return 'success'
-    case 'FAILED':
-    case 'CANCELED':
-      return 'error'
-    default:
-      return 'default'
-  }
-}
-
 function modeLabel(mode?: string): string {
   return IMAGE_MODES.find((m) => m.id === mode)?.name || mode || '—'
 }
@@ -187,18 +155,6 @@ function inputImagesOf(task: ImageTask): string[] {
   return task?.input_images || []
 }
 
-/** 格式化相对时间 */
-function relativeTime(dateStr?: string): string {
-  if (!dateStr) return ''
-  const now = Date.now()
-  const then = new Date(dateStr).getTime()
-  const diff = Math.floor((now - then) / 1000)
-  if (diff < 60) return `${diff}s`
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
-  return `${Math.floor(diff / 86400)}d`
-}
-
 /** 判断 Preview 状态 */
 function getPreviewState(task: ImageTask | null, generating: boolean): PreviewState {
   if (!task) return 'empty'
@@ -215,7 +171,7 @@ function getPreviewState(task: ImageTask | null, generating: boolean): PreviewSt
 export default function ImageView() {
   const t = useTranslations('image')
   const tc = useTranslations()
-  const { alert, confirm } = useDialog()
+  const { alert } = useDialog()
   const { hasActiveKey, keyStatusLoading, refreshKeyStatus, requireApiKey } = useApiKeyGuard()
   const { balance } = useSession()
 
@@ -229,7 +185,7 @@ export default function ImageView() {
   const [promptValue, setPromptValue] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
-  const { history, historyLoading, resetHistory, setHistory } = usePaginatedTaskHistory(
+  const { history, resetHistory, setHistory } = usePaginatedTaskHistory(
     useCallback(async () => {
       const list = await generationApi.list(50)
       return list.map(toImageTask)
@@ -445,8 +401,6 @@ export default function ImageView() {
     [inputImages, requireApiKey, alert, setHistory, t, uploadLocalFiles],
   )
 
-  const selectTask = useCallback((task: TaskItem) => setSelectedTaskId(task.id), [])
-
   const fillFormFromTask = useCallback(
     (task: ImageTask) => {
       if (!task || task._optimistic) return
@@ -496,18 +450,6 @@ export default function ImageView() {
     }
   }, [])
 
-  // ---- 清空历史 ----
-  const handleClearHistory = useCallback(async () => {
-    const ok = await confirm({
-      title: t('clearHistory'),
-      message: t('clearHistoryConfirm'),
-    })
-    if (ok) {
-      setHistory([])
-      setSelectedTaskId(null)
-    }
-  }, [confirm, setHistory, t])
-
   // ---- 再次生成（从历史任务恢复参数并提交） ----
   const regenerateFromTask = useCallback(
     (task: ImageTask) => {
@@ -515,43 +457,6 @@ export default function ImageView() {
       form.submit()
     },
     [fillFormFromTask, form],
-  )
-
-  // ---- 历史项右键菜单 ----
-  const getHistoryMenuItems = useCallback(
-    (task: ImageTask): MenuProps['items'] => [
-      {
-        key: 'regenerate',
-        label: t('regenerate'),
-        icon: <ReloadOutlined />,
-        onClick: () => regenerateFromTask(task),
-      },
-      {
-        key: 'copyPrompt',
-        label: t('copyPrompt'),
-        icon: <CopyOutlined />,
-        onClick: () => copyPrompt(task.prompt),
-      },
-      {
-        key: 'download',
-        label: t('download'),
-        icon: <DownloadOutlined />,
-        disabled: !displayUrl(task),
-        onClick: () => displayUrl(task) && downloadImage(displayUrl(task)),
-      },
-      { type: 'divider' },
-      {
-        key: 'delete',
-        label: t('delete'),
-        icon: <DeleteOutlined />,
-        danger: true,
-        onClick: () => {
-          setHistory((prev) => prev.filter((t) => t.id !== task.id))
-          if (selectedTaskId === task.id) setSelectedTaskId(null)
-        },
-      },
-    ],
-    [regenerateFromTask, copyPrompt, downloadImage, setHistory, selectedTaskId, t],
   )
 
   // ---- Initial load ----
@@ -598,132 +503,14 @@ export default function ImageView() {
   return (
     <div className="flex h-full overflow-hidden">
       {/* ================================================================ */}
-      {/* Generation History Sidebar (260~280px)                           */}
-      {/* ================================================================ */}
-      <div className="w-[280px] flex-shrink-0 border-r border-gray-100 flex flex-col bg-white">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <Typography.Text strong className="!text-sm !text-gray-900">
-              {t('history')}
-            </Typography.Text>
-            {history.length > 0 && (
-              <Button
-                type="text"
-                size="small"
-                className="!text-xs !text-gray-400 hover:!text-gray-700"
-                onClick={() => void handleClearHistory()}
-              >
-                {t('clearHistory')}
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {history.map((rawTask) => {
-            const task = rawTask as ImageTask
-            const isSelected = selectedTaskId === task.id
-            return (
-              <Dropdown
-                key={String(task.id)}
-                trigger={['contextMenu']}
-                menu={{ items: getHistoryMenuItems(task) }}
-              >
-                <div
-                  onClick={() => selectTask(task)}
-                  className={`group relative p-2.5 rounded-xl cursor-pointer transition-all duration-200 border ${
-                    isSelected
-                      ? 'bg-primary-50/60 border-primary-200/80'
-                      : 'border-transparent hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="flex gap-2.5">
-                    {/* Thumbnail */}
-                    <div className="w-12 h-12 rounded-lg flex-shrink-0 overflow-hidden bg-gray-50 border border-gray-100 flex items-center justify-center">
-                      {displayUrl(task) ? (
-                        <AntdImage
-                          src={displayUrl(task)}
-                          alt={task.prompt || t('generatedImage')}
-                          width="100%"
-                          height="100%"
-                          className="object-cover"
-                          preview={{ mask: false }}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      ) : ACTIVE_STATUSES.includes(task.status) ? (
-                        <div className="w-5 h-5 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
-                      ) : (
-                        <FileImageOutlined className="text-gray-300 text-lg" />
-                      )}
-                    </div>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-800 truncate font-medium leading-tight">
-                        {task.prompt || '—'}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="text-xs text-gray-400">
-                          {modeLabel(task.mode)}
-                        </span>
-                        <span className="text-xs text-gray-300">·</span>
-                        <span className="text-xs text-gray-400">
-                          {formatSizeRatioLabel(task.size, task.ratio)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-xs text-gray-400">
-                          {relativeTime(task.created_at)}
-                        </span>
-                        <Tag
-                          color={statusBadgeColor(task.status)}
-                          className="!m-0 !text-[10px] !px-1.5"
-                        >
-                          {statusLabel(tc, task.status)}
-                        </Tag>
-                      </div>
-                    </div>
-
-                    {/* Hover More Menu */}
-                    <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Dropdown trigger={['click']} menu={{ items: getHistoryMenuItems(task) }}>
-                        <Button
-                          type="text"
-                          size="small"
-                          className="!w-6 !h-6 !min-w-6 flex items-center justify-center !text-gray-400 hover:!text-gray-700"
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label="More actions"
-                        >
-                          <MoreOutlined />
-                        </Button>
-                      </Dropdown>
-                    </div>
-                  </div>
-                </div>
-              </Dropdown>
-            )
-          })}
-
-          {!history.length && !historyLoading && (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-              <PictureOutlined className="text-3xl text-gray-200 mb-3" />
-              <p className="text-sm text-gray-400">{t('historyEmpty')}</p>
-              <p className="text-xs text-gray-300 mt-1">{t('historyEmptyHint')}</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ================================================================ */}
-      {/* Workspace                                                         */}
+      {/* Workspace (两栏布局: 配置 + 预览)                                */}
       {/* ================================================================ */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Config Panel (420~460px) */}
+        {/* Config Panel (~44%) */}
         <div
           ref={formCardRef}
-          className="w-[440px] flex-shrink-0 border-r border-gray-100 flex flex-col overflow-y-auto bg-white"
+          className="flex-shrink-0 border-r border-gray-100 flex flex-col overflow-y-auto bg-white"
+          style={{ width: '44%' }}
         >
           <Form
             form={form}

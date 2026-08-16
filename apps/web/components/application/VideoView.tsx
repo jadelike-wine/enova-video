@@ -7,7 +7,6 @@ import {
   Button,
   Collapse,
   Divider,
-  Dropdown,
   Form,
   Input,
   InputNumber,
@@ -20,18 +19,15 @@ import {
   Typography,
   Upload,
 } from 'antd'
-import type { MenuProps } from 'antd'
 import {
   CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
   ExclamationCircleOutlined,
   InboxOutlined,
-  MoreOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
   SwapOutlined,
-  VideoCameraOutlined,
 } from '@ant-design/icons'
 import { useTranslations } from 'next-intl'
 import {
@@ -117,39 +113,10 @@ interface InputImage {
 }
 
 type PreviewState = 'empty' | 'generating' | 'success' | 'error'
-type TaskFilter = 'all' | 'processing' | 'completed' | 'failed'
 
 // ---------------------------------------------------------------------------
 // 辅助函数
 // ---------------------------------------------------------------------------
-
-function statusLabel(t: (k: string) => string, status: string): string {
-  const map: Record<string, string> = {
-    PENDING: t('status.PENDING'),
-    QUEUED: t('status.QUEUED'),
-    RUNNING: t('status.RUNNING'),
-    SUCCEEDED: t('status.SUCCEEDED'),
-    FAILED: t('status.FAILED'),
-    CANCELED: t('status.CANCELED'),
-  }
-  return map[status] || status
-}
-
-function statusBadgeColor(status: string): 'processing' | 'success' | 'error' | 'default' {
-  switch (status) {
-    case 'PENDING':
-    case 'QUEUED':
-    case 'RUNNING':
-      return 'processing'
-    case 'SUCCEEDED':
-      return 'success'
-    case 'FAILED':
-    case 'CANCELED':
-      return 'error'
-    default:
-      return 'default'
-  }
-}
 
 /** 将后端 Generation 归一化为视图所需的 VideoTask。 */
 function toVideoTask(g: Generation): VideoTask {
@@ -194,18 +161,6 @@ function formatDuration(task: VideoTask): string {
   return `${(task.num_frames / task.frame_rate).toFixed(1)}s`
 }
 
-
-/** 格式化相对时间 */
-function relativeTime(dateStr?: string): string {
-  if (!dateStr) return ''
-  const now = Date.now()
-  const then = new Date(dateStr).getTime()
-  const diff = Math.floor((now - then) / 1000)
-  if (diff < 60) return `${diff}s`
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
-  return `${Math.floor(diff / 86400)}d`
-}
 
 function getInitialResolutionId(): string {
   const match = VIDEO_RESOLUTION_PRESETS.find((p) => p.width === 1280 && p.height === 720)
@@ -263,7 +218,7 @@ function RatioIcon({ type }: { type: 'horizontal' | 'vertical' | 'square' }) {
 export default function VideoView() {
   const t = useTranslations('video')
   const tc = useTranslations()
-  const { alert, confirm } = useDialog()
+  const { alert } = useDialog()
   const { hasActiveKey, keyStatusLoading, refreshKeyStatus, requireApiKey } = useApiKeyGuard()
   const { balance } = useSession()
 
@@ -277,8 +232,6 @@ export default function VideoView() {
   const [selectedDurationLabel, setSelectedDurationLabel] = useState<string>('5s')
   const [selectedRatio, setSelectedRatio] = useState<string>('16:9')
   const [advancedOpen, setAdvancedOpen] = useState(false)
-  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
-
   // 监听表单中 num_frames 变化
   const watchedNumFrames = Form.useWatch<number>('num_frames', form)
   useEffect(() => {
@@ -289,7 +242,7 @@ export default function VideoView() {
     }
   }, [watchedNumFrames])
 
-  const { history, historyLoading, resetHistory, setHistory } = usePaginatedTaskHistory(
+  const { history, resetHistory, setHistory } = usePaginatedTaskHistory(
     useCallback(async () => {
       const list = await generationApi.list(50)
       return list.map(toVideoTask)
@@ -326,14 +279,7 @@ export default function VideoView() {
     if (item?.preview?.startsWith('blob:')) URL.revokeObjectURL(item.preview)
   }, [])
 
-  // ---- 任务过滤 ----
-  const filteredHistory = useMemo(() => {
-    if (taskFilter === 'all') return history
-    if (taskFilter === 'processing') return history.filter((t) => ACTIVE_STATUSES.includes(t.status))
-    if (taskFilter === 'completed') return history.filter((t) => t.status === 'SUCCEEDED')
-    if (taskFilter === 'failed') return history.filter((t) => t.status === 'FAILED' || t.status === 'CANCELED')
-    return history
-  }, [history, taskFilter])
+  // ---- 任务过滤已移至历史记录页面 ----
 
   const taskErrorMessage = useCallback(
     (task: VideoTask) =>
@@ -627,8 +573,6 @@ export default function VideoView() {
     ],
   )
 
-  const selectTask = useCallback((task: TaskItem) => setSelectedTaskId(task.id), [])
-
   const fillFormFromTask = useCallback(
     (task: VideoTask) => {
       if (!task || task._optimistic) return
@@ -691,18 +635,6 @@ export default function VideoView() {
     }
   }, [])
 
-  // ---- 清空历史 ----
-  const handleClearHistory = useCallback(async () => {
-    const ok = await confirm({
-      title: t('clearHistory'),
-      message: t('clearHistoryConfirm'),
-    })
-    if (ok) {
-      setHistory([])
-      setSelectedTaskId(null)
-    }
-  }, [confirm, setHistory, t])
-
   // ---- 再次生成 ----
   const regenerateFromTask = useCallback(
     (task: VideoTask) => {
@@ -712,42 +644,7 @@ export default function VideoView() {
     [fillFormFromTask, form],
   )
 
-  // ---- 历史项右键菜单 ----
-  const getHistoryMenuItems = useCallback(
-    (task: VideoTask): MenuProps['items'] => [
-      {
-        key: 'regenerate',
-        label: t('regenerateVideo'),
-        icon: <ReloadOutlined />,
-        onClick: () => regenerateFromTask(task),
-      },
-      {
-        key: 'copyPrompt',
-        label: t('copyParams'),
-        icon: <CopyOutlined />,
-        onClick: () => copyPrompt(task.prompt),
-      },
-      {
-        key: 'download',
-        label: t('downloadVideo'),
-        icon: <DownloadOutlined />,
-        disabled: !displayUrl(task),
-        onClick: () => displayUrl(task) && downloadVideo(displayUrl(task)),
-      },
-      { type: 'divider' },
-      {
-        key: 'delete',
-        label: t('deleteImage'),
-        icon: <DeleteOutlined />,
-        danger: true,
-        onClick: () => {
-          setHistory((prev) => prev.filter((t) => t.id !== task.id))
-          if (selectedTaskId === task.id) setSelectedTaskId(null)
-        },
-      },
-    ],
-    [regenerateFromTask, copyPrompt, downloadVideo, setHistory, selectedTaskId, t],
-  )
+  // ---- 历史项右键菜单已移至历史记录页面 ----
 
   // ---- Initial load ----
   useEffect(() => {
@@ -787,17 +684,6 @@ export default function VideoView() {
     [t],
   )
 
-  // ---- 过滤器选项 ----
-  const filterOptions = useMemo(
-    () => [
-      { value: 'all', label: t('filterAll') },
-      { value: 'processing', label: t('filterProcessing') },
-      { value: 'completed', label: t('filterCompleted') },
-      { value: 'failed', label: t('filterFailed') },
-    ],
-    [t],
-  )
-
   // ---- 自动计算的帧数（只读展示）----
   const autoFrames = useMemo(() => autoCalcFrames(selectedDurationLabel).numFrames, [selectedDurationLabel])
 
@@ -808,207 +694,17 @@ export default function VideoView() {
   return (
     <div className="flex h-full overflow-hidden" style={{ backgroundColor: '#F7F8FA' }}>
       {/* ================================================================ */}
-      {/* Task List Sidebar (280~320px)                                    */}
+      {/* Workspace (两栏布局: 配置 + 预览)                                */}
       {/* ================================================================ */}
-      <div
-        className="w-[300px] flex-shrink-0 flex flex-col bg-white border-r"
-        style={{ borderColor: '#EAECF0' }}
-      >
-        {/* Header */}
-        <div className="px-4 py-3 border-b" style={{ borderColor: '#EAECF0' }}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Typography.Text strong className="!text-sm" style={{ color: '#101828' }}>
-                {t('generationRecords')}
-              </Typography.Text>
-              {history.length > 0 && (
-                <Tag className="!m-0 !text-[10px] !px-1.5 !rounded-full" color="default">
-                  {history.length}
-                </Tag>
-              )}
-            </div>
-            {history.length > 0 && (
-              <Button
-                type="text"
-                size="small"
-                className="!text-xs hover:!text-gray-700"
-                style={{ color: '#98A2B3' }}
-                onClick={() => void handleClearHistory()}
-              >
-                {t('clearHistory')}
-              </Button>
-            )}
-          </div>
-          {/* 状态过滤 */}
-          <Segmented
-            block
-            size="small"
-            value={taskFilter}
-            onChange={(val) => setTaskFilter(val as TaskFilter)}
-            options={filterOptions}
-          />
-        </div>
-
-        {/* List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {filteredHistory.map((rawTask) => {
-            const task = rawTask as VideoTask
-            const isSelected = selectedTaskId === task.id
-            return (
-              <Dropdown
-                key={String(task.id)}
-                trigger={['contextMenu']}
-                menu={{ items: getHistoryMenuItems(task) }}
-              >
-                <div
-                  onClick={() => selectTask(task)}
-                  className="group relative p-2.5 rounded-xl cursor-pointer transition-all duration-200 border"
-                  style={{
-                    borderColor: isSelected ? '#0F9F91' : 'transparent',
-                    backgroundColor: isSelected ? '#F0FDFA' : 'transparent',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) e.currentTarget.style.backgroundColor = '#F7F8FA'
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent'
-                  }}
-                >
-                  <div className="flex gap-2.5">
-                    {/* Thumbnail */}
-                    <div
-                      className="w-14 h-14 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center"
-                      style={{ backgroundColor: '#F7F8FA', border: '1px solid #EAECF0' }}
-                    >
-                      {displayUrl(task) ? (
-                        <video
-                          src={displayUrl(task)}
-                          className="w-full h-full object-cover"
-                          muted
-                        />
-                      ) : inputImagesOf(task).length > 0 ? (
-                        <AntdImage
-                          src={inputImagesOf(task)[0]}
-                          alt={task.prompt || ''}
-                          width="100%"
-                          height="100%"
-                          className="object-cover"
-                          preview={false}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      ) : ACTIVE_STATUSES.includes(task.status) ? (
-                        <div
-                          className="w-5 h-5 border-2 rounded-full animate-spin"
-                          style={{ borderColor: '#0F9F91', borderTopColor: 'transparent' }}
-                        />
-                      ) : (
-                        <VideoCameraOutlined style={{ color: '#D0D5DD', fontSize: 18 }} />
-                      )}
-                    </div>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className="text-sm truncate font-medium leading-tight"
-                        style={{ color: '#101828' }}
-                      >
-                        {task.prompt || '—'}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="text-xs" style={{ color: '#98A2B3' }}>
-                          {modelDisplayName(task.model)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-xs" style={{ color: '#98A2B3' }}>
-                          {relativeTime(task.created_at)}
-                        </span>
-                        <Tag
-                          color={statusBadgeColor(task.status)}
-                          className="!m-0 !text-[10px] !px-1.5 !rounded-full"
-                        >
-                          {statusLabel(tc, task.status)}
-                        </Tag>
-                      </div>
-
-                      {/* Progress bar for active tasks */}
-                      {ACTIVE_STATUSES.includes(task.status) && (
-                        <div className="mt-2">
-                          <div
-                            className="w-full h-1.5 rounded-full overflow-hidden"
-                            style={{ backgroundColor: '#F7F8FA' }}
-                          >
-                            <div
-                              className="h-full rounded-full transition-all duration-500"
-                              style={{
-                                width: task.progress != null ? `${Math.min(100, Math.max(0, task.progress))}%` : '100%',
-                                backgroundColor: '#0F9F91',
-                              }}
-                            />
-                          </div>
-                          {task.progress != null && (
-                            <p className="text-[10px] mt-1" style={{ color: '#98A2B3' }}>
-                              {task.progress}%
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Hover More Menu */}
-                    <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Dropdown trigger={['click']} menu={{ items: getHistoryMenuItems(task) }}>
-                        <Button
-                          type="text"
-                          size="small"
-                          className="!w-6 !h-6 !min-w-6 flex items-center justify-center"
-                          style={{ color: '#98A2B3' }}
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label="More actions"
-                        >
-                          <MoreOutlined />
-                        </Button>
-                      </Dropdown>
-                    </div>
-                  </div>
-                </div>
-              </Dropdown>
-            )
-          })}
-
-          {!history.length && historyLoading && (
-            <div className="flex flex-col items-center justify-center py-16">
-              <Skeleton active paragraph={{ rows: 2 }} />
-            </div>
-          )}
-
-          {!history.length && !historyLoading && (
-            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
-                style={{ backgroundColor: '#F7F8FA', border: '1px solid #EAECF0' }}
-              >
-                <VideoCameraOutlined style={{ fontSize: 20, color: '#D0D5DD' }} />
-              </div>
-              <p className="text-sm" style={{ color: '#667085' }}>
-                {t('noRecords')}
-              </p>
-              <p className="text-xs mt-1" style={{ color: '#98A2B3' }}>
-                {t('noRecordsHint')}
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ================================================================ */}
-      {/* Create Panel (480~520px)                                          */}
-      {/* ================================================================ */}
-      <div
-        ref={formCardRef}
-        className="w-[500px] flex-shrink-0 flex flex-col overflow-y-auto bg-white border-r"
-        style={{ borderColor: '#EAECF0' }}
-      >
+      <div className="flex-1 flex overflow-hidden">
+        {/* ================================================================ */}
+        {/* Create Panel (~47%)                                              */}
+        {/* ================================================================ */}
+        <div
+          ref={formCardRef}
+          className="flex-shrink-0 flex flex-col overflow-y-auto bg-white border-r"
+          style={{ borderColor: '#EAECF0', width: '47%' }}
+        >
         <Form
           form={form}
           layout="vertical"
@@ -1705,6 +1401,7 @@ export default function VideoView() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   )

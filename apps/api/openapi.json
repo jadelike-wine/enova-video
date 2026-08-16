@@ -557,6 +557,31 @@
         ]
       }
     },
+    "/api/v1/admin/providers/agnes/account": {
+      "post": {
+        "operationId": "ProvidersAdminController_createAgnesAccount",
+        "summary": "添加 Agnes 账号（只需 API Key，自动创建 Provider）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgnesAccountDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/providers"
+        ]
+      }
+    },
     "/api/v1/admin/providers/{providerId}/credentials": {
       "get": {
         "operationId": "CredentialsAdminController_listByProvider",
@@ -613,6 +638,72 @@
         ]
       }
     },
+    "/api/v1/admin/accounts": {
+      "get": {
+        "operationId": "CredentialsAdminController_listAccounts",
+        "summary": "列出所有账号（展平 Credential + Provider）",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 50,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": 0,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "Agnes",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "ACTIVE",
+                "COOLDOWN",
+                "ERROR",
+                "DISABLED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "providerCode",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "agnes",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/credentials"
+        ]
+      }
+    },
     "/api/v1/admin/credentials/{id}": {
       "patch": {
         "operationId": "CredentialsAdminController_update",
@@ -661,6 +752,55 @@
         ],
         "responses": {
           "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/credentials"
+        ]
+      }
+    },
+    "/api/v1/admin/credentials/test-connection": {
+      "post": {
+        "operationId": "CredentialsAdminController_testConnection",
+        "summary": "测试 API Key 连接是否有效",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestCredentialConnectionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/credentials"
+        ]
+      }
+    },
+    "/api/v1/admin/credentials/{id}/test-connection": {
+      "post": {
+        "operationId": "CredentialsAdminController_testConnectionById",
+        "summary": "测试已保存凭证的连接",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
             "description": ""
           }
         },
@@ -1971,6 +2111,31 @@
         ]
       }
     },
+    "/api/v1/admin/email/test-smtp": {
+      "post": {
+        "operationId": "EmailAdminController_testSmtpConnection",
+        "summary": "测试 SMTP 连接（不发送邮件）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestSmtpConnectionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "admin/email"
+        ]
+      }
+    },
     "/api/v1/admin/email/check": {
       "post": {
         "operationId": "EmailAdminController_checkConfig",
@@ -2288,6 +2453,30 @@
         ]
       }
     },
+    "/api/v1/payment/orders/{orderId}": {
+      "get": {
+        "operationId": "PaymentController_getOrderStatus",
+        "summary": "查询订单支付状态（前端轮询）",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "payment"
+        ]
+      }
+    },
     "/api/v1/public/login-agreement": {
       "get": {
         "operationId": "PublicLoginAgreementController_getConfig",
@@ -2331,6 +2520,21 @@
       "get": {
         "operationId": "PublicLoginAgreementController_getSiteConfig",
         "summary": "返回公开站点配置（站点名称、Logo、客服联系方式、首页内容等，无需登录）",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "public"
+        ]
+      }
+    },
+    "/api/v1/public/auth-config": {
+      "get": {
+        "operationId": "PublicLoginAgreementController_getAuthConfig",
+        "summary": "返回公开注册配置（开放注册、邮箱验证、白名单等，无需登录）",
         "parameters": [],
         "responses": {
           "200": {
@@ -2417,6 +2621,14 @@
           "agreementRevision": {
             "type": "string",
             "description": "用户同意的登录条款 revision；启用条款时必填"
+          },
+          "invitationCode": {
+            "type": "string",
+            "description": "邀请码（启用邀请码注册时必填）"
+          },
+          "promoCode": {
+            "type": "string",
+            "description": "优惠码（启用优惠码时可选）"
           }
         },
         "required": [
@@ -2596,9 +2808,54 @@
           }
         }
       },
+      "CreateAgnesAccountDto": {
+        "type": "object",
+        "properties": {
+          "apiKey": {
+            "type": "string",
+            "example": "sk-xxxxxxxxxxxxxxxx",
+            "description": "Agnes API Key"
+          },
+          "name": {
+            "type": "string",
+            "example": "Agnes 主账号",
+            "description": "账号名称"
+          },
+          "remark": {
+            "type": "string",
+            "example": "生产环境主账号",
+            "description": "账号备注"
+          },
+          "priority": {
+            "type": "number",
+            "example": 0
+          },
+          "weight": {
+            "type": "number",
+            "example": 1
+          },
+          "maxConcurrency": {
+            "type": "number",
+            "example": 1
+          }
+        },
+        "required": [
+          "apiKey"
+        ]
+      },
       "CreateCredentialDto": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string",
+            "example": "Agnes 主账号",
+            "description": "账号名称（管理员可读）"
+          },
+          "remark": {
+            "type": "string",
+            "example": "生产环境主账号",
+            "description": "账号备注"
+          },
           "secret": {
             "type": "string",
             "example": "sk-xxxx"
@@ -2626,12 +2883,23 @@
           }
         },
         "required": [
+          "name",
           "secret"
         ]
       },
       "UpdateCredentialDto": {
         "type": "object",
         "properties": {
+          "name": {
+            "type": "string",
+            "example": "Agnes 主账号",
+            "description": "账号名称"
+          },
+          "remark": {
+            "type": "string",
+            "example": "生产环境主账号",
+            "description": "账号备注"
+          },
           "secret": {
             "type": "string",
             "example": "sk-xxxx"
@@ -2661,6 +2929,26 @@
             "type": "boolean",
             "example": true,
             "description": "清除 cooldown/lastError，手动恢复"
+          }
+        }
+      },
+      "TestCredentialConnectionDto": {
+        "type": "object",
+        "properties": {
+          "secret": {
+            "type": "string",
+            "example": "sk-xxxx",
+            "description": "API Key；留空时使用已保存的凭证（需提供 credentialId）"
+          },
+          "providerCode": {
+            "type": "string",
+            "example": "agnes",
+            "description": "Provider code（留空时从 credentialId 推断）"
+          },
+          "baseUrl": {
+            "type": "string",
+            "example": "https://apihub.agnes-ai.com",
+            "description": "Base URL（留空时从 Provider 配置推断）"
           }
         }
       },
@@ -2950,6 +3238,10 @@
         }
       },
       "TestEmailDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "TestSmtpConnectionDto": {
         "type": "object",
         "properties": {}
       },

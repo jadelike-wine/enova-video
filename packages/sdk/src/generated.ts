@@ -398,6 +398,23 @@ export interface paths {
         patch: operations["ProvidersAdminController_update"];
         trace?: never;
     };
+    "/api/v1/admin/providers/agnes/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 添加 Agnes 账号（只需 API Key，自动创建 Provider） */
+        post: operations["ProvidersAdminController_createAgnesAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/providers/{providerId}/credentials": {
         parameters: {
             query?: never;
@@ -410,6 +427,23 @@ export interface paths {
         put?: never;
         /** 创建 Credential（Secret 加密入库） */
         post: operations["CredentialsAdminController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出所有账号（展平 Credential + Provider） */
+        get: operations["CredentialsAdminController_listAccounts"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -432,6 +466,40 @@ export interface paths {
         head?: never;
         /** 更新 Credential（仅传新 secret 时重新加密） */
         patch: operations["CredentialsAdminController_update"];
+        trace?: never;
+    };
+    "/api/v1/admin/credentials/test-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 测试 API Key 连接是否有效 */
+        post: operations["CredentialsAdminController_testConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/credentials/{id}/test-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 测试已保存凭证的连接 */
+        post: operations["CredentialsAdminController_testConnectionById"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/admin/users": {
@@ -1139,6 +1207,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/email/test-smtp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 测试 SMTP 连接（不发送邮件） */
+        post: operations["EmailAdminController_testSmtpConnection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/email/check": {
         parameters: {
             query?: never;
@@ -1361,6 +1446,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/payment/orders/{orderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询订单支付状态（前端轮询） */
+        get: operations["PaymentController_getOrderStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/login-agreement": {
         parameters: {
             query?: never;
@@ -1404,6 +1506,23 @@ export interface paths {
         };
         /** 返回公开站点配置（站点名称、Logo、客服联系方式、首页内容等，无需登录） */
         get: operations["PublicLoginAgreementController_getSiteConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/auth-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 返回公开注册配置（开放注册、邮箱验证、白名单等，无需登录） */
+        get: operations["PublicLoginAgreementController_getAuthConfig"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1458,6 +1577,10 @@ export interface components {
             turnstileToken?: string;
             /** @description 用户同意的登录条款 revision；启用条款时必填 */
             agreementRevision?: string;
+            /** @description 邀请码（启用邀请码注册时必填） */
+            invitationCode?: string;
+            /** @description 优惠码（启用优惠码时可选） */
+            promoCode?: string;
         };
         LoginDto: {
             /** @example user@example.com */
@@ -1519,7 +1642,40 @@ export interface components {
             status?: "ACTIVE" | "DISABLED";
             config?: Record<string, never>;
         };
+        CreateAgnesAccountDto: {
+            /**
+             * @description Agnes API Key
+             * @example sk-xxxxxxxxxxxxxxxx
+             */
+            apiKey: string;
+            /**
+             * @description 账号名称
+             * @example Agnes 主账号
+             */
+            name?: string;
+            /**
+             * @description 账号备注
+             * @example 生产环境主账号
+             */
+            remark?: string;
+            /** @example 0 */
+            priority?: number;
+            /** @example 1 */
+            weight?: number;
+            /** @example 1 */
+            maxConcurrency?: number;
+        };
         CreateCredentialDto: {
+            /**
+             * @description 账号名称（管理员可读）
+             * @example Agnes 主账号
+             */
+            name: string;
+            /**
+             * @description 账号备注
+             * @example 生产环境主账号
+             */
+            remark?: string;
             /** @example sk-xxxx */
             secret: string;
             /** @enum {string} */
@@ -1532,6 +1688,16 @@ export interface components {
             maxConcurrency?: number;
         };
         UpdateCredentialDto: {
+            /**
+             * @description 账号名称
+             * @example Agnes 主账号
+             */
+            name?: string;
+            /**
+             * @description 账号备注
+             * @example 生产环境主账号
+             */
+            remark?: string;
             /** @example sk-xxxx */
             secret?: string;
             /** @enum {string} */
@@ -1547,6 +1713,23 @@ export interface components {
              * @example true
              */
             clearBackoff?: boolean;
+        };
+        TestCredentialConnectionDto: {
+            /**
+             * @description API Key；留空时使用已保存的凭证（需提供 credentialId）
+             * @example sk-xxxx
+             */
+            secret?: string;
+            /**
+             * @description Provider code（留空时从 credentialId 推断）
+             * @example agnes
+             */
+            providerCode?: string;
+            /**
+             * @description Base URL（留空时从 Provider 配置推断）
+             * @example https://apihub.agnes-ai.com
+             */
+            baseUrl?: string;
         };
         SetUserStatusDto: {
             /** @enum {string} */
@@ -1670,6 +1853,7 @@ export interface components {
             version?: string;
         };
         TestEmailDto: Record<string, never>;
+        TestSmtpConnectionDto: Record<string, never>;
         PreviewEmailTemplateDto: Record<string, never>;
         UpdateEmailTemplateDto: Record<string, never>;
         CreatePlanOrderDto: {
@@ -2206,6 +2390,27 @@ export interface operations {
             };
         };
     };
+    ProvidersAdminController_createAgnesAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAgnesAccountDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     CredentialsAdminController_listByProvider: {
         parameters: {
             query?: never;
@@ -2248,6 +2453,29 @@ export interface operations {
             };
         };
     };
+    CredentialsAdminController_listAccounts: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+                search?: string;
+                status?: "ACTIVE" | "COOLDOWN" | "ERROR" | "DISABLED";
+                providerCode?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     CredentialsAdminController_remove: {
         parameters: {
             query?: never;
@@ -2283,6 +2511,46 @@ export interface operations {
         };
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CredentialsAdminController_testConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestCredentialConnectionDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CredentialsAdminController_testConnectionById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3163,6 +3431,27 @@ export interface operations {
             };
         };
     };
+    EmailAdminController_testSmtpConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestSmtpConnectionDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     EmailAdminController_checkConfig: {
         parameters: {
             query?: never;
@@ -3430,6 +3719,25 @@ export interface operations {
             };
         };
     };
+    PaymentController_getOrderStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                orderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     PublicLoginAgreementController_getConfig: {
         parameters: {
             query?: never;
@@ -3467,6 +3775,23 @@ export interface operations {
         };
     };
     PublicLoginAgreementController_getSiteConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PublicLoginAgreementController_getAuthConfig: {
         parameters: {
             query?: never;
             header?: never;

@@ -10,6 +10,15 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.11] — 2026-08-16
+
+### Changed
+- The language switcher moved to the top of the logged-in app shell sidebar (beside the logo/site title) so it is clearly visible, instead of the bottom of the sidebar next to the logout button.
+- Admin credential management (API key create/update/delete and add-Agnes-account) no longer requires a separate step-up password; the authenticated admin session is the gate.
+- System update release body and publish notes now auto-collapse long content in the copy box with an expand/collapse toggle.
+
+---
+
 ## [1.7.10] — 2026-08-16
 
 ### Added

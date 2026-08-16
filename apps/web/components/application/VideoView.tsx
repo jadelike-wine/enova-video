@@ -169,6 +169,21 @@ export default function VideoView() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | number | null>(null)
   const [error, setError] = useState('')
   const [currentMode, setCurrentMode] = useState('text2video')
+  // 追踪当前选中的视频时长 label（如 '4s'/'5s'/'8s'/'10s'/'18s'），
+  // 用于驱动按钮高亮。单靠 form.getFieldValue 不会触发重渲染，
+  // 必须用独立 state 才能让 UI 高亮与实际选中值保持一致。
+  const [selectedDurationLabel, setSelectedDurationLabel] = useState<string>('5s')
+
+  // 监听表单中 num_frames 变化，当用户通过 InputNumber 手动修改帧数时
+  // 自动同步时长按钮高亮（帧数恰好匹配某预设时高亮对应按钮，否则取消高亮）。
+  const watchedNumFrames = Form.useWatch<number>('num_frames', form)
+  useEffect(() => {
+    if (watchedNumFrames == null) return
+    const matched = VIDEO_FRAME_PRESETS.find((p) => p.numFrames === watchedNumFrames)
+    if (matched) {
+      setSelectedDurationLabel(matched.label)
+    }
+  }, [watchedNumFrames])
 
   const { history, historyLoading, resetHistory, setHistory } = usePaginatedTaskHistory(
     useCallback(async () => {
@@ -417,6 +432,11 @@ export default function VideoView() {
       seed: (task.seed ?? null) as number | null,
     })
     setCurrentMode(task.mode || 'text2video')
+    // 同步视频时长高亮：根据帧数匹配预设 label
+    const matchedPreset = VIDEO_FRAME_PRESETS.find(
+      (p) => p.numFrames === (task.num_frames ?? 121) && p.frameRate === (task.frame_rate ?? 24),
+    )
+    setSelectedDurationLabel(matchedPreset?.label ?? '5s')
     setInputImages([...inputImagesOf(task)])
     setError('')
     formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -672,8 +692,9 @@ export default function VideoView() {
                         <Button
                           key={p.label}
                           size="small"
-                          type={form.getFieldValue('num_frames') === p.numFrames ? 'primary' : 'default'}
+                          type={selectedDurationLabel === p.label ? 'primary' : 'default'}
                           onClick={() => {
+                            setSelectedDurationLabel(p.label)
                             form.setFieldsValue({ num_frames: p.numFrames, frame_rate: p.frameRate })
                           }}
                         >

@@ -5,3 +5,4 @@ export * from './entitlement';
 export * from './rbac';
 export * from './analytics';
 export * from './coupon';
+export * from './pricing-engine';

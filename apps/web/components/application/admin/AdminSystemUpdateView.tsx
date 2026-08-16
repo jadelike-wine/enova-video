@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, Skeleton, Tag, message } from 'antd'
+import { DownOutlined, UpOutlined } from '@ant-design/icons'
 import { systemUpdateApi, type RollbackVersion, type SystemUpdateInfo, type SystemUpdateOperation } from '@/lib/api'
 import { useDialog } from '../DialogProvider'
 import { useSession } from '@/lib/auth'
@@ -79,6 +80,8 @@ export default function AdminSystemUpdateView() {
   const reloadTriggeredRef = useRef(false)
   // 刷新后展示的成功提示内容（release body）
   const [releaseBody, setReleaseBody] = useState<string>('')
+  // 发布信息区域折叠状态：默认收起
+  const [releaseInfoExpanded, setReleaseInfoExpanded] = useState(false)
 
   // ------------------------------------------------------------------
   // 统一成功通知：根据 action 选择正确动词，避免回滚被误标为「更新」
@@ -420,32 +423,51 @@ export default function AdminSystemUpdateView() {
             )}
 
             <Card
-              title="发布信息"
+              title={
+                <div
+                  className="flex items-center gap-2 cursor-pointer select-none"
+                  onClick={() => setReleaseInfoExpanded((v) => !v)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setReleaseInfoExpanded((v) => !v)
+                    }
+                  }}
+                >
+                  <span>发布信息</span>
+                  {releaseInfoExpanded
+                    ? <UpOutlined className="text-gray-400 text-xs" />
+                    : <DownOutlined className="text-gray-400 text-xs" />}
+                </div>
+              }
               extra={
                 <Button type="primary" disabled={!info.enabled || working || !info.has_update} onClick={() => void runUpdate()}>
                   {working ? '执行中…' : '更新到最新版本'}
                 </Button>
               }
             >
-              {info.release_info ? (
-                <>
-                  <p className="text-gray-800">{info.release_info.name || info.latest_version}</p>
-                  <p className="text-xs text-gray-400 mt-1">发布时间：{dateText(info.release_info.published_at)}</p>
-                  <a className="text-xs text-cyan-600 hover:text-cyan-700 inline-block mt-3" href={info.release_info.html_url} target="_blank" rel="noreferrer">查看 GitHub Release ↗</a>
-                  {/* 展示 release body 并提供一键复制 */}
-                  {info.release_info.body && (
-                    <div className="mt-4">
-                      <CopyBox
-                        label="发布说明"
-                        description="点击右侧按钮一键复制发布说明内容"
-                        value={info.release_info.body}
-                        fullyCollapsible
-                        onCopied={() => message.success('已复制发布说明')}
-                      />
-                    </div>
-                  )}
-                </>
-              ) : <p className="text-gray-400 text-sm">暂无发布说明</p>}
+              {releaseInfoExpanded && (
+                info.release_info ? (
+                  <>
+                    <p className="text-gray-800">{info.release_info.name || info.latest_version}</p>
+                    <p className="text-xs text-gray-400 mt-1">发布时间：{dateText(info.release_info.published_at)}</p>
+                    <a className="text-xs text-cyan-600 hover:text-cyan-700 inline-block mt-3" href={info.release_info.html_url} target="_blank" rel="noreferrer">查看 GitHub Release ↗</a>
+                    {/* 展示 release body 并提供一键复制 */}
+                    {info.release_info.body && (
+                      <div className="mt-4">
+                        <CopyBox
+                          label="发布说明"
+                          description="点击右侧按钮一键复制发布说明内容"
+                          value={info.release_info.body}
+                          onCopied={() => message.success('已复制发布说明')}
+                        />
+                      </div>
+                    )}
+                  </>
+                ) : <p className="text-gray-400 text-sm">暂无发布说明</p>
+              )}
             </Card>
 
             {operation && (

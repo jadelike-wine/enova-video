@@ -10,6 +10,19 @@ Git history is the ultimate source of truth; this file aggregates user-, develop
 
 ---
 
+## [1.7.15] — 2026-08-16
+
+### Added
+- Dynamic pricing engine (`packages/billing`): pure calculation functions for image (base × resolution × quality) and video (base + duration×per-second, × resolution × quality × fps) pricing, with rule extraction/normalization and an audit breakdown.
+- Pricing quotes now persist a `calculation_snapshot` (jsonb) recording each step of the dynamic calculation.
+- Admin pricing page gains a dynamic pricing editor (base credits, per-second duration price, and resolution/quality/fps multiplier tables) with rules summary.
+
+### Changed
+- Quote and preview paths now prefer dynamic pricing rules over fixed credits; publishing accepts optional `dynamicRules` (embedded into `pricingJson.rules`), with credits defaulting to 0 for dynamic mode.
+- Removed the step-up password gate from publishing a pricing version.
+
+---
+
 ## [1.7.14] — 2026-08-16
 
 ### Added

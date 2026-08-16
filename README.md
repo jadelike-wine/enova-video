@@ -48,7 +48,7 @@
 
 | 类型 | 模型 |
 |------|------|
-| 文本 | `agnes-2.0-flash`、`agnes-1.5-flash`（已弃用） |
+| 文本 | `agnes-2.0-flash` |
 | 图片 | `agnes-image-2.0-flash`、`agnes-image-2.1-flash` |
 | 视频 | `agnes-video-v2.0` |
 

@@ -113,8 +113,9 @@ export class ProvidersAdminController {
 
   /**
    * 简化的添加 Agnes 账号接口。
-   * 第一版只支持 Agnes：管理员只需输入 API Key，后端自动确保 Provider 存在并创建凭证。
+   * 管理员只需输入 API Key，后端自动确保 Provider 存在并创建凭证。
    * Provider / Base URL / Code 等信息固定，不需要管理员手动填写。
+   * 支持 name/remark/调度参数。
    */
   @Post('agnes/account')
   @RequirePermission(PERMISSIONS.CREDENTIALS_ROTATE)
@@ -127,9 +128,14 @@ export class ProvidersAdminController {
     // 1. 确保 agnes Provider 存在（不存在则自动创建）。
     const provider = await this.service.ensureAgnesProvider();
 
-    // 2. 创建凭证（API Key 加密入库）。
+    // 2. 创建凭证（API Key 加密入库，支持 name/remark/调度参数）。
     const credential = await this.credentialsService.create(provider.id, {
       secret: dto.apiKey,
+      name: dto.name,
+      remark: dto.remark,
+      priority: dto.priority,
+      weight: dto.weight,
+      maxConcurrency: dto.maxConcurrency,
     });
 
     // 3. 审计。

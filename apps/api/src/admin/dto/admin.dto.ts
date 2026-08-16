@@ -40,6 +40,24 @@ export class ListQueryDto {
   offset?: number;
 }
 
+/** 账号列表查询 DTO（展平查询）。 */
+export class AccountListQueryDto extends ListQueryDto {
+  @ApiPropertyOptional({ example: 'Agnes' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ enum: CREDENTIAL_STATUSES })
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional({ example: 'agnes' })
+  @IsOptional()
+  @IsString()
+  providerCode?: string;
+}
+
 export class CreateProviderDto {
   @ApiProperty({ example: 'agnes' })
   @IsString()
@@ -92,6 +110,18 @@ export class UpdateProviderDto {
 }
 
 export class CreateCredentialDto {
+  @ApiProperty({ example: 'Agnes 主账号', description: '账号名称（管理员可读）' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  name?: string;
+
+  @ApiPropertyOptional({ example: '生产环境主账号', description: '账号备注' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  remark?: string;
+
   @ApiProperty({ example: 'sk-xxxx' })
   @IsString()
   @MaxLength(2000)
@@ -122,6 +152,18 @@ export class CreateCredentialDto {
 }
 
 export class UpdateCredentialDto {
+  @ApiPropertyOptional({ example: 'Agnes 主账号', description: '账号名称' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  name?: string;
+
+  @ApiPropertyOptional({ example: '生产环境主账号', description: '账号备注' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  remark?: string;
+
   @ApiPropertyOptional({ example: 'sk-xxxx' })
   @IsOptional()
   @IsString()
@@ -166,6 +208,60 @@ export class CreateAgnesAccountDto {
   @MinLength(1)
   @MaxLength(2000)
   apiKey!: string;
+
+  @ApiPropertyOptional({ example: 'Agnes 主账号', description: '账号名称' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  name?: string;
+
+  @ApiPropertyOptional({ example: '生产环境主账号', description: '账号备注' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  remark?: string;
+
+  @ApiPropertyOptional({ example: 0 })
+  @IsOptional()
+  @IsInt()
+  priority?: number;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  weight?: number;
+
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  maxConcurrency?: number;
+}
+
+/**
+ * 测试连接 DTO。可用于保存前或保存后测试。
+ * providerCode + baseUrl 用于确定目标；secret 可选（留空时使用已保存的凭证）。
+ */
+export class TestCredentialConnectionDto {
+  @ApiPropertyOptional({ example: 'sk-xxxx', description: 'API Key；留空时使用已保存的凭证（需提供 credentialId）' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  secret?: string;
+
+  @ApiPropertyOptional({ example: 'agnes', description: 'Provider code（留空时从 credentialId 推断）' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  providerCode?: string;
+
+  @ApiPropertyOptional({ example: 'https://apihub.agnes-ai.com', description: 'Base URL（留空时从 Provider 配置推断）' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  baseUrl?: string;
 }
 
 export class SetUserStatusDto {

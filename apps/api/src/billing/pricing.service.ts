@@ -8,6 +8,14 @@ import {
   type Database,
 } from '@enova/db';
 import { DATABASE } from '../database/database.module.js';
+import {
+  calculateImagePrice,
+  calculateVideoPrice,
+  extractDynamicRules,
+  extractPricingDimensions,
+  type CalculationBreakdown,
+  type DynamicPricingRules,
+} from '@enova/billing';
 
 export interface PricingQuote {
   /** PriceQuote 行 ID（用于关联 generation job）。 */
@@ -25,12 +33,12 @@ export interface PriceQuoteInput {
   type: GenerationType;
   provider: string;
   model: string;
-  /** 定价维度（duration/resolution/quality 等），用于未来精细化定价。 */
+  /** 定价维度（duration/resolution/quality/width/height/fps/numFrames/frameRate 等）。 */
   dimensions?: Record<string, unknown>;
 }
 
 /**
- * 定价服务（P0-3）。
+ * 定价服务（P0-3 + 动态定价升级）。
  *
  * 核心不变量：
  * - PricingVersion 发布后不可变（status=PUBLISHED 后禁止修改）。
@@ -38,8 +46,11 @@ export interface PriceQuoteInput {
  * - GenerationJob 关联 PriceQuote，保证历史价格永远可追溯。
  * - 管理员修改价格 → 发布新版本，不修改旧版本。
  *
- * 向后兼容：如果某 type/provider/model 没有 PUBLISHED 的 pricing_version，
- * 退化到从 pricing_rules 读取（兼容旧数据），并自动创建一个 PUBLISHED version。
+ * 动态定价：
+ * - 规则优先级：dynamic pricing rules > fixed credits pricing > no pricing error。
+ * - 动态规则存储在 pricing_versions.pricing_json.rules 中。
+ * - 如果存在动态规则，按 input 参数计算 credits；否则使用固定 version.credits。
+ * - 计算过程保存到 price_quotes.calculation_snapshot 供审计。
  */
 @Injectable()
 export class PricingService {
@@ -49,29 +60,48 @@ export class PricingService {
    * 报价：解析当前生效的 PricingVersion，创建不可变 PriceQuote。
    * 只读路径——绝不隐式创建 / publish PricingVersion。
    * 若缺少 PUBLISHED version，必须由管理员显式发布（quote 抛错，不自动创建）。
+   *
+   * 动态定价：如果 version 中包含动态规则，则按 input.dimensions 计算 credits。
    */
   async quote(input: PriceQuoteInput): Promise<PricingQuote> {
     const version = await this.resolveActiveVersion(input.type, input.provider, input.model);
     const quoteId = crypto.randomUUID();
 
-    const pricingJson = (version.pricingJson ?? {}) as { providerCostMicrousd?: number; estimatedRevenueCents?: number };
+    const pricingJson = (version.pricingJson ?? {}) as {
+      providerCostMicrousd?: number;
+      estimatedRevenueCents?: number;
+      rules?: unknown;
+    };
     const estimatedCostMicrousd = typeof pricingJson.providerCostMicrousd === 'number' ? pricingJson.providerCostMicrousd : 0;
     const estimatedRevenueCents = typeof pricingJson.estimatedRevenueCents === 'number' ? pricingJson.estimatedRevenueCents : 0;
+
+    // ---- 动态定价计算 ----
+    // 规则优先级：dynamic pricing rules > fixed credits pricing
+    const dynamicRules = extractDynamicRules(version.pricingJson, version.dimensionsJson);
+    let credits = version.credits;
+    let calculationSnapshot: Record<string, unknown> | undefined;
+
+    if (dynamicRules) {
+      const result = this.calculateDynamicPrice(input.type, dynamicRules, input.dimensions ?? {});
+      credits = result.credits;
+      calculationSnapshot = result.breakdown as unknown as Record<string, unknown>;
+    }
 
     await this.db.insert(priceQuotes).values({
       id: quoteId,
       pricingVersionId: version.id,
       inputSnapshot: { ...input.dimensions, type: input.type, provider: input.provider, model: input.model },
-      estimatedCredits: version.credits,
+      estimatedCredits: credits,
       estimatedRevenueCents,
       estimatedCostMicrousd,
+      calculationSnapshot,
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h expiry
     });
 
     return {
       quoteId,
       pricingVersionId: version.id,
-      credits: version.credits,
+      credits,
       estimatedCostMicrousd,
       estimatedRevenueCents,
     };
@@ -245,6 +275,7 @@ export class PricingService {
     estimatedCostMicrousd: number;
     estimatedRevenueCents: number;
     pricingVersionId: string | null;
+    breakdown?: CalculationBreakdown;
   }> {
     const published = await this.db
       .select()
@@ -263,10 +294,26 @@ export class PricingService {
     if (published.length > 0) {
       const v = published[0];
       const pj = (v.pricingJson ?? {}) as { providerCostMicrousd?: number; estimatedRevenueCents?: number };
+      const estimatedCostMicrousd = typeof pj.providerCostMicrousd === 'number' ? pj.providerCostMicrousd : 0;
+      const estimatedRevenueCents = typeof pj.estimatedRevenueCents === 'number' ? pj.estimatedRevenueCents : 0;
+
+      // 动态定价计算
+      const dynamicRules = extractDynamicRules(v.pricingJson, v.dimensionsJson);
+      if (dynamicRules) {
+        const result = this.calculateDynamicPrice(input.type, dynamicRules, input.dimensions ?? {});
+        return {
+          credits: result.credits,
+          estimatedCostMicrousd,
+          estimatedRevenueCents,
+          pricingVersionId: v.id,
+          breakdown: result.breakdown,
+        };
+      }
+
       return {
         credits: v.credits,
-        estimatedCostMicrousd: typeof pj.providerCostMicrousd === 'number' ? pj.providerCostMicrousd : 0,
-        estimatedRevenueCents: typeof pj.estimatedRevenueCents === 'number' ? pj.estimatedRevenueCents : 0,
+        estimatedCostMicrousd,
+        estimatedRevenueCents,
         pricingVersionId: v.id,
       };
     }
@@ -289,11 +336,53 @@ export class PricingService {
       throw domainError(ERROR_CODES.PRICING_NOT_FOUND, `No pricing for ${input.type}/${input.provider}/${input.model}`, 422);
     }
     const pj = (rule.pricingJson ?? {}) as { providerCostMicrousd?: number; estimatedRevenueCents?: number };
+
+    // 也检查 rule 是否有动态规则
+    const dynamicRules = extractDynamicRules(rule.pricingJson, null);
+    if (dynamicRules) {
+      const result = this.calculateDynamicPrice(input.type, dynamicRules, input.dimensions ?? {});
+      return {
+        credits: result.credits,
+        estimatedCostMicrousd: typeof pj.providerCostMicrousd === 'number' ? pj.providerCostMicrousd : 0,
+        estimatedRevenueCents: typeof pj.estimatedRevenueCents === 'number' ? pj.estimatedRevenueCents : 0,
+        pricingVersionId: null,
+        breakdown: result.breakdown,
+      };
+    }
+
     return {
       credits: rule.credits,
       estimatedCostMicrousd: typeof pj.providerCostMicrousd === 'number' ? pj.providerCostMicrousd : 0,
       estimatedRevenueCents: typeof pj.estimatedRevenueCents === 'number' ? pj.estimatedRevenueCents : 0,
       pricingVersionId: null,
+    };
+  }
+
+  // ---- 内部：动态定价计算 ----
+
+  /**
+   * 根据 GenerationType 分派到对应的定价计算函数。
+   * 如果 type 不支持动态定价，回退到固定 credits。
+   */
+  private calculateDynamicPrice(
+    type: GenerationType,
+    rules: DynamicPricingRules,
+    dimensions: Record<string, unknown>,
+  ): { credits: number; breakdown: CalculationBreakdown } {
+    if (type === 'IMAGE') {
+      const input = extractPricingDimensions(type, dimensions) as Parameters<typeof calculateImagePrice>[1];
+      return calculateImagePrice(rules, input);
+    }
+
+    if (type === 'VIDEO') {
+      const input = extractPricingDimensions(type, dimensions) as Parameters<typeof calculateVideoPrice>[1];
+      return calculateVideoPrice(rules, input);
+    }
+
+    // 不支持动态定价的类型：回退到 baseCredits
+    return {
+      credits: rules.baseCredits,
+      breakdown: { baseCredits: rules.baseCredits },
     };
   }
 }

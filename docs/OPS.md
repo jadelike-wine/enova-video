@@ -62,8 +62,10 @@ ls -t .deploy/logs/ | head      # 最近部署/回滚日志
 # 磁盘占用
 df -h /
 
-# 服务健康（compose 项目）
-cd /home/ubuntu/enova-video && docker compose -f docker-compose.prod.yml ps
+# 服务健康（compose 项目；Compose 插值必须先加载实际运行版本）
+cd /home/ubuntu/enova-video
+export APP_VERSION="$(grep -E '^APP_VERSION=' .deploy/version.env | head -n1 | cut -d= -f2- | tr -d '[:space:]')"
+docker compose -f docker-compose.prod.yml ps
 ```
 
 ## 5. 清理

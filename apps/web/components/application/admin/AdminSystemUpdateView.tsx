@@ -439,7 +439,7 @@ export default function AdminSystemUpdateView() {
                         label="发布说明"
                         description="点击右侧按钮一键复制发布说明内容"
                         value={info.release_info.body}
-                        defaultCollapsed
+                        fullyCollapsible
                         onCopied={() => message.success('已复制发布说明')}
                       />
                     </div>

@@ -23,6 +23,13 @@ interface CopyBoxProps {
   collapsedLines?: number
   /** 是否默认折叠（默认 false）。开启后无论内容长短都默认折叠，仅显示标题/描述。 */
   defaultCollapsed?: boolean
+  /**
+   * 完全折叠模式（默认 false）。
+   * 开启后默认只显示标题行（含展开图标），
+   * 描述、内容、复制按钮等全部隐藏，
+   * 点击标题行或展开图标后展开显示完整内容。
+   */
+  fullyCollapsible?: boolean
 }
 
 /** 折叠阈值：内容行数超过此值时启用折叠 */
@@ -38,6 +45,8 @@ const DEFAULT_COLLAPSED_LINES = 6
  * 内容默认折叠，点击底部按钮可展开/收起。
  * 当 `defaultCollapsed` 为 true 时，无论内容长短都默认折叠，仅显示标题/描述，
  * 点击底部按钮展开。
+ * 当 `fullyCollapsible` 为 true 时，默认只显示标题行（含展开图标），
+ * 描述、内容、复制按钮等全部隐藏，点击标题行或展开图标后展开完整内容。
  */
 export function CopyBox({
   value,
@@ -49,9 +58,11 @@ export function CopyBox({
   collapsible = false,
   collapsedLines = DEFAULT_COLLAPSED_LINES,
   defaultCollapsed = false,
+  fullyCollapsible = false,
 }: CopyBoxProps) {
   const [copied, setCopied] = useState(false)
-  const [expanded, setExpanded] = useState(false)
+  // fullyCollapsible 模式下默认收起；其他模式默认展开
+  const [expanded, setExpanded] = useState(!fullyCollapsible)
 
   const lineCount = useMemo(() => {
     if (!value) return 0
@@ -59,6 +70,8 @@ export function CopyBox({
   }, [value])
 
   const canCollapse = defaultCollapsed || (collapsible && lineCount > collapsedLines)
+  // 完全折叠模式下，收起时隐藏所有内容区域
+  const fullyHidden = fullyCollapsible && !expanded
 
   const handleCopy = async () => {
     if (!value?.trim()) return
@@ -92,47 +105,86 @@ export function CopyBox({
 
   return (
     <div className={`rounded-xl border border-gray-200 bg-gray-50 overflow-hidden ${className}`}>
-      {(label || description) && (
-        <div className="px-4 pt-3 pb-2 border-b border-gray-100">
-          {label && <p className="text-sm font-medium text-gray-900">{label}</p>}
-          {description && <div className="text-xs text-gray-500 mt-1">{description}</div>}
-        </div>
-      )}
-      <div className="flex items-start gap-2 p-4">
-        <pre
-          className={`flex-1 overflow-x-auto text-sm text-gray-700 whitespace-pre-wrap break-all ${
-            mono ? 'font-mono' : ''
-          } ${canCollapse && !expanded ? 'max-h-36 overflow-hidden' : ''}`}
-          style={
-            canCollapse && !expanded
-              ? { maxHeight: `${collapsedLines * 1.5}rem` }
-              : undefined
-          }
+      {/* 完全折叠模式：标题行可点击，右侧显示展开/收起图标 */}
+      {fullyCollapsible ? (
+        <div
+          className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-gray-100 transition-colors"
+          onClick={() => setExpanded((v) => !v)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setExpanded((v) => !v)
+            }
+          }}
         >
-          {value || '（无内容）'}
-        </pre>
-        <Tooltip title={copied ? '已复制' : '一键复制'}>
-          <Button
-            type="text"
-            size="small"
-            icon={copied ? <CheckOutlined style={{ color: '#10b981' }} /> : <CopyOutlined />}
-            onClick={() => void handleCopy()}
-            className="flex-shrink-0 mt-0.5"
-          />
-        </Tooltip>
-      </div>
-      {canCollapse && (
-        <div className="border-t border-gray-100 px-4 py-2">
-          <Button
-            type="text"
-            size="small"
-            onClick={() => setExpanded((v) => !v)}
-            icon={expanded ? <UpOutlined /> : <DownOutlined />}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            {expanded ? '收起' : `展开全部（${lineCount} 行）`}
-          </Button>
+          <p className="text-sm font-medium text-gray-900">
+            {label || '内容'}
+          </p>
+          <Tooltip title={expanded ? '收起' : '展开'}>
+            <Button
+              type="text"
+              size="small"
+              icon={expanded ? <UpOutlined /> : <DownOutlined />}
+              className="text-gray-500 hover:text-gray-700"
+            />
+          </Tooltip>
         </div>
+      ) : (
+        (label || description) && (
+          <div className="px-4 pt-3 pb-2 border-b border-gray-100">
+            {label && <p className="text-sm font-medium text-gray-900">{label}</p>}
+            {description && <div className="text-xs text-gray-500 mt-1">{description}</div>}
+          </div>
+        )
+      )}
+      {/* 完全折叠模式下，收起时隐藏所有内容；展开时显示描述 + 内容 + 复制按钮 */}
+      {!fullyHidden && (
+        <>
+          {/* 完全折叠模式展开后才显示描述（如果有） */}
+          {fullyCollapsible && description && (
+            <div className="px-4 pt-3 pb-2 border-b border-gray-100">
+              <div className="text-xs text-gray-500 mt-1">{description}</div>
+            </div>
+          )}
+          <div className="flex items-start gap-2 p-4">
+            <pre
+              className={`flex-1 overflow-x-auto text-sm text-gray-700 whitespace-pre-wrap break-all ${
+                mono ? 'font-mono' : ''
+              } ${canCollapse && !expanded ? 'max-h-36 overflow-hidden' : ''}`}
+              style={
+                canCollapse && !expanded
+                  ? { maxHeight: `${collapsedLines * 1.5}rem` }
+                  : undefined
+              }
+            >
+              {value || '（无内容）'}
+            </pre>
+            <Tooltip title={copied ? '已复制' : '一键复制'}>
+              <Button
+                type="text"
+                size="small"
+                icon={copied ? <CheckOutlined style={{ color: '#10b981' }} /> : <CopyOutlined />}
+                onClick={() => void handleCopy()}
+                className="flex-shrink-0 mt-0.5"
+              />
+            </Tooltip>
+          </div>
+          {canCollapse && (
+            <div className="border-t border-gray-100 px-4 py-2">
+              <Button
+                type="text"
+                size="small"
+                onClick={() => setExpanded((v) => !v)}
+                icon={expanded ? <UpOutlined /> : <DownOutlined />}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                {expanded ? '收起' : `展开全部（${lineCount} 行）`}
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

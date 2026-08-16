@@ -1,8 +1,38 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Alert, Button, Image as AntdImage, Form, Input, InputNumber, Select, Tag } from 'antd'
+import {
+  Alert,
+  Button,
+  Collapse,
+  Divider,
+  Dropdown,
+  Form,
+  Input,
+  InputNumber,
+  Image as AntdImage,
+  Segmented,
+  Select,
+  Skeleton,
+  Tag,
+  Tooltip,
+  Typography,
+  Upload,
+} from 'antd'
+import type { MenuProps } from 'antd'
+import {
+  CopyOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  ExclamationCircleOutlined,
+  InboxOutlined,
+  MoreOutlined,
+  PlayCircleOutlined,
+  ReloadOutlined,
+  SwapOutlined,
+  VideoCameraOutlined,
+} from '@ant-design/icons'
 import { useTranslations } from 'next-intl'
 import {
   generationApi,
@@ -13,18 +43,44 @@ import {
 import { useDialog } from './DialogProvider'
 import { useApiKeyGuard } from './useApiKeyGuard'
 import { usePaginatedTaskHistory, type TaskItem } from './usePaginatedTaskHistory'
+import { useSession } from '../../lib/auth'
 import { formatErrorMessage } from '../../lib/errorMessage'
 import {
   VIDEO_MODELS,
-  VIDEO_MODES,
   VIDEO_FRAME_PRESETS,
   VIDEO_RESOLUTION_PRESETS,
   DEFAULT_VIDEO_MODEL,
   modelDisplayName,
 } from '../../lib/models'
 
+// ---------------------------------------------------------------------------
+// 常量
+// ---------------------------------------------------------------------------
+
 /** 新架构统一状态：PENDING/QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELED */
 const ACTIVE_STATUSES = ['PENDING', 'QUEUED', 'RUNNING']
+
+/** 上传图片允许的格式 */
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+
+/** 单张上传图片大小上限（10 MB） */
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+
+/** Prompt 最大字符数 */
+const MAX_PROMPT_LENGTH = 2000
+
+/** 画面比例选项 */
+const ASPECT_RATIOS = [
+  { id: '16:9', label: '16:9', icon: 'horizontal' },
+  { id: '9:16', label: '9:16', icon: 'vertical' },
+  { id: '1:1', label: '1:1', icon: 'square' },
+] as const
+
+// ---------------------------------------------------------------------------
+// 类型
+// ---------------------------------------------------------------------------
+
+type GenerationMode = 'text2video' | 'img2video'
 
 interface VideoTask extends TaskItem {
   status: string
@@ -55,6 +111,18 @@ interface VideoFormValues {
   seed: number | null
 }
 
+interface InputImage {
+  file?: File
+  preview: string
+}
+
+type PreviewState = 'empty' | 'generating' | 'success' | 'error'
+type TaskFilter = 'all' | 'processing' | 'completed' | 'failed'
+
+// ---------------------------------------------------------------------------
+// 辅助函数
+// ---------------------------------------------------------------------------
+
 function statusLabel(t: (k: string) => string, status: string): string {
   const map: Record<string, string> = {
     PENDING: t('status.PENDING'),
@@ -81,18 +149,6 @@ function statusBadgeColor(status: string): 'processing' | 'success' | 'error' | 
     default:
       return 'default'
   }
-}
-
-function modeLabel(mode?: string): string {
-  return VIDEO_MODES.find((m) => m.id === mode)?.name || mode || '—'
-}
-
-function modeTagColor(mode?: string): string {
-  const map: Record<string, string> = {
-    text2video: 'cyan',
-    img2video: 'purple',
-  }
-  return map[mode || ''] || 'default'
 }
 
 /** 将后端 Generation 归一化为视图所需的 VideoTask。 */
@@ -134,21 +190,21 @@ function formatResolution(task: VideoTask): string {
 }
 
 function formatDuration(task: VideoTask): string {
-  // 与 packages/contracts/src/video.ts 中的 resolveVideoDuration 保持同一语义：
-  // seconds = numFrames / frameRate（Agnes 协议定义）。
   if (!task?.num_frames || !task?.frame_rate) return '—'
   return `${(task.num_frames / task.frame_rate).toFixed(1)}s`
 }
 
-function formatTaskMeta(task: VideoTask): string {
-  const parts = [
-    formatResolution(task),
-    formatDuration(task),
-    task.num_frames != null ? `${task.num_frames}帧` : null,
-    task.frame_rate != null ? `${task.frame_rate}fps` : null,
-    task.seed != null && task.seed !== '' ? `seed:${task.seed}` : null,
-  ].filter(Boolean)
-  return parts.join(' · ')
+
+/** 格式化相对时间 */
+function relativeTime(dateStr?: string): string {
+  if (!dateStr) return ''
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diff = Math.floor((now - then) / 1000)
+  if (diff < 60) return `${diff}s`
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
+  return `${Math.floor(diff / 86400)}d`
 }
 
 function getInitialResolutionId(): string {
@@ -156,26 +212,74 @@ function getInitialResolutionId(): string {
   return match?.id || '720p-h'
 }
 
+/** 根据比例获取分辨率预设 id */
+function ratioToResolutionId(ratio: string): string {
+  if (ratio === '9:16') return '720p-v'
+  if (ratio === '1:1') return '720p-h'
+  return '720p-h'
+}
+
+/** 判断 Preview 状态 */
+function getPreviewState(task: VideoTask | null, generating: boolean): PreviewState {
+  if (!task) return 'empty'
+  if (ACTIVE_STATUSES.includes(task.status) || generating) return 'generating'
+  if (task.status === 'FAILED' || task.status === 'CANCELED') return 'error'
+  if (displayUrl(task)) return 'success'
+  return 'empty'
+}
+
+/** 根据 numFrames + frameRate 自动计算 frames */
+function autoCalcFrames(durationLabel: string): { numFrames: number; frameRate: number } {
+  const preset = VIDEO_FRAME_PRESETS.find((p) => p.label === durationLabel)
+  return preset ?? { numFrames: 121, frameRate: 24 }
+}
+
+// ---------------------------------------------------------------------------
+// 比例图标组件
+// ---------------------------------------------------------------------------
+
+function RatioIcon({ type }: { type: 'horizontal' | 'vertical' | 'square' }) {
+  const styles: Record<string, React.CSSProperties> = {
+    horizontal: { width: 20, height: 12 },
+    vertical: { width: 12, height: 20 },
+    square: { width: 16, height: 16 },
+  }
+  return (
+    <span
+      style={{
+        ...styles[type],
+        display: 'inline-block',
+        border: '2px solid currentColor',
+        borderRadius: 3,
+      }}
+    />
+  )
+}
+
+// ===========================================================================
+// 主组件
+// ===========================================================================
+
 export default function VideoView() {
   const t = useTranslations('video')
   const tc = useTranslations()
-  const { alert } = useDialog()
+  const { alert, confirm } = useDialog()
   const { hasActiveKey, keyStatusLoading, refreshKeyStatus, requireApiKey } = useApiKeyGuard()
+  const { balance } = useSession()
 
   const [form] = Form.useForm<VideoFormValues>()
-  const [inputImages, setInputImages] = useState<string[]>([])
-  const [uploading, setUploading] = useState(false)
+  const [inputImages, setInputImages] = useState<InputImage[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [selectedTaskId, setSelectedTaskId] = useState<string | number | null>(null)
   const [error, setError] = useState('')
-  const [currentMode, setCurrentMode] = useState('text2video')
-  // 追踪当前选中的视频时长 label（如 '4s'/'5s'/'8s'/'10s'/'18s'），
-  // 用于驱动按钮高亮。单靠 form.getFieldValue 不会触发重渲染，
-  // 必须用独立 state 才能让 UI 高亮与实际选中值保持一致。
+  const [currentMode, setCurrentMode] = useState<GenerationMode>('text2video')
+  const [promptValue, setPromptValue] = useState('')
   const [selectedDurationLabel, setSelectedDurationLabel] = useState<string>('5s')
+  const [selectedRatio, setSelectedRatio] = useState<string>('16:9')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
 
-  // 监听表单中 num_frames 变化，当用户通过 InputNumber 手动修改帧数时
-  // 自动同步时长按钮高亮（帧数恰好匹配某预设时高亮对应按钮，否则取消高亮）。
+  // 监听表单中 num_frames 变化
   const watchedNumFrames = Form.useWatch<number>('num_frames', form)
   useEffect(() => {
     if (watchedNumFrames == null) return
@@ -213,12 +317,23 @@ export default function VideoView() {
   const selectedTask: VideoTask | null =
     (history.find((t) => t.id === selectedTaskId) as VideoTask | undefined) || null
 
-  const activeTasks = history.filter((t) => ACTIVE_STATUSES.includes(t.status))
+  const previewState = useMemo(
+    () => getPreviewState(selectedTask, submitting),
+    [selectedTask, submitting],
+  )
 
-  const resolutionGroups = [
-    { label: t('landscape'), items: VIDEO_RESOLUTION_PRESETS.filter((p) => p.group === 'landscape') },
-    { label: t('portrait'), items: VIDEO_RESOLUTION_PRESETS.filter((p) => p.group === 'portrait') },
-  ].filter((g) => g.items.length)
+  const revokePreview = useCallback((item: InputImage) => {
+    if (item?.preview?.startsWith('blob:')) URL.revokeObjectURL(item.preview)
+  }, [])
+
+  // ---- 任务过滤 ----
+  const filteredHistory = useMemo(() => {
+    if (taskFilter === 'all') return history
+    if (taskFilter === 'processing') return history.filter((t) => ACTIVE_STATUSES.includes(t.status))
+    if (taskFilter === 'completed') return history.filter((t) => t.status === 'SUCCEEDED')
+    if (taskFilter === 'failed') return history.filter((t) => t.status === 'FAILED' || t.status === 'CANCELED')
+    return history
+  }, [history, taskFilter])
 
   const taskErrorMessage = useCallback(
     (task: VideoTask) =>
@@ -294,155 +409,347 @@ export default function VideoView() {
     schedulePoll()
   }, [stopPolling, schedulePoll])
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    if (!files.length) return
-    setUploading(true)
-    try {
-      for (const file of files) {
-        const res = await uploadApi.upload(file)
-        setInputImages((prev) => [...prev, res.url])
+  // ---- 文件校验 ----
+  const validateFile = useCallback(
+    (file: File): string | null => {
+      if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+        return t('uploadHint')
       }
-    } catch (err) {
-      setError((err as Error).message)
-      await alert({ title: t('uploadFailed'), message: (err as Error).message, confirmVariant: 'danger' })
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
-  }
+      if (file.size > MAX_UPLOAD_SIZE) {
+        return `${file.name} > 10MB`
+      }
+      return null
+    },
+    [t],
+  )
 
-  const removeImage = (i: number) => {
-    setInputImages((prev) => prev.filter((_, idx) => idx !== i))
-  }
+  // ---- 单图上传处理（图生视频模式仅支持单图）----
+  const handleSingleUpload = useCallback(
+    (file: File) => {
+      const err = validateFile(file)
+      if (err) {
+        setError(err)
+        return false
+      }
+      setError('')
+      if (inputImages[0]) revokePreview(inputImages[0])
+      setInputImages([{ file, preview: URL.createObjectURL(file) }])
+      return false
+    },
+    [inputImages, revokePreview, validateFile],
+  )
 
-  const handleModeChange = (modeId: string) => {
-    setCurrentMode(modeId)
-  }
+  const removeInputImage = useCallback(
+    (i: number) => {
+      setInputImages((prev) => {
+        const next = [...prev]
+        revokePreview(next[i])
+        next.splice(i, 1)
+        return next
+      })
+    },
+    [revokePreview],
+  )
 
-  const generate = useCallback(async (values: VideoFormValues) => {
-    if (!values.prompt.trim()) {
-      setError(t('promptRequired'))
-      return
-    }
-    if (values.mode === 'img2video' && !inputImages.length) {
-      setError(t('uploadImageRequired'))
-      return
-    }
-    if (!(await requireApiKey())) return
+  const replaceInputImage = useCallback(
+    (i: number) => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = ACCEPTED_IMAGE_TYPES.join(',')
+      input.onchange = (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0]
+        if (!file) return
+        const err = validateFile(file)
+        if (err) {
+          setError(err)
+          return
+        }
+        setInputImages((prev) => {
+          const next = [...prev]
+          revokePreview(next[i])
+          next[i] = { file, preview: URL.createObjectURL(file) }
+          return next
+        })
+      }
+      input.click()
+    },
+    [revokePreview, validateFile],
+  )
 
-    setError('')
-    setSubmitting(true)
+  /** 上传本地文件，返回可访问 URL 列表 */
+  const uploadLocalFiles = useCallback(
+    async (items: InputImage[]): Promise<string[]> => {
+      const urls: string[] = []
+      for (const item of items) {
+        if (item.file) {
+          const res = await uploadApi.upload(item.file)
+          urls.push(res.url)
+        } else if (item.preview && !item.preview.startsWith('blob:')) {
+          urls.push(item.preview)
+        }
+      }
+      return urls
+    },
+    [],
+  )
 
-    // Find resolution preset
-    const preset = VIDEO_RESOLUTION_PRESETS.find((p) => p.id === values.resolution)
-    const width = preset?.width ?? 1280
-    const height = preset?.height ?? 720
+  // ---- 模式切换 ----
+  const handleModeChange = useCallback(
+    (mode: string) => {
+      setCurrentMode(mode as GenerationMode)
+      form.setFieldValue('mode', mode)
+      if (mode === 'text2video' && inputImages.length > 0) {
+        inputImages.forEach(revokePreview)
+        setInputImages([])
+      }
+    },
+    [form, inputImages, revokePreview],
+  )
 
-    const tempId = `temp-${Date.now()}`
-    const optimisticInputImages =
-      values.mode === 'img2video' && inputImages.length
-        ? [inputImages[0]]
-        : undefined
+  // ---- 画面比例切换 ----
+  const handleRatioChange = useCallback(
+    (ratio: string) => {
+      setSelectedRatio(ratio)
+      const resolutionId = ratioToResolutionId(ratio)
+      form.setFieldValue('resolution', resolutionId)
+    },
+    [form],
+  )
 
-    const optimisticTask: VideoTask = {
-      id: tempId,
-      status: 'PENDING',
-      prompt: values.prompt,
-      negative_prompt: values.negative_prompt || undefined,
-      mode: values.mode,
-      width,
-      height,
-      num_frames: values.num_frames,
-      frame_rate: values.frame_rate,
-      seed: values.seed,
-      input_images: optimisticInputImages,
-      _optimistic: true,
-    }
-    setHistory((prev) => [optimisticTask, ...prev])
-    setSelectedTaskId(tempId)
+  // ---- 时长切换 ----
+  const handleDurationChange = useCallback(
+    (label: string) => {
+      setSelectedDurationLabel(label)
+      const { numFrames, frameRate } = autoCalcFrames(label)
+      form.setFieldsValue({ num_frames: numFrames, frame_rate: frameRate })
+    },
+    [form],
+  )
 
-    try {
-      const input: Record<string, unknown> = {
-        model: values.model,
+  // ---- 生成 ----
+  const generate = useCallback(
+    async (values: VideoFormValues) => {
+      if (!values.prompt.trim()) {
+        setError(t('promptRequired'))
+        return
+      }
+      if (values.mode === 'img2video' && !inputImages.length) {
+        setError(t('uploadImageRequired'))
+        return
+      }
+      if (!(await requireApiKey())) return
+
+      setError('')
+      setSubmitting(true)
+
+      const preset = VIDEO_RESOLUTION_PRESETS.find((p) => p.id === values.resolution)
+      const width = preset?.width ?? 1280
+      const height = preset?.height ?? 720
+
+      const tempId = `temp-${Date.now()}`
+      const optimisticInputImages =
+        values.mode === 'img2video' && inputImages.length
+          ? [inputImages[0].preview]
+          : undefined
+
+      const optimisticTask: VideoTask = {
+        id: tempId,
+        status: 'PENDING',
         prompt: values.prompt,
+        negative_prompt: values.negative_prompt || undefined,
         mode: values.mode,
         width,
         height,
-        numFrames: values.num_frames,
-        frameRate: values.frame_rate,
+        num_frames: values.num_frames,
+        frame_rate: values.frame_rate,
+        seed: values.seed,
+        input_images: optimisticInputImages,
+        _optimistic: true,
       }
-      if (values.negative_prompt) input.negativePrompt = values.negative_prompt
-      if (values.seed != null) input.seed = values.seed
-      if (values.mode === 'img2video' && inputImages.length) {
-        input.image = inputImages[0]
+      setHistory((prev) => [optimisticTask, ...prev])
+      setSelectedTaskId(tempId)
+
+      try {
+        let imageUrl: string | undefined
+        if (values.mode === 'img2video' && inputImages.length) {
+          const urls = await uploadLocalFiles([inputImages[0]])
+          imageUrl = urls[0]
+        }
+
+        const input: Record<string, unknown> = {
+          model: values.model,
+          prompt: values.prompt,
+          mode: values.mode,
+          width,
+          height,
+          numFrames: values.num_frames,
+          frameRate: values.frame_rate,
+        }
+        if (values.negative_prompt) input.negativePrompt = values.negative_prompt
+        if (values.seed != null) input.seed = values.seed
+        if (values.mode === 'img2video' && imageUrl) {
+          input.image = imageUrl
+        }
+
+        const payload: CreateGenerationPayload = {
+          type: 'VIDEO',
+          provider: 'agnes',
+          model: values.model,
+          input,
+        }
+        const gen = await generationApi.create(payload)
+        const mapped = toVideoTask(gen)
+        setHistory((prev) => [
+          mapped,
+          ...prev.filter((t) => t.id !== tempId),
+        ])
+        setSelectedTaskId(mapped.id)
+        startPollingAll()
+        if (mapped.status === 'FAILED') setError(taskErrorMessage(mapped) || t('submitFailed'))
+      } catch (err) {
+        setHistory((prev) => prev.filter((t) => t.id !== tempId))
+        setSelectedTaskId(null)
+        setError((err as Error).message)
+        await alert({ title: t('submitFailed'), message: (err as Error).message, confirmVariant: 'danger' })
+      } finally {
+        setSubmitting(false)
       }
+    },
+    [
+      inputImages,
+      requireApiKey,
+      setHistory,
+      startPollingAll,
+      alert,
+      taskErrorMessage,
+      t,
+      uploadLocalFiles,
+    ],
+  )
 
-      const payload: CreateGenerationPayload = {
-        type: 'VIDEO',
-        provider: 'agnes',
-        model: values.model,
-        input,
-      }
-      const gen = await generationApi.create(payload)
-      const mapped = toVideoTask(gen)
-      setHistory((prev) => [
-        mapped,
-        ...prev.filter((t) => t.id !== tempId),
-      ])
-      setSelectedTaskId(mapped.id)
-      startPollingAll()
-      if (mapped.status === 'FAILED') setError(taskErrorMessage(mapped) || t('submitFailed'))
-    } catch (err) {
-      setHistory((prev) => prev.filter((t) => t.id !== tempId))
-      setSelectedTaskId(null)
-      setError((err as Error).message)
-      await alert({ title: t('submitFailed'), message: (err as Error).message, confirmVariant: 'danger' })
-    } finally {
-      setSubmitting(false)
-    }
-  }, [
-    inputImages,
-    requireApiKey,
-    setHistory,
-    startPollingAll,
-    alert,
-    taskErrorMessage,
-    t,
-  ])
+  const selectTask = useCallback((task: TaskItem) => setSelectedTaskId(task.id), [])
 
-  const selectTask = (task: TaskItem) => setSelectedTaskId(task.id)
-
-  const fillFormFromTask = (task: VideoTask) => {
-    if (!task) return
-    const resolutionId = (() => {
-      const match = VIDEO_RESOLUTION_PRESETS.find(
-        (p) => p.width === task.width && p.height === task.height,
+  const fillFormFromTask = useCallback(
+    (task: VideoTask) => {
+      if (!task || task._optimistic) return
+      const resolutionId = (() => {
+        const match = VIDEO_RESOLUTION_PRESETS.find(
+          (p) => p.width === task.width && p.height === task.height,
+        )
+        return match?.id || '720p-h'
+      })()
+      form.setFieldsValue({
+        model: task.model || DEFAULT_VIDEO_MODEL,
+        mode: task.mode || 'text2video',
+        prompt: task.prompt || '',
+        negative_prompt: task.negative_prompt || '',
+        resolution: resolutionId,
+        num_frames: task.num_frames ?? 121,
+        frame_rate: task.frame_rate ?? 24,
+        seed: (task.seed ?? null) as number | null,
+      })
+      setPromptValue(task.prompt || '')
+      setCurrentMode((task.mode as GenerationMode) || 'text2video')
+      const matchedPreset = VIDEO_FRAME_PRESETS.find(
+        (p) => p.numFrames === (task.num_frames ?? 121) && p.frameRate === (task.frame_rate ?? 24),
       )
-      return match?.id || '720p-h'
-    })()
-    form.setFieldsValue({
-      model: task.model || DEFAULT_VIDEO_MODEL,
-      mode: task.mode || 'text2video',
-      prompt: task.prompt || '',
-      negative_prompt: task.negative_prompt || '',
-      resolution: resolutionId,
-      num_frames: task.num_frames ?? 121,
-      frame_rate: task.frame_rate ?? 24,
-      seed: (task.seed ?? null) as number | null,
-    })
-    setCurrentMode(task.mode || 'text2video')
-    // 同步视频时长高亮：根据帧数匹配预设 label
-    const matchedPreset = VIDEO_FRAME_PRESETS.find(
-      (p) => p.numFrames === (task.num_frames ?? 121) && p.frameRate === (task.frame_rate ?? 24),
-    )
-    setSelectedDurationLabel(matchedPreset?.label ?? '5s')
-    setInputImages([...inputImagesOf(task)])
-    setError('')
-    formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+      setSelectedDurationLabel(matchedPreset?.label ?? '5s')
+      // 推断比例
+      if (task.width && task.height) {
+        if (task.width > task.height) setSelectedRatio('16:9')
+        else if (task.height > task.width) setSelectedRatio('9:16')
+        else setSelectedRatio('1:1')
+      }
+      inputImages.forEach(revokePreview)
+      setInputImages(inputImagesOf(task).map((url) => ({ preview: url })))
+      setError('')
+      formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    },
+    [form, revokePreview, inputImages],
+  )
 
-  // Initial load
+  // ---- 复制提示词 ----
+  const copyPrompt = useCallback(async (prompt?: string) => {
+    if (!prompt) return
+    try {
+      await navigator.clipboard.writeText(prompt)
+    } catch {
+      // fallback
+    }
+  }, [])
+
+  // ---- 下载视频 ----
+  const downloadVideo = useCallback(async (url: string, name?: string) => {
+    try {
+      const a = document.createElement('a')
+      a.href = url
+      a.download = name || `enova-video-${Date.now()}.mp4`
+      a.target = '_blank'
+      a.click()
+    } catch {
+      window.open(url, '_blank')
+    }
+  }, [])
+
+  // ---- 清空历史 ----
+  const handleClearHistory = useCallback(async () => {
+    const ok = await confirm({
+      title: t('clearHistory'),
+      message: t('clearHistoryConfirm'),
+    })
+    if (ok) {
+      setHistory([])
+      setSelectedTaskId(null)
+    }
+  }, [confirm, setHistory, t])
+
+  // ---- 再次生成 ----
+  const regenerateFromTask = useCallback(
+    (task: VideoTask) => {
+      fillFormFromTask(task)
+      form.submit()
+    },
+    [fillFormFromTask, form],
+  )
+
+  // ---- 历史项右键菜单 ----
+  const getHistoryMenuItems = useCallback(
+    (task: VideoTask): MenuProps['items'] => [
+      {
+        key: 'regenerate',
+        label: t('regenerateVideo'),
+        icon: <ReloadOutlined />,
+        onClick: () => regenerateFromTask(task),
+      },
+      {
+        key: 'copyPrompt',
+        label: t('copyParams'),
+        icon: <CopyOutlined />,
+        onClick: () => copyPrompt(task.prompt),
+      },
+      {
+        key: 'download',
+        label: t('downloadVideo'),
+        icon: <DownloadOutlined />,
+        disabled: !displayUrl(task),
+        onClick: () => displayUrl(task) && downloadVideo(displayUrl(task)),
+      },
+      { type: 'divider' },
+      {
+        key: 'delete',
+        label: t('deleteImage'),
+        icon: <DeleteOutlined />,
+        danger: true,
+        onClick: () => {
+          setHistory((prev) => prev.filter((t) => t.id !== task.id))
+          if (selectedTaskId === task.id) setSelectedTaskId(null)
+        },
+      },
+    ],
+    [regenerateFromTask, copyPrompt, downloadVideo, setHistory, selectedTaskId, t],
+  )
+
+  // ---- Initial load ----
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -458,438 +765,945 @@ export default function VideoView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Cleanup polling on unmount
+  // ---- Cleanup polling on unmount ----
   useEffect(() => {
     return () => stopPolling()
   }, [stopPolling])
 
+  // ---- cleanup blob urls ----
+  useEffect(() => {
+    return () => {
+      inputImages.forEach(revokePreview)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ---- Segmented 模式选项 ----
+  const modeOptions = useMemo(
+    () => [
+      { value: 'text2video', label: t('textToVideo') },
+      { value: 'img2video', label: t('imageToVideo') },
+    ],
+    [t],
+  )
+
+  // ---- 过滤器选项 ----
+  const filterOptions = useMemo(
+    () => [
+      { value: 'all', label: t('filterAll') },
+      { value: 'processing', label: t('filterProcessing') },
+      { value: 'completed', label: t('filterCompleted') },
+      { value: 'failed', label: t('filterFailed') },
+    ],
+    [t],
+  )
+
+  // ---- 自动计算的帧数（只读展示）----
+  const autoFrames = useMemo(() => autoCalcFrames(selectedDurationLabel).numFrames, [selectedDurationLabel])
+
+  // ---- 预计 Credits ----
+  const estimatedCredits = 10
+  const insufficientCredits = balance < estimatedCredits
+
   return (
-    <div className="flex h-full">
-      {/* Task list sidebar */}
-      <div className="w-96 border-r border-gray-100 flex flex-col bg-gray-50">
-        <div className="p-4 border-b border-gray-100">
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="font-bold text-gray-900">{t('taskList')}</h3>
-            {activeTasks.length > 0 && (
-              <Tag color="processing">{activeTasks.length} {t('inProgress')}</Tag>
+    <div className="flex h-full overflow-hidden" style={{ backgroundColor: '#F7F8FA' }}>
+      {/* ================================================================ */}
+      {/* Task List Sidebar (280~320px)                                    */}
+      {/* ================================================================ */}
+      <div
+        className="w-[300px] flex-shrink-0 flex flex-col bg-white border-r"
+        style={{ borderColor: '#EAECF0' }}
+      >
+        {/* Header */}
+        <div className="px-4 py-3 border-b" style={{ borderColor: '#EAECF0' }}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Typography.Text strong className="!text-sm" style={{ color: '#101828' }}>
+                {t('generationRecords')}
+              </Typography.Text>
+              {history.length > 0 && (
+                <Tag className="!m-0 !text-[10px] !px-1.5 !rounded-full" color="default">
+                  {history.length}
+                </Tag>
+              )}
+            </div>
+            {history.length > 0 && (
+              <Button
+                type="text"
+                size="small"
+                className="!text-xs hover:!text-gray-700"
+                style={{ color: '#98A2B3' }}
+                onClick={() => void handleClearHistory()}
+              >
+                {t('clearHistory')}
+              </Button>
             )}
           </div>
-          <p className="text-xs text-gray-400">{t('autoPolling')}</p>
+          {/* 状态过滤 */}
+          <Segmented
+            block
+            size="small"
+            value={taskFilter}
+            onChange={(val) => setTaskFilter(val as TaskFilter)}
+            options={filterOptions}
+          />
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {history.map((rawTask) => {
+        {/* List */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {filteredHistory.map((rawTask) => {
             const task = rawTask as VideoTask
             const isSelected = selectedTaskId === task.id
             return (
-              <div
+              <Dropdown
                 key={String(task.id)}
-                onClick={() => selectTask(task)}
-                className={`group p-4 rounded-2xl cursor-pointer transition-all duration-200 border ${
-                  isSelected
-                    ? 'bg-gradient-to-r from-fuchsia-500/20 to-cyan-400/10 border-gray-300'
-                    : 'border-gray-100 hover:bg-gray-100 hover:border-gray-300'
-                }`}
+                trigger={['contextMenu']}
+                menu={{ items: getHistoryMenuItems(task) }}
               >
-                <div className="flex gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="text-xs text-gray-400 font-mono">
-                        #{task._optimistic ? '...' : String(task.id).slice(0, 8)}
-                      </span>
-                      <Tag color={statusBadgeColor(task.status)} className="!m-0">
-                        {statusLabel(tc, task.status)}
-                      </Tag>
+                <div
+                  onClick={() => selectTask(task)}
+                  className="group relative p-2.5 rounded-xl cursor-pointer transition-all duration-200 border"
+                  style={{
+                    borderColor: isSelected ? '#0F9F91' : 'transparent',
+                    backgroundColor: isSelected ? '#F0FDFA' : 'transparent',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) e.currentTarget.style.backgroundColor = '#F7F8FA'
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent'
+                  }}
+                >
+                  <div className="flex gap-2.5">
+                    {/* Thumbnail */}
+                    <div
+                      className="w-14 h-14 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center"
+                      style={{ backgroundColor: '#F7F8FA', border: '1px solid #EAECF0' }}
+                    >
+                      {displayUrl(task) ? (
+                        <video
+                          src={displayUrl(task)}
+                          className="w-full h-full object-cover"
+                          muted
+                        />
+                      ) : inputImagesOf(task).length > 0 ? (
+                        <AntdImage
+                          src={inputImagesOf(task)[0]}
+                          alt={task.prompt || ''}
+                          width="100%"
+                          height="100%"
+                          className="object-cover"
+                          preview={false}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : ACTIVE_STATUSES.includes(task.status) ? (
+                        <div
+                          className="w-5 h-5 border-2 rounded-full animate-spin"
+                          style={{ borderColor: '#0F9F91', borderTopColor: 'transparent' }}
+                        />
+                      ) : (
+                        <VideoCameraOutlined style={{ color: '#D0D5DD', fontSize: 18 }} />
+                      )}
                     </div>
-                    <p className="text-sm text-gray-800 truncate font-medium">{task.prompt}</p>
-                    {task.negative_prompt && (
-                      <p className="text-xs text-gray-400 truncate mt-0.5">
-                        {t('negativeLabel')}: {task.negative_prompt}
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-sm truncate font-medium leading-tight"
+                        style={{ color: '#101828' }}
+                      >
+                        {task.prompt || '—'}
                       </p>
-                    )}
-                    <p className="text-[11px] text-gray-500 mt-1 font-mono">{formatTaskMeta(task)}</p>
-                    <div className="mt-1">
-                      <Tag color={modeTagColor(task.mode)} className="!m-0 !text-[10px]">
-                        {modeLabel(task.mode)}
-                      </Tag>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="text-xs" style={{ color: '#98A2B3' }}>
+                          {modelDisplayName(task.model)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-xs" style={{ color: '#98A2B3' }}>
+                          {relativeTime(task.created_at)}
+                        </span>
+                        <Tag
+                          color={statusBadgeColor(task.status)}
+                          className="!m-0 !text-[10px] !px-1.5 !rounded-full"
+                        >
+                          {statusLabel(tc, task.status)}
+                        </Tag>
+                      </div>
+
+                      {/* Progress bar for active tasks */}
+                      {ACTIVE_STATUSES.includes(task.status) && (
+                        <div className="mt-2">
+                          <div
+                            className="w-full h-1.5 rounded-full overflow-hidden"
+                            style={{ backgroundColor: '#F7F8FA' }}
+                          >
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: task.progress != null ? `${Math.min(100, Math.max(0, task.progress))}%` : '100%',
+                                backgroundColor: '#0F9F91',
+                              }}
+                            />
+                          </div>
+                          {task.progress != null && (
+                            <p className="text-[10px] mt-1" style={{ color: '#98A2B3' }}>
+                              {task.progress}%
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {inputImagesOf(task).length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {inputImagesOf(task).map((url, i) => (
-                          <AntdImage
-                            key={i}
-                            src={url}
-                            alt={inputImagesOf(task).length > 1 ? t('referenceImageN', { n: i + 1 }) : t('referenceImagesLabel')}
-                            width={40}
-                            height={40}
-                            preview={false}
-                            className="object-cover rounded-lg border border-gray-100"
-                          />
-                        ))}
-                      </div>
-                    )}
-
-                    {ACTIVE_STATUSES.includes(task.status) && (
-                      <div className="mt-3">
-                        <div className="progress-bar">
-                          <div
-                            className="progress-fill animate-pulse"
-                            style={{ width: task.progress != null ? `${Math.min(100, Math.max(0, task.progress))}%` : '100%' }}
-                          />
-                        </div>
-                        <p className="text-xs text-gray-400 mt-1.5">
-                          {statusLabel(tc, task.status)}
-                          {task.progress != null ? ` ${task.progress}%` : '...'}
-                        </p>
-                      </div>
-                    )}
-
-                    {task.status === 'FAILED' && (
-                      <p className="text-xs text-rose-600 mt-2 truncate">{taskErrorMessage(task)}</p>
-                    )}
+                    {/* Hover More Menu */}
+                    <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Dropdown trigger={['click']} menu={{ items: getHistoryMenuItems(task) }}>
+                        <Button
+                          type="text"
+                          size="small"
+                          className="!w-6 !h-6 !min-w-6 flex items-center justify-center"
+                          style={{ color: '#98A2B3' }}
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label="More actions"
+                        >
+                          <MoreOutlined />
+                        </Button>
+                      </Dropdown>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Dropdown>
             )
           })}
 
           {!history.length && historyLoading && (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-              <div className="w-6 h-6 border-2 border-fuchsia-400/30 border-t-fuchsia-400 rounded-full animate-spin" />
-              <p className="text-xs mt-3">{t('loading')}</p>
+            <div className="flex flex-col items-center justify-center py-16">
+              <Skeleton active paragraph={{ rows: 2 }} />
             </div>
           )}
 
           {!history.length && !historyLoading && (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-              <div className="text-4xl mb-3">🎬</div>
-              <p className="text-sm">{t('noTasks')}</p>
-              <p className="text-xs mt-1">{t('noTasksHint')}</p>
+            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+              <div
+                className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
+                style={{ backgroundColor: '#F7F8FA', border: '1px solid #EAECF0' }}
+              >
+                <VideoCameraOutlined style={{ fontSize: 20, color: '#D0D5DD' }} />
+              </div>
+              <p className="text-sm" style={{ color: '#667085' }}>
+                {t('noRecords')}
+              </p>
+              <p className="text-xs mt-1" style={{ color: '#98A2B3' }}>
+                {t('noRecordsHint')}
+              </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Main area: form + preview */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-5xl mx-auto space-y-6">
-            <div>
-              <h2 className="text-2xl font-extrabold bg-gradient-to-r from-cyan-600 via-fuchsia-600 to-orange-600 bg-clip-text text-transparent">
-                {t('title')}
-              </h2>
-              <p className="text-gray-500 text-sm mt-1">{t('subtitle')}</p>
-            </div>
+      {/* ================================================================ */}
+      {/* Create Panel (480~520px)                                          */}
+      {/* ================================================================ */}
+      <div
+        ref={formCardRef}
+        className="w-[500px] flex-shrink-0 flex flex-col overflow-y-auto bg-white border-r"
+        style={{ borderColor: '#EAECF0' }}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={generate}
+          initialValues={{
+            model: DEFAULT_VIDEO_MODEL,
+            mode: 'text2video',
+            prompt: '',
+            negative_prompt: '',
+            resolution: getInitialResolutionId(),
+            num_frames: 121,
+            frame_rate: 24,
+            seed: null,
+          }}
+          className="flex flex-col h-full"
+          requiredMark={false}
+        >
+          {/* ---- Page Header ---- */}
+          <div className="px-6 pt-6 pb-4">
+            <Typography.Title level={3} className="!mb-1" style={{ fontSize: 24, fontWeight: 600, color: '#101828' }}>
+              {t('title')}
+            </Typography.Title>
+            <Typography.Text style={{ fontSize: 13, color: '#667085' }}>
+              {t('subtitle')}
+            </Typography.Text>
+          </div>
 
-            {!keyStatusLoading && !hasActiveKey && (
+          {/* ---- API Key Warning ---- */}
+          {!keyStatusLoading && !hasActiveKey && (
+            <div className="px-6 mb-2">
               <Alert
                 type="warning"
                 showIcon
                 message={
                   <span>
                     {t('insufficientBalance')}{' '}
-                    <Link href="/app/wallet" className="text-cyan-600 hover:underline">
+                    <Link href="/app/wallet" style={{ color: '#0F9F91' }}>
                       {tc('common.wallet')}
                     </Link>
                     {t('rechargeHint')}
                   </span>
                 }
               />
-            )}
+            </div>
+          )}
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              {/* Form */}
-              <div ref={formCardRef} className="glass-card">
-                <Form
-                  form={form}
-                  layout="vertical"
-                  onFinish={generate}
-                  initialValues={{
-                    model: DEFAULT_VIDEO_MODEL,
-                    mode: 'text2video',
-                    prompt: '',
-                    negative_prompt: '',
-                    resolution: getInitialResolutionId(),
-                    num_frames: 121,
-                    frame_rate: 24,
-                    seed: null,
-                  }}
+          {/* ---- Mode Segmented ---- */}
+          <div className="px-6 mb-5">
+            <Segmented
+              block
+              value={currentMode}
+              onChange={(val) => handleModeChange(val as string)}
+              options={modeOptions}
+            />
+          </div>
+
+          <Form.Item name="mode" hidden>
+            <Input />
+          </Form.Item>
+
+          {/* ---- Prompt Composer ---- */}
+          <div className="px-6 mb-5">
+            <div className="flex items-center justify-between mb-2">
+              <Typography.Text strong className="!text-sm" style={{ color: '#101828' }}>
+                {t('promptLabel')}
+              </Typography.Text>
+              <Button
+                type="text"
+                size="small"
+                className="!text-xs"
+                style={{ color: '#0F9F91' }}
+                aria-label={t('optimizePrompt')}
+              >
+                {t('optimizePrompt')}
+              </Button>
+            </div>
+            <Form.Item name="prompt" className="!mb-0">
+              <Input.TextArea
+                autoSize={{ minRows: 5, maxRows: 10 }}
+                placeholder={t('promptComposerPlaceholder')}
+                value={promptValue}
+                onChange={(e) => setPromptValue(e.target.value)}
+                maxLength={MAX_PROMPT_LENGTH}
+                className="!resize-none"
+                aria-label={t('promptLabel')}
+                style={{ borderRadius: 12 }}
+              />
+            </Form.Item>
+            <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center gap-3">
+                <Button
+                  type="text"
+                  size="small"
+                  className="!text-xs"
+                  style={{ color: '#667085' }}
                 >
-                  <Form.Item label={t('generationMode')} name="mode">
-                    <Select
-                      onChange={(val) => handleModeChange(val as string)}
-                      options={VIDEO_MODES.map((m) => ({ value: m.id, label: m.name }))}
-                    />
-                  </Form.Item>
-
-                  <Form.Item label={t('model')} name="model">
-                    <Select
-                      options={VIDEO_MODELS.map((m) => ({
-                        value: m.apiId,
-                        label: m.deprecated ? `${m.name} (${t('deprecated')})` : m.name,
-                      }))}
-                    />
-                  </Form.Item>
-
-                  <Form.Item label={t('prompt')} name="prompt">
-                    <Input.TextArea rows={3} placeholder={t('promptPlaceholder')} />
-                  </Form.Item>
-
-                  <Form.Item label={t('negativePrompt')} name="negative_prompt">
-                    <Input placeholder={t('negativePromptPlaceholder')} />
-                  </Form.Item>
-
-                  {currentMode !== 'text2video' && (
-                    <Form.Item label={currentMode === 'img2video' ? t('inputImage') : t('referenceImages')}>
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {inputImages.map((url, i) => (
-                          <div key={i} className="relative group">
-                            <AntdImage
-                              src={url}
-                              alt={t('referenceImagesLabel')}
-                              width={80}
-                              height={80}
-                              preview={false}
-                              className="object-cover rounded-2xl border border-gray-100"
-                            />
-                            <button
-                              onClick={() => removeImage(i)}
-                              className="absolute -top-1 -right-1 w-6 h-6 bg-rose-500 rounded-full text-xs opacity-0 group-hover:opacity-100 shadow-lg"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                      <Button loading={uploading} onClick={() => {
-                        const input = document.createElement('input')
-                        input.type = 'file'
-                        input.accept = 'image/*'
-                        input.multiple = true
-                        input.onchange = (e) => void handleUpload(e as unknown as React.ChangeEvent<HTMLInputElement>)
-                        input.click()
-                      }}>
-                        {uploading ? t('uploading') : t('uploadImages')}
-                      </Button>
-                    </Form.Item>
-                  )}
-
-                  <Form.Item label={t('resolution')} name="resolution">
-                    <Select
-                      options={resolutionGroups.flatMap((g) =>
-                        g.items.map((p) => ({
-                          value: p.id,
-                          label: `${g.label} - ${p.label}`,
-                        })),
-                      )}
-                    />
-                  </Form.Item>
-
-                  <Form.Item label={t('duration')}>
-                    <div className="flex flex-wrap gap-2">
-                      {VIDEO_FRAME_PRESETS.map((p) => (
-                        <Button
-                          key={p.label}
-                          size="small"
-                          type={selectedDurationLabel === p.label ? 'primary' : 'default'}
-                          onClick={() => {
-                            setSelectedDurationLabel(p.label)
-                            form.setFieldsValue({ num_frames: p.numFrames, frame_rate: p.frameRate })
-                          }}
-                        >
-                          {p.label}
-                        </Button>
-                      ))}
-                    </div>
-                  </Form.Item>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <Form.Item label={t('frames')} name="num_frames">
-                      <InputNumber min={1} className="w-full" />
-                    </Form.Item>
-                    <Form.Item label={t('frameRate')} name="frame_rate">
-                      <InputNumber min={1} className="w-full" />
-                    </Form.Item>
-                  </div>
-
-                  <Form.Item label={t('seed')} name="seed">
-                    <InputNumber className="w-full" placeholder={t('seedPlaceholder')} />
-                  </Form.Item>
-
-                  {error && <Alert type="error" message={error} showIcon className="mb-4" />}
-
-                  <Form.Item>
-                    <Button type="primary" htmlType="submit" block size="large" loading={submitting}>
-                      {submitting ? t('submitting') : t('startGenerate')}
-                    </Button>
-                  </Form.Item>
-                </Form>
+                  {t('optimizePrompt')}
+                </Button>
+                <Button
+                  type="text"
+                  size="small"
+                  className="!text-xs"
+                  style={{ color: '#667085' }}
+                >
+                  {t('randomInspiration')}
+                </Button>
               </div>
-
-              {/* Preview */}
-              <div className="glass-card flex flex-col min-h-[420px]">
-                {selectedTask ? (
-                  <div className="flex-1 flex flex-col">
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="font-bold text-gray-900">
-                        {selectedTask._optimistic ? t('newTask') : `${t('taskPrefix')} #${String(selectedTask.id).slice(0, 8)}`}
-                      </span>
-                      <Tag color={statusBadgeColor(selectedTask.status)}>
-                        {statusLabel(tc, selectedTask.status)}
-                      </Tag>
-                    </div>
-
-                    {ACTIVE_STATUSES.includes(selectedTask.status) && (
-                      <div className="mb-5">
-                        <div className="progress-bar h-3">
-                          <div
-                            className="progress-fill animate-pulse"
-                            style={{ width: selectedTask.progress != null ? `${Math.min(100, Math.max(0, selectedTask.progress))}%` : '100%' }}
-                          />
-                        </div>
-                        <p className="text-sm text-gray-500 mt-2">
-                          {t('generatingWithStatus', { status: statusLabel(tc, selectedTask.status) })}
-                          {selectedTask.progress != null ? ` ${selectedTask.progress}%` : ''}
-                        </p>
-                      </div>
-                    )}
-
-                    {displayUrl(selectedTask) ? (
-                      <div className="flex-1">
-                        <video
-                          src={displayUrl(selectedTask)}
-                          controls
-                          className="w-full rounded-2xl border border-gray-100"
-                        />
-                        <div className="mt-3 text-xs text-gray-500 flex flex-wrap gap-4">
-                          <span>{formatResolution(selectedTask)}</span>
-                          <span>{formatDuration(selectedTask)}</span>
-                        </div>
-                        {inputImagesOf(selectedTask).length > 0 && (
-                          <div className="mt-4">
-                            <p className="text-xs text-gray-500 mb-2 font-medium">{t('referenceImagesLabel')}</p>
-                            <div className="flex flex-wrap gap-2">
-                              {inputImagesOf(selectedTask).map((url, i) => (
-                                <AntdImage
-                                  key={i}
-                                  src={url}
-                                  alt={t('referenceImagesLabel')}
-                                  width={80}
-                                  height={80}
-                                  preview={{ mask: false }}
-                                  className="object-cover rounded-xl border border-gray-100"
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : ACTIVE_STATUSES.includes(selectedTask.status) ? (
-                      <div className="flex-1 flex flex-col items-center justify-center">
-                        <div className="w-16 h-16 rounded-full border-4 border-fuchsia-400/30 border-t-fuchsia-400 animate-spin" />
-                        <p className="text-gray-500 mt-5 text-sm">{t('generatingHint')}</p>
-                        {inputImagesOf(selectedTask).length > 0 && (
-                          <div className="mt-4">
-                            <p className="text-xs text-gray-500 mb-2 font-medium">{t('referenceImagesLabel')}</p>
-                            <div className="flex flex-wrap gap-2">
-                              {inputImagesOf(selectedTask).map((url, i) => (
-                                <AntdImage
-                                  key={i}
-                                  src={url}
-                                  alt={t('referenceImagesLabel')}
-                                  width={80}
-                                  height={80}
-                                  preview={{ mask: false }}
-                                  className="object-cover rounded-xl border border-gray-100"
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {selectedTask.status === 'FAILED' || selectedTask.status === 'CANCELED' ? (
-                      <Alert
-                        type="error"
-                        className="mt-2"
-                        message={`${statusLabel(tc, selectedTask.status)}${taskErrorMessage(selectedTask) ? `：${taskErrorMessage(selectedTask)}` : ''}`}
-                      />
-                    ) : null}
-
-                    <div className="mt-4 space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs text-gray-500 font-medium">{t('params')}</p>
-                        {!selectedTask._optimistic && (
-                          <Button size="small" onClick={() => fillFormFromTask(selectedTask)}>
-                            {t('fillForm')}
-                          </Button>
-                        )}
-                      </div>
-                      <div className="glass px-4 py-3 rounded-2xl border border-gray-100 space-y-2 text-sm">
-                        <div>
-                          <span className="text-gray-400 text-xs">{t('positivePrompt')}</span>
-                          <p className="text-gray-800 mt-0.5 leading-relaxed">
-                            {selectedTask.prompt || '—'}
-                          </p>
-                        </div>
-                        {selectedTask.negative_prompt && (
-                          <div>
-                            <span className="text-gray-400 text-xs">{t('negativePromptLabel')}</span>
-                            <p className="text-gray-600 mt-0.5 leading-relaxed">
-                              {selectedTask.negative_prompt}
-                            </p>
-                          </div>
-                        )}
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs pt-1">
-                          <div>
-                            <span className="text-gray-400">{t('resolutionLabel')}</span>{' '}
-                            <span className="text-gray-700">{formatResolution(selectedTask)}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-400">{t('durationLabel')}</span>{' '}
-                            <span className="text-gray-700">{formatDuration(selectedTask)}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-400">{t('framesLabel')}</span>{' '}
-                            <span className="text-gray-700">{selectedTask.num_frames ?? '—'}</span>
-                          </div>
-                          <div>
-                            <span className="text-gray-400">{t('frameRateLabel')}</span>{' '}
-                            <span className="text-gray-700">
-                              {selectedTask.frame_rate != null
-                                ? `${selectedTask.frame_rate} fps`
-                                : '—'}
-                            </span>
-                          </div>
-                          <div className="col-span-2">
-                            <span className="text-gray-400">{t('seedLabel')}</span>{' '}
-                            <span className="text-gray-700 font-mono">
-                              {selectedTask.seed != null && selectedTask.seed !== ''
-                                ? selectedTask.seed
-                                : t('random')}
-                            </span>
-                          </div>
-                          <div className="col-span-2">
-                            <span className="text-gray-400">{t('modelLabel')}</span>{' '}
-                            <span className="text-gray-700">{modelDisplayName(selectedTask.model)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                    <div className="w-20 h-20 rounded-3xl bg-cyan-100 flex items-center justify-center text-4xl mb-4 border border-gray-100">
-                      🎬
-                    </div>
-                    <p>{t('selectOrCreate')}</p>
-                  </div>
-                )}
-              </div>
+              <Typography.Text style={{ fontSize: 12, color: '#98A2B3' }}>
+                {t('promptCount', { count: promptValue.length })}
+              </Typography.Text>
             </div>
           </div>
+
+          {/* ---- Image Upload Area (仅图生视频) ---- */}
+          {currentMode === 'img2video' && (
+            <div className="px-6 mb-5">
+              <Typography.Text strong className="!text-sm block mb-2" style={{ color: '#101828' }}>
+                {t('uploadReferenceImage')}
+              </Typography.Text>
+              {inputImages.length === 0 ? (
+                <Upload.Dragger
+                  accept={ACCEPTED_IMAGE_TYPES.join(',')}
+                  showUploadList={false}
+                  beforeUpload={(file) => {
+                    handleSingleUpload(file)
+                    return false
+                  }}
+                  className="!bg-gray-50/50 !border-dashed"
+                  style={{
+                    borderRadius: 12,
+                    borderColor: '#EAECF0',
+                    minHeight: 160,
+                    padding: '8px 0',
+                  }}
+                >
+                  <div className="flex flex-col items-center py-6">
+                    <InboxOutlined className="text-2xl mb-2" style={{ color: '#D0D5DD' }} />
+                    <p className="text-sm" style={{ color: '#667085' }}>
+                      {t('uploadReferenceImage')}
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: '#98A2B3' }}>
+                      {t('uploadHint')}
+                    </p>
+                  </div>
+                </Upload.Dragger>
+              ) : (
+                <div className="relative group inline-block w-full">
+                  <AntdImage
+                    src={inputImages[0].preview}
+                    alt={t('uploadReferenceImage')}
+                    width="100%"
+                    height={160}
+                    preview={false}
+                    className="object-cover rounded-xl"
+                    style={{ border: '1px solid #EAECF0', borderRadius: 12 }}
+                  />
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Tooltip title={t('replaceImage')}>
+                      <Button
+                        type="primary"
+                        size="small"
+                        className="!w-7 !h-7 !min-w-7 !p-0 flex items-center justify-center"
+                        onClick={() => replaceInputImage(0)}
+                        aria-label={t('replaceImage')}
+                      >
+                        <SwapOutlined />
+                      </Button>
+                    </Tooltip>
+                    <Tooltip title={t('deleteImage')}>
+                      <Button
+                        size="small"
+                        className="!w-7 !h-7 !min-w-7 !p-0 flex items-center justify-center"
+                        onClick={() => removeInputImage(0)}
+                        aria-label={t('deleteImage')}
+                      >
+                        <DeleteOutlined />
+                      </Button>
+                    </Tooltip>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ---- Model Selector ---- */}
+          <div className="px-6 mb-5">
+            <Typography.Text strong className="!text-sm block mb-2" style={{ color: '#101828' }}>
+              {t('model')}
+            </Typography.Text>
+            <Form.Item name="model" className="!mb-0">
+              <Select
+                options={VIDEO_MODELS.map((m) => ({
+                  value: m.apiId,
+                  label: (
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium" style={{ color: '#101828' }}>
+                          {m.name}
+                        </span>
+                        <span className="text-xs" style={{ color: '#98A2B3' }}>
+                          {m.tagline}
+                        </span>
+                      </div>
+                      {m.apiId === DEFAULT_VIDEO_MODEL && (
+                        <Tag color="green" className="!m-0 !text-[10px] !rounded-full">
+                          {t('modelRecommended')}
+                        </Tag>
+                      )}
+                    </div>
+                  ),
+                }))}
+              />
+            </Form.Item>
+          </div>
+
+          <Form.Item name="resolution" hidden>
+            <Input />
+          </Form.Item>
+
+          {/* ---- Aspect Ratio ---- */}
+          <div className="px-6 mb-5">
+            <Typography.Text strong className="!text-sm block mb-2" style={{ color: '#101828' }}>
+              {t('aspectRatio')}
+            </Typography.Text>
+            <Segmented
+              value={selectedRatio}
+              onChange={(val) => handleRatioChange(val as string)}
+              options={ASPECT_RATIOS.map((r) => ({
+                value: r.id,
+                label: (
+                  <div className="flex items-center gap-2">
+                    <RatioIcon type={r.icon} />
+                    <span className="text-sm">{r.label}</span>
+                  </div>
+                ),
+              }))}
+            />
+          </div>
+
+          {/* ---- Duration ---- */}
+          <div className="px-6 mb-5">
+            <Typography.Text strong className="!text-sm block mb-2" style={{ color: '#101828' }}>
+              {t('durationLabel2')}
+            </Typography.Text>
+            <Segmented
+              value={selectedDurationLabel}
+              onChange={(val) => handleDurationChange(val as string)}
+              options={VIDEO_FRAME_PRESETS.map((p) => ({
+                value: p.label,
+                label: <span className="text-sm">{p.label}</span>,
+              }))}
+            />
+            <Typography.Text className="block mt-2" style={{ fontSize: 12, color: '#98A2B3' }}>
+              {t('framesLabel')}: {autoFrames} · {t('frameRateLabel')}: 24 fps
+            </Typography.Text>
+          </div>
+
+          {/* Hidden form fields for auto-calculated values */}
+          <Form.Item name="num_frames" hidden>
+            <InputNumber />
+          </Form.Item>
+          <Form.Item name="frame_rate" hidden>
+            <InputNumber />
+          </Form.Item>
+
+          {/* ---- Advanced Settings ---- */}
+          <div className="px-6 mb-5">
+            <Divider className="!my-2" style={{ borderColor: '#EAECF0' }} />
+            <Collapse
+              ghost
+              activeKey={advancedOpen ? ['adv'] : []}
+              onChange={() => setAdvancedOpen(!advancedOpen)}
+              className="!bg-transparent"
+              style={{ padding: 0 }}
+              items={[
+                {
+                  key: 'adv',
+                  label: (
+                    <Typography.Text className="!text-sm" style={{ color: '#667085' }}>
+                      {t('advancedSettings')}
+                    </Typography.Text>
+                  ),
+                  children: (
+                    <div className="space-y-4 pt-2">
+                      {/* Negative Prompt */}
+                      <Form.Item
+                        label={t('negativePrompt')}
+                        name="negative_prompt"
+                        className="!mb-0"
+                      >
+                        <Input.TextArea
+                          autoSize={{ minRows: 2, maxRows: 4 }}
+                          placeholder={t('negativePromptPlaceholder')}
+                          style={{ borderRadius: 10 }}
+                        />
+                      </Form.Item>
+
+                      {/* Resolution */}
+                      <Form.Item
+                        label={t('resolution')}
+                        name="resolution"
+                        className="!mb-0"
+                      >
+                        <Select
+                          options={VIDEO_RESOLUTION_PRESETS.map((p) => ({
+                            value: p.id,
+                            label: `${p.label} (${p.width}×${p.height})`,
+                          }))}
+                        />
+                      </Form.Item>
+
+                      {/* Seed */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Typography.Text style={{ fontSize: 13, color: '#667085' }}>
+                            {t('seed')}
+                          </Typography.Text>
+                          <Tooltip title={t('seedTooltip')}>
+                            <ExclamationCircleOutlined style={{ color: '#D0D5DD', fontSize: 12 }} />
+                          </Tooltip>
+                        </div>
+                        <Form.Item name="seed" className="!mb-0">
+                          <InputNumber
+                            className="w-full"
+                            placeholder={t('seedPlaceholder')}
+                            style={{ borderRadius: 10 }}
+                          />
+                        </Form.Item>
+                      </div>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
+
+          {/* ---- Error Alert ---- */}
+          {error && (
+            <div className="px-6 mb-2">
+              <Alert
+                type="error"
+                message={error}
+                showIcon
+                closable
+                onClose={() => setError('')}
+              />
+            </div>
+          )}
+
+          {/* ---- Generate Footer (Sticky Bottom) ---- */}
+          <div
+            className="mt-auto px-6 pb-6 pt-3 border-t bg-white"
+            style={{ borderColor: '#EAECF0' }}
+          >
+            {/* Credits info */}
+            <div className="flex items-center justify-between mb-3">
+              <Typography.Text style={{ fontSize: 12, color: '#667085' }}>
+                {t('estimatedCredits', { credits: estimatedCredits })}
+              </Typography.Text>
+              <Typography.Text style={{ fontSize: 12, color: '#98A2B3' }}>
+                {tc('common.balance')}: {balance.toLocaleString()}
+              </Typography.Text>
+            </div>
+            {insufficientCredits && (
+              <Alert
+                type="warning"
+                message={t('insufficientCredits')}
+                showIcon
+                className="!mb-3"
+              />
+            )}
+            <Form.Item className="!mb-0">
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
+                loading={submitting}
+                disabled={insufficientCredits}
+                style={{
+                  height: 46,
+                  borderRadius: 12,
+                  fontWeight: 600,
+                  fontSize: 15,
+                }}
+              >
+                {submitting
+                  ? t('submittingTask')
+                  : t('generateVideo', { credits: estimatedCredits })}
+              </Button>
+            </Form.Item>
+          </div>
+        </Form>
+      </div>
+
+      {/* ================================================================ */}
+      {/* Preview Panel (flex: 1)                                           */}
+      {/* ================================================================ */}
+      <div
+        className="flex-1 overflow-y-auto"
+        style={{ backgroundColor: '#F7F8FA', padding: 24 }}
+      >
+        <div
+          className="bg-white rounded-xl flex flex-col min-h-full"
+          style={{
+            border: '1px solid #EAECF0',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06)',
+          }}
+        >
+          {/* ---- Empty State ---- */}
+          {previewState === 'empty' && (
+            <div className="flex-1 flex flex-col items-center justify-center py-20 px-8 text-center">
+              {/* 16:9 Preview Canvas Placeholder */}
+              <div
+                className="w-full max-w-2xl rounded-xl flex flex-col items-center justify-center"
+                style={{
+                  aspectRatio: '16 / 9',
+                  backgroundColor: '#F7F8FA',
+                  border: '1px solid #EAECF0',
+                }}
+              >
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+                  style={{ backgroundColor: '#fff', border: '1px solid #EAECF0' }}
+                >
+                  <PlayCircleOutlined style={{ fontSize: 24, color: '#D0D5DD' }} />
+                </div>
+                <Typography.Title level={5} className="!mb-1" style={{ color: '#101828' }}>
+                  {t('previewEmptyTitle')}
+                </Typography.Title>
+                <Typography.Text style={{ fontSize: 13, color: '#98A2B3' }}>
+                  {t('previewEmptyHint')}
+                </Typography.Text>
+              </div>
+            </div>
+          )}
+
+          {/* ---- Generating State ---- */}
+          {previewState === 'generating' && selectedTask && (
+            <div className="flex-1 flex flex-col items-center justify-center py-20 px-8 text-center">
+              <div
+                className="w-full max-w-2xl rounded-xl flex flex-col items-center justify-center"
+                style={{
+                  aspectRatio: '16 / 9',
+                  backgroundColor: '#F7F8FA',
+                  border: '1px solid #EAECF0',
+                }}
+              >
+                {/* Skeleton loading */}
+                <Skeleton.Image
+                  active
+                  style={{ width: '80%', height: '60%', borderRadius: 12 }}
+                />
+                <div className="mt-6 text-center">
+                  <div
+                    className="w-10 h-10 rounded-full border-4 animate-spin mx-auto mb-4"
+                    style={{
+                      borderColor: '#0F9F91',
+                      borderTopColor: 'transparent',
+                    }}
+                  />
+                  <Typography.Title level={5} className="!mb-1" style={{ color: '#101828' }}>
+                    {t('previewGeneratingTitle')}
+                  </Typography.Title>
+                  <Typography.Text style={{ fontSize: 13, color: '#98A2B3' }}>
+                    {t('previewGeneratingHint')}
+                  </Typography.Text>
+                  {selectedTask.progress != null && (
+                    <div className="mt-4 w-48 mx-auto">
+                      <div
+                        className="w-full h-2 rounded-full overflow-hidden"
+                        style={{ backgroundColor: '#F7F8FA' }}
+                      >
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.min(100, Math.max(0, selectedTask.progress))}%`,
+                            backgroundColor: '#0F9F91',
+                          }}
+                        />
+                      </div>
+                      <p className="text-sm mt-2" style={{ color: '#667085' }}>
+                        {selectedTask.progress}%
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ---- Success State ---- */}
+          {previewState === 'success' && selectedTask && (
+            <div className="flex-1 flex flex-col p-4">
+              {/* Video Player */}
+              <div className="flex items-center justify-center mb-3">
+                <video
+                  src={displayUrl(selectedTask)}
+                  controls
+                  autoPlay
+                  loop
+                  className="rounded-xl"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '60vh',
+                    border: '1px solid #EAECF0',
+                  }}
+                />
+              </div>
+
+              {/* Reference Image (if exists) */}
+              {inputImagesOf(selectedTask).length > 0 && (
+                <div className="mb-3">
+                  <Typography.Text className="block mb-2" style={{ fontSize: 12, color: '#98A2B3' }}>
+                    {t('referenceImagesLabel')}
+                  </Typography.Text>
+                  <div className="flex flex-wrap gap-2">
+                    {inputImagesOf(selectedTask).map((url, i) => (
+                      <AntdImage
+                        key={i}
+                        src={url}
+                        alt={t('referenceImagesLabel')}
+                        width={80}
+                        height={80}
+                        preview={{ mask: false }}
+                        className="object-cover rounded-xl"
+                        style={{ border: '1px solid #EAECF0' }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Bar */}
+              <div className="flex items-center justify-center gap-1 mt-2">
+                <Tooltip title={t('downloadVideo')}>
+                  <Button
+                    type="text"
+                    size="small"
+                    className="!w-9 !h-9 !min-w-9 flex items-center justify-center"
+                    style={{ color: '#667085' }}
+                    onClick={() => displayUrl(selectedTask) && downloadVideo(displayUrl(selectedTask))}
+                    aria-label={t('downloadVideo')}
+                  >
+                    <DownloadOutlined />
+                  </Button>
+                </Tooltip>
+                <Tooltip title={t('regenerateVideo')}>
+                  <Button
+                    type="text"
+                    size="small"
+                    className="!w-9 !h-9 !min-w-9 flex items-center justify-center"
+                    style={{ color: '#667085' }}
+                    onClick={() => regenerateFromTask(selectedTask)}
+                    aria-label={t('regenerateVideo')}
+                  >
+                    <ReloadOutlined />
+                  </Button>
+                </Tooltip>
+                <Tooltip title={t('createVariation')}>
+                  <Button
+                    type="text"
+                    size="small"
+                    className="!w-9 !h-9 !min-w-9 flex items-center justify-center"
+                    style={{ color: '#667085' }}
+                    onClick={() => fillFormFromTask(selectedTask)}
+                    aria-label={t('createVariation')}
+                  >
+                    <CopyOutlined />
+                  </Button>
+                </Tooltip>
+                <Tooltip title={t('copyParams')}>
+                  <Button
+                    type="text"
+                    size="small"
+                    className="!w-9 !h-9 !min-w-9 flex items-center justify-center"
+                    style={{ color: '#667085' }}
+                    onClick={() => copyPrompt(selectedTask.prompt)}
+                    aria-label={t('copyParams')}
+                  >
+                    <CopyOutlined />
+                  </Button>
+                </Tooltip>
+              </div>
+
+              {/* Params Section */}
+              <div className="mt-4 pt-3" style={{ borderTop: '1px solid #EAECF0' }}>
+                <div className="flex items-center justify-between mb-2">
+                  <Typography.Text strong style={{ fontSize: 12, color: '#667085' }}>
+                    {t('params')}
+                  </Typography.Text>
+                  <Button
+                    type="text"
+                    size="small"
+                    className="!text-xs"
+                    style={{ color: '#0F9F91' }}
+                    onClick={() => fillFormFromTask(selectedTask)}
+                  >
+                    {t('fillForm')}
+                  </Button>
+                </div>
+                <div className="space-y-1.5 text-sm">
+                  <div>
+                    <Typography.Text style={{ fontSize: 12, color: '#98A2B3' }}>
+                      {t('prompt')}
+                    </Typography.Text>
+                    <p className="mt-0.5 leading-relaxed" style={{ color: '#101828' }}>
+                      {selectedTask.prompt || '—'}
+                    </p>
+                  </div>
+                  {selectedTask.negative_prompt && (
+                    <div>
+                      <Typography.Text style={{ fontSize: 12, color: '#98A2B3' }}>
+                        {t('negativePromptLabel')}
+                      </Typography.Text>
+                      <p className="mt-0.5 leading-relaxed" style={{ color: '#667085' }}>
+                        {selectedTask.negative_prompt}
+                      </p>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-4 pt-1">
+                    <div>
+                      <Typography.Text style={{ fontSize: 12, color: '#98A2B3' }}>
+                        {t('resolutionLabel')}:{' '}
+                      </Typography.Text>
+                      <Typography.Text style={{ fontSize: 12, color: '#101828' }}>
+                        {formatResolution(selectedTask)}
+                      </Typography.Text>
+                    </div>
+                    <div>
+                      <Typography.Text style={{ fontSize: 12, color: '#98A2B3' }}>
+                        {t('durationLabel')}:{' '}
+                      </Typography.Text>
+                      <Typography.Text style={{ fontSize: 12, color: '#101828' }}>
+                        {formatDuration(selectedTask)}
+                      </Typography.Text>
+                    </div>
+                    <div>
+                      <Typography.Text style={{ fontSize: 12, color: '#98A2B3' }}>
+                        {t('modelLabel')}:{' '}
+                      </Typography.Text>
+                      <Typography.Text style={{ fontSize: 12, color: '#101828' }}>
+                        {modelDisplayName(selectedTask.model)}
+                      </Typography.Text>
+                    </div>
+                    <div>
+                      <Typography.Text style={{ fontSize: 12, color: '#98A2B3' }}>
+                        {t('seedLabel')}:{' '}
+                      </Typography.Text>
+                      <Typography.Text style={{ fontSize: 12, color: '#101828' }} className="font-mono">
+                        {selectedTask.seed != null && selectedTask.seed !== ''
+                          ? selectedTask.seed
+                          : t('random')}
+                      </Typography.Text>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ---- Error State ---- */}
+          {previewState === 'error' && selectedTask && (
+            <div className="flex-1 flex flex-col items-center justify-center py-20 px-8 text-center">
+              <div
+                className="w-full max-w-2xl rounded-xl flex flex-col items-center justify-center"
+                style={{
+                  aspectRatio: '16 / 9',
+                  backgroundColor: '#F7F8FA',
+                  border: '1px solid #EAECF0',
+                }}
+              >
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+                  style={{ backgroundColor: '#fff', border: '1px solid #FEF3C7' }}
+                >
+                  <ExclamationCircleOutlined style={{ fontSize: 24, color: '#F59E0B' }} />
+                </div>
+                <Typography.Title level={5} className="!mb-1" style={{ color: '#101828' }}>
+                  {t('previewFailed')}
+                </Typography.Title>
+                <Typography.Text className="max-w-sm block" style={{ fontSize: 13, color: '#98A2B3' }}>
+                  {taskErrorMessage(selectedTask) || t('previewFailedHint')}
+                </Typography.Text>
+                <Button
+                  type="primary"
+                  className="mt-5"
+                  style={{ height: 40, borderRadius: 10 }}
+                  onClick={() => regenerateFromTask(selectedTask)}
+                  icon={<ReloadOutlined />}
+                >
+                  {t('retryGenerate')}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

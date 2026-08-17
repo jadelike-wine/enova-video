@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Git history is the ultimate source of truth; this file aggregates user-, developer-, and ops-relevant changes. Not every commit is listed — only changes that matter to consumers, operators, or maintainers.
 
+## [1.7.19] — 2026-08-16
+
+### Fixed
+- Generation job creation now inserts the `generation_jobs` row before reserving credits in the same transaction. Previously reserving first could trigger a foreign-key violation on `credit_reservations.generation_job_id` because the referenced job did not exist yet (confirmed in production).
+
+---
+
 ## [1.7.18] — 2026-08-16
 
 ### Added

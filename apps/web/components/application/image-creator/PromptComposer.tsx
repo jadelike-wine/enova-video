@@ -28,17 +28,22 @@ export interface PromptComposerProps {
   balance?: number | string
   estimatedCost?: number | string
   modeOptions: Array<{ value: string; label: string }>
+  maxImages?: number
   disabled?: boolean
   maxLength?: number
 }
 
-export default function PromptComposer({ prompt, onPromptChange, mode, model, ratio, size, onModeChange, onModelChange, onRatioChange, onSizeChange, inputImages = [], onUpload, onReplaceImage, onRemoveImage, onSubmit, generating = false, generateStep, error, balance, estimatedCost, modeOptions, disabled, maxLength = 2000 }: PromptComposerProps) {
+export default function PromptComposer({ prompt, onPromptChange, mode, model, ratio, size, onModeChange, onModelChange, onRatioChange, onSizeChange, inputImages = [], onUpload, onReplaceImage, onRemoveImage, onSubmit, generating = false, generateStep, error, balance, estimatedCost, modeOptions, maxImages = 6, disabled, maxLength = 2000 }: PromptComposerProps) {
   const upload = () => {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = 'image/jpeg,image/png,image/webp'
     input.multiple = mode === 'multi_img'
-    input.onchange = () => Array.from(input.files ?? []).forEach((file) => onUpload(file))
+    input.onchange = () => {
+      const files = Array.from(input.files ?? [])
+      const available = mode === 'multi_img' ? Math.max(0, maxImages - inputImages.length) : 1
+      files.slice(0, available).forEach((file) => onUpload(file))
+    }
     input.click()
   }
   return <section className={styles['image-creator-composer']} aria-label="图片创作输入">

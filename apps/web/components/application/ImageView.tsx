@@ -59,7 +59,18 @@ export default function ImageView() {
   const [promptValue, setPromptValue] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const formCardRef = useRef<HTMLDivElement>(null)
+  const historyRef = useRef<ImageTask[]>([])
+  const selectedTaskRef = useRef<string | number | null>(null)
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollingRef = useRef(false)
+  const mountedRef = useRef(true)
+  const pollTickRef = useRef<() => Promise<void>>(async () => {})
+  const inputImagesRef = useRef<InputImage[]>([])
   const { history, resetHistory, setHistory } = usePaginatedTaskHistory(useCallback(async () => (await generationApi.list(50)).map(toImageTask), []))
+  useEffect(() => { historyRef.current = history as ImageTask[] }, [history])
+  useEffect(() => { selectedTaskRef.current = selectedTaskId }, [selectedTaskId])
+  useEffect(() => { inputImagesRef.current = inputImages }, [inputImages])
+  useEffect(() => () => { mountedRef.current = false }, [])
   const selectedTask = (history.find((task) => task.id === selectedTaskId) as ImageTask | undefined) || null
   const previewState = useMemo(() => getPreviewState(selectedTask, generating), [selectedTask, generating])
   const revokePreview = useCallback((item: InputImage) => { if (item.preview.startsWith('blob:')) URL.revokeObjectURL(item.preview) }, [])
@@ -96,14 +107,63 @@ export default function ImageView() {
   const copyPrompt = useCallback(async (prompt?: string) => { if (!prompt) return; try { await navigator.clipboard.writeText(prompt) } catch { /* optional */ } }, [])
   const downloadImage = useCallback(async (url: string, name?: string) => { try { const response = await fetch(url); const objectUrl = URL.createObjectURL(await response.blob()); const anchor = document.createElement('a'); anchor.href = objectUrl; anchor.download = name || `enova-${Date.now()}.png`; anchor.click(); URL.revokeObjectURL(objectUrl) } catch { window.open(url, '_blank') } }, [])
   const regenerateFromTask = useCallback((task: ImageTask) => { fillFormFromTask(task); form.submit() }, [fillFormFromTask, form])
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current)
+    pollTimerRef.current = null
+  }, [])
+  useEffect(() => () => { mountedRef.current = false; stopPolling() }, [stopPolling])
+  const pendingTasks = useCallback(() => historyRef.current.filter((task) => ACTIVE_STATUSES.includes(task.status) && !String(task.id).startsWith('temp-')), [])
+  const schedulePoll = useCallback(() => {
+    if (!mountedRef.current) return
+    stopPolling()
+    pollTimerRef.current = setTimeout(() => { void pollTickRef.current() }, 8000)
+  }, [stopPolling])
+  const pollTick = useCallback(async () => {
+    if (pollingRef.current || !mountedRef.current) return
+    pollingRef.current = true
+    try {
+      const pending = pendingTasks()
+      if (!pending.length) { stopPolling(); return }
+      for (const task of pending) {
+        try {
+          const updated = toImageTask(await generationApi.get(String(task.id)))
+          setHistory((previous) => previous.map((item) => item.id === updated.id ? updated : item))
+          if (!ACTIVE_STATUSES.includes(updated.status) && (updated.status === 'FAILED' || updated.status === 'CANCELED') && selectedTaskRef.current === updated.id) {
+            const message = updated.error_message ? String(updated.error_message) : t('generateFailed')
+            setError(message)
+            await alert({ title: t('generateFailed'), message, confirmVariant: 'danger' })
+          }
+        } catch {
+          // Ignore transient status requests and retry on the next tick.
+        }
+      }
+    } finally { pollingRef.current = false }
+    if (mountedRef.current && pendingTasks().length) schedulePoll()
+    else stopPolling()
+  }, [alert, pendingTasks, schedulePoll, setHistory, stopPolling, t])
+  useEffect(() => { pollTickRef.current = pollTick }, [pollTick])
   useEffect(() => { let cancelled = false; (async () => { await refreshKeyStatus(); if (!cancelled) await resetHistory() })(); return () => { cancelled = true } // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  useEffect(() => () => inputImages.forEach(revokePreview), []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => inputImagesRef.current.forEach(revokePreview), [revokePreview])
+  useEffect(() => {
+    if (!history.length) { stopPolling(); return }
+    if (selectedTaskId === null) {
+      const latest = (history as ImageTask[]).find((task) => !task._optimistic && (displayUrl(task) || ACTIVE_STATUSES.includes(task.status) || task.status === 'FAILED' || task.status === 'CANCELED'))
+      if (latest) setSelectedTaskId(latest.id)
+    }
+    if (pendingTasks().length) schedulePoll()
+    else stopPolling()
+  }, [history, pendingTasks, schedulePoll, selectedTaskId, stopPolling])
   const currentSize = Form.useWatch('size', form) || '1K'
   const currentRatio = Form.useWatch('ratio', form) || '1:1'
   const modeOptions = useMemo(() => IMAGE_MODES.map((mode) => ({ value: mode.id, label: mode.name })), [])
   const activeItem = pathname?.includes('/videos') ? 'video' : pathname?.includes('/settings') ? 'settings' : 'generate'
-  const handleDeleteTask = useCallback((task: ImageTask) => { setHistory((previous) => previous.filter((item) => item.id !== task.id)); setSelectedTaskId((current) => current === task.id ? null : current) }, [setHistory])
+  const handleDeleteTask = useCallback((task: ImageTask) => {
+    // No user-facing image deletion endpoint exists; preserve the prior local-history semantics.
+    const next = historyRef.current.filter((item) => item.id !== task.id)
+    setHistory(next)
+    if (selectedTaskRef.current === task.id) setSelectedTaskId((next.find((item) => displayUrl(item))?.id ?? null))
+  }, [setHistory])
   const imageActions: ImageCardActions = { onDownload: (task) => { const url = displayUrl(task); if (url) return downloadImage(url) }, onRegenerate: regenerateFromTask, onEdit: fillFormFromTask, onCopyPrompt: copyPrompt, onDelete: handleDeleteTask }
   const setFormValue = useCallback(<K extends keyof ImageFormValues>(field: K, value: ImageFormValues[K]) => form.setFieldValue(field, value), [form])
 
@@ -116,7 +176,7 @@ export default function ImageView() {
         {previewState !== 'empty' && <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col"><GenerationCanvas state={previewState} task={selectedTask} tasks={history as ImageTask[]} status={generateStep === 'uploading' ? t('generatingWithUpload') : t('generatingNow')} errorMessage={selectedTask?.error_message ? String(selectedTask.error_message) : error} {...imageActions} /></section>}
         <Form.Item name="prompt" hidden><Input /></Form.Item><Form.Item name="mode" hidden><Input /></Form.Item><Form.Item name="model" hidden><Input /></Form.Item><Form.Item name="ratio" hidden><Input /></Form.Item><Form.Item name="size" hidden><Input /></Form.Item>
       </div>
-      <div className="sticky bottom-0 z-10 px-4 pb-4 sm:px-8"><PromptComposer prompt={promptValue} onPromptChange={(value) => { setPromptValue(value); setFormValue('prompt', value) }} mode={currentMode} model={form.getFieldValue('model') || DEFAULT_IMAGE_MODEL} ratio={currentRatio} size={currentSize} onModeChange={(value) => { handleModeChange(value); setFormValue('mode', value) }} onModelChange={(value) => setFormValue('model', value)} onRatioChange={(value) => setFormValue('ratio', value)} onSizeChange={(value) => setFormValue('size', value)} inputImages={inputImages} onUpload={(file) => currentMode === 'multi_img' ? handleMultiUpload(file) : handleSingleUpload(file)} onReplaceImage={replaceInputImage} onRemoveImage={removeInputImage} onSubmit={() => form.submit()} generating={generating} generateStep={generateStep} error={error} balance={balance} estimatedCost={2} modeOptions={modeOptions} maxLength={MAX_PROMPT_LENGTH} /></div>
+      <div className="sticky bottom-0 z-10 px-4 pb-4 sm:px-8"><PromptComposer prompt={promptValue} onPromptChange={(value) => { setPromptValue(value); setFormValue('prompt', value) }} mode={currentMode} model={form.getFieldValue('model') || DEFAULT_IMAGE_MODEL} ratio={currentRatio} size={currentSize} onModeChange={(value) => { handleModeChange(value); setFormValue('mode', value) }} onModelChange={(value) => setFormValue('model', value)} onRatioChange={(value) => setFormValue('ratio', value)} onSizeChange={(value) => setFormValue('size', value)} inputImages={inputImages} onUpload={(file) => currentMode === 'multi_img' ? handleMultiUpload(file) : handleSingleUpload(file)} onReplaceImage={replaceInputImage} onRemoveImage={removeInputImage} onSubmit={() => form.submit()} generating={generating} generateStep={generateStep} error={error} balance={balance} estimatedCost={2} modeOptions={modeOptions} maxImages={MAX_COMPOSE_IMAGES} maxLength={MAX_PROMPT_LENGTH} /></div>
     </Form></main>
   </div>
 }

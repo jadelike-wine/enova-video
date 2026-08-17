@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button, Tooltip } from 'antd'
 import { CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, HeartFilled, HeartOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { ImageCardActions, ImageTask } from './types.js'
+import styles from './image-creator.module.css'
 
 export interface ImageCardProps extends ImageCardActions { task: ImageTask; className?: string }
 
@@ -12,7 +13,7 @@ export default function ImageCard({ task, onDownload, onRegenerate, onEdit, onCo
   const url = task.output_url
   if (!url) return null
   const toggleFavorite = () => { const next = !favorite; setFavorite(next); onFavorite?.(task, next) }
-  return <article className={`image-creator-card ${className}`}><img src={url} alt={task.prompt || '生成图片'} loading="lazy" /><div className="image-creator-card__rail" aria-label="图片操作">
+  return <article className={`${styles['image-creator-card']} ${className}`}><img src={url} alt={task.prompt || '生成图片'} loading="lazy" /><div className={styles['image-creator-card__rail']} aria-label="图片操作">
     <Tooltip title="下载"><Button type="text" icon={<DownloadOutlined />} onClick={() => onDownload?.(task)} aria-label="下载图片" /></Tooltip>
     <Tooltip title="重新生成"><Button type="text" icon={<ReloadOutlined />} onClick={() => onRegenerate?.(task)} aria-label="重新生成" /></Tooltip>
     <Tooltip title="编辑"><Button type="text" icon={<EditOutlined />} onClick={() => onEdit?.(task)} aria-label="编辑图片" /></Tooltip>

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Git history is the ultimate source of truth; this file aggregates user-, developer-, and ops-relevant changes. Not every commit is listed — only changes that matter to consumers, operators, or maintainers.
 
+## [1.7.20] — 2026-08-17
+
+### Changed
+- System update admin page uses compact (`size="small"`) version cards with tighter spacing and reduced title size.
+
+---
+
 ## [1.7.19] — 2026-08-16
 
 ### Fixed

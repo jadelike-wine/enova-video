@@ -95,11 +95,14 @@ export class GenerationsService {
       optional: true,
     });
 
-    // P0-2: 单个事务内完成 reserve + 写 ledger + 插入 generation_job + 写 outbox。
+    // P0-2: 单个事务内完成 插入 generation_job + reserve + 写 outbox。
     // 事务提交后由 OutboxDispatcher 异步投递 BullMQ，避免 orphan job。
+    //
+    // 顺序不变量：必须先 INSERT generation_jobs，再 reserveInTx。
+    // credit_reservations.generation_job_id 有外键约束引用 generation_jobs.id，
+    // 若先 reserve 会因外键不存在导致 FK violation（生产已确认该 bug）。
+    // 若 reserve 失败（余额不足），事务回滚，generation_jobs 行也会回滚。
     const { job } = await this.db.transaction(async (tx) => {
-      await this.wallet.reserveInTx(tx, workspaceId, jobId, credits, `reserve:${jobId}`);
-
       const [generationJob] = await tx
         .insert(generationJobs)
         .values({
@@ -120,6 +123,8 @@ export class GenerationsService {
           queuedAt: new Date(),
         })
         .returning();
+
+      await this.wallet.reserveInTx(tx, workspaceId, jobId, credits, `reserve:${jobId}`);
 
       // 写 outbox：OutboxDispatcher 会读取并投递到 BullMQ。
       const payload: GenerationJobPayload = {

@@ -48,7 +48,7 @@ export default function PromptComposer({ prompt, onPromptChange, mode, model, ra
       <Segmented size="small" value={mode} options={modeOptions} onChange={(value) => onModeChange(value as GenerationMode)} disabled={disabled || generating} />
       <ModelSelector model={model} ratio={ratio} size={size} onModelChange={onModelChange} onRatioChange={onRatioChange} onSizeChange={onSizeChange} disabled={disabled || generating} />
       <span className="image-creator-composer__balance">{estimatedCost != null ? `预计 ${estimatedCost} Credits` : ''}{balance != null ? ` · 余额 ${balance}` : ''}</span>
-      <Button type="primary" shape="circle" icon={<ArrowUpOutlined />} onClick={onSubmit} loading={generating} disabled={disabled || !prompt.trim()} aria-label={generating ? (generateStep === 'uploading' ? '正在上传' : '正在生成') : '开始生成'} />
+      <Button type="primary" shape="circle" icon={<ArrowUpOutlined />} onClick={onSubmit} loading={generating} disabled={disabled || generating || !prompt.trim()} aria-label={generating ? (generateStep === 'uploading' ? '正在上传' : '正在生成') : '开始生成'} />
     </div>
     {error && <p className="image-creator-composer__error" role="alert">{error}</p>}
     {mode !== 'text2img' && inputImages.length === 0 && <p className="image-creator-composer__hint"><PictureOutlined /> {mode === 'img2img' ? '上传一张参考图开始编辑' : '上传多张图片进行合成'}</p>}

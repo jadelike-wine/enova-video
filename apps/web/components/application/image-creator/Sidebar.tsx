@@ -19,9 +19,13 @@ export interface SidebarProps {
   collapsed: boolean
   onCollapsedChange: (collapsed: boolean) => void
   credits?: number | string
+  creditsHref?: string
+  onCreditsClick?: () => void
   userName?: string
   userEmail?: string
   userAvatarUrl?: string
+  userHref?: string
+  onUserClick?: () => void
   activeItem?: string
   items?: SidebarItem[]
 }
@@ -29,7 +33,7 @@ export interface SidebarProps {
 const defaultItems: SidebarItem[] = [
   { id: 'home', label: '首页', href: '/app', icon: <HomeOutlined /> },
   { id: 'inspiration', label: '灵感', href: '/app/images', icon: <CrownOutlined /> },
-  { id: 'generate', label: '生成', href: '/app/images', icon: <EditOutlined />, active: true },
+  { id: 'generate', label: '生成', href: '/app/images', icon: <EditOutlined /> },
   { id: 'assets', label: '素材库', href: '/app/assets', icon: <FileImageOutlined /> },
   { id: 'canvas', label: '画布', href: '/app/canvas', icon: <AppstoreOutlined /> },
   { id: 'video', label: '视频生成', href: '/app/videos', icon: <VideoCameraOutlined /> },
@@ -40,9 +44,13 @@ export default function Sidebar({
   collapsed,
   onCollapsedChange,
   credits = 0,
+  creditsHref = '/app/wallet',
+  onCreditsClick,
   userName = '创作者',
   userEmail,
   userAvatarUrl,
+  userHref = '/app/settings',
+  onUserClick,
   activeItem = 'generate',
   items = defaultItems,
 }: SidebarProps) {
@@ -74,11 +82,11 @@ export default function Sidebar({
         })}
       </nav>
       <div className="image-creator-sidebar__footer">
-        <div className="image-creator-sidebar__credits" title={`${credits} Credits`}><CrownOutlined /><motion.span animate={{ opacity: collapsed ? 0 : 1 }}><strong>{credits}</strong> Credits</motion.span></div>
-        <div className="image-creator-sidebar__user">
+        <Link href={creditsHref} onClick={onCreditsClick} className="image-creator-sidebar__credits" title={`${credits} Credits`}><CrownOutlined /><motion.span animate={{ opacity: collapsed ? 0 : 1 }}><strong>{credits}</strong> Credits</motion.span></Link>
+        <Link href={userHref} onClick={onUserClick} className="image-creator-sidebar__user">
           {userAvatarUrl ? <img src={userAvatarUrl} alt="" /> : <span className="image-creator-sidebar__avatar">{userName.slice(0, 1)}</span>}
           <motion.span animate={{ opacity: collapsed ? 0 : 1 }} className="image-creator-sidebar__user-copy"><strong>{userName}</strong>{userEmail && <small>{userEmail}</small>}</motion.span>
-        </div>
+        </Link>
       </div>
     </motion.aside>
   )

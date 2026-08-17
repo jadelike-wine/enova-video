@@ -2,12 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-export interface TaskItem {
-  id: string | number
-  _optimistic?: boolean
-  [key: string]: any
-}
+import type { TaskItem } from './task-types.js'
+
+export type { TaskItem } from './task-types.js'
 
 function isServerTask(task: TaskItem): boolean {
   return task && !task._optimistic && !String(task.id).startsWith('temp-')

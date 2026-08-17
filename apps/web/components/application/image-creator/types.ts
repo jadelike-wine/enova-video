@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import type { TaskItem } from '../usePaginatedTaskHistory'
+import type { TaskItem } from '../task-types.js'
 
 /** The image modes supported by the existing image-generation form. */
 export type GenerationMode = 'text2img' | 'img2img' | 'multi_img'

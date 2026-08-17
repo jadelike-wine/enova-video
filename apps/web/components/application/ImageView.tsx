@@ -70,7 +70,6 @@ export default function ImageView() {
   useEffect(() => { historyRef.current = history as ImageTask[] }, [history])
   useEffect(() => { selectedTaskRef.current = selectedTaskId }, [selectedTaskId])
   useEffect(() => { inputImagesRef.current = inputImages }, [inputImages])
-  useEffect(() => () => { mountedRef.current = false }, [])
   const selectedTask = (history.find((task) => task.id === selectedTaskId) as ImageTask | undefined) || null
   const previewState = useMemo(() => getPreviewState(selectedTask, generating), [selectedTask, generating])
   const revokePreview = useCallback((item: InputImage) => { if (item.preview.startsWith('blob:')) URL.revokeObjectURL(item.preview) }, [])
@@ -111,7 +110,13 @@ export default function ImageView() {
     if (pollTimerRef.current) clearTimeout(pollTimerRef.current)
     pollTimerRef.current = null
   }, [])
-  useEffect(() => () => { mountedRef.current = false; stopPolling() }, [stopPolling])
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      stopPolling()
+    }
+  }, [stopPolling])
   const pendingTasks = useCallback(() => historyRef.current.filter((task) => ACTIVE_STATUSES.includes(task.status) && !String(task.id).startsWith('temp-')), [])
   const schedulePoll = useCallback(() => {
     if (!mountedRef.current) return

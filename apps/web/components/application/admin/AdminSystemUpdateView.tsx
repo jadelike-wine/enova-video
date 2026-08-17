@@ -391,15 +391,15 @@ export default function AdminSystemUpdateView() {
               />
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-              <Card title="当前版本">
-                <p className="text-xl font-semibold text-gray-900 mt-1">{info.current_version}</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card title="当前版本" size="small">
+                <p className="text-lg font-semibold text-gray-900">{info.current_version}</p>
               </Card>
-              <Card title="最新稳定版">
-                <p className="text-xl font-semibold text-cyan-600 mt-1">{info.latest_version}</p>
+              <Card title="最新稳定版" size="small">
+                <p className="text-lg font-semibold text-cyan-600">{info.latest_version}</p>
               </Card>
-              <Card title="状态">
-                <p className={`text-xl font-semibold mt-1 ${info.has_update ? 'text-amber-600' : 'text-emerald-600'}`}>
+              <Card title="状态" size="small">
+                <p className={`text-lg font-semibold ${info.has_update ? 'text-amber-600' : 'text-emerald-600'}`}>
                   {info.has_update ? '有可用更新' : '已是最新'}
                 </p>
               </Card>

@@ -1,6 +1,7 @@
 .env
 .env.local
 .env.*.local
+.superpowers/
 node_modules/
 dist/
 .next/

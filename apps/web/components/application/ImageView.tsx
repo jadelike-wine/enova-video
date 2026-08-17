@@ -38,7 +38,7 @@ import {
 } from '../../lib/api'
 import { useDialog } from './DialogProvider'
 import { useApiKeyGuard } from './useApiKeyGuard'
-import { usePaginatedTaskHistory, type TaskItem } from './usePaginatedTaskHistory'
+import { usePaginatedTaskHistory } from './usePaginatedTaskHistory'
 import {
   IMAGE_MODELS,
   IMAGE_MODES,
@@ -50,6 +50,13 @@ import {
   modelDisplayName,
 } from '../../lib/models'
 import { useSession } from '../../lib/auth'
+import type {
+  GenerationMode,
+  ImageFormValues,
+  ImageTask,
+  InputImage,
+  PreviewState,
+} from './image-creator/types'
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -64,9 +71,6 @@ const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 /** 单张上传图片大小上限（10 MB） */
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
-/** 生成模式联合类型 */
-type GenerationMode = 'text2img' | 'img2img' | 'multi_img'
-
 /** Prompt 最大字符数 */
 const MAX_PROMPT_LENGTH = 2000
 
@@ -77,34 +81,7 @@ const ACTIVE_STATUSES = ['PENDING', 'QUEUED', 'RUNNING']
 // 类型定义
 // ---------------------------------------------------------------------------
 
-interface ImageTask extends TaskItem {
-  status: string
-  prompt?: string
-  mode?: string
-  size?: string
-  ratio?: string
-  model?: string
-  input_images?: string[]
-  output_url?: string
-  error_message?: unknown
-  created_at?: string
-}
-
-interface InputImage {
-  file?: File
-  preview: string
-}
-
-interface ImageFormValues {
-  model: string
-  mode: string
-  prompt: string
-  size: string
-  ratio: string
-}
-
 /** Preview Panel 的四种状态 */
-type PreviewState = 'empty' | 'generating' | 'success' | 'error'
 
 // ---------------------------------------------------------------------------
 // 辅助函数

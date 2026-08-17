@@ -21,6 +21,6 @@ export default function ModelSelector({ model, ratio, size, onModelChange, onRat
     <Select aria-label="模型" value={model} disabled={disabled} onChange={onModelChange} options={IMAGE_MODELS.map((item) => ({ value: item.apiId, label: item.name }))} />
     <Select aria-label="比例" value={ratio} disabled={disabled} onChange={onRatioChange} options={IMAGE_RATIOS.map((item) => ({ value: item.id, label: item.label }))} />
     <Select aria-label="清晰度" value={size} disabled={disabled} onChange={onSizeChange} options={IMAGE_QUALITY_SIZES.map((item) => ({ value: item.id, label: item.label }))} />
-    {dimensions && <span className="image-creator-model-selector__dimensions">{dimensions}</span>}
+    {dimensions && <span className={styles['image-creator-model-selector__dimensions']}>{dimensions}</span>}
   </div>
 }

@@ -86,7 +86,11 @@ export default function Sidebar({
       <div className={styles['image-creator-sidebar__footer']}>
         <Link href={creditsHref} onClick={onCreditsClick} className={styles['image-creator-sidebar__credits']} title={`${credits} Credits`}><CrownOutlined /><motion.span animate={{ opacity: collapsed ? 0 : 1 }}><strong>{credits}</strong> Credits</motion.span></Link>
         <Link href={userHref} onClick={onUserClick} className={styles['image-creator-sidebar__user']}>
-          {userAvatarUrl ? <img src={userAvatarUrl} alt="" /> : <span className={styles['image-creator-sidebar__avatar']}>{userName.slice(0, 1)}</span>}
+          {userAvatarUrl ? <>
+            {/* User avatar hosts are runtime-configured, so avoid next/image host restrictions. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={userAvatarUrl} alt="" />
+          </> : <span className={styles['image-creator-sidebar__avatar']}>{userName.slice(0, 1)}</span>}
           <motion.span animate={{ opacity: collapsed ? 0 : 1 }} className={styles['image-creator-sidebar__user-copy']}><strong>{userName}</strong>{userEmail && <small>{userEmail}</small>}</motion.span>
         </Link>
       </div>

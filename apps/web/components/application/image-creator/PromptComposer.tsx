@@ -41,7 +41,12 @@ export default function PromptComposer({ prompt, onPromptChange, mode, model, ra
     input.click()
   }
   return <section className={styles['image-creator-composer']} aria-label="图片创作输入">
-    {inputImages.length > 0 && <div className={styles['image-creator-composer__previews']}>{inputImages.map((image, index) => <div className={styles['image-creator-composer__preview']} key={`${image.preview}-${index}`}><img src={image.preview} alt={`参考图 ${index + 1}`} /><button type="button" aria-label={`删除参考图 ${index + 1}`} onClick={() => onRemoveImage(index)}><DeleteOutlined /></button></div>)}</div>}
+    {inputImages.length > 0 && <div className={styles['image-creator-composer__previews']}>{inputImages.map((image, index) => <div className={styles['image-creator-composer__preview']} key={`${image.preview}-${index}`}>
+      {/* Blob URLs and local upload previews are not compatible with next/image. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={image.preview} alt={`参考图 ${index + 1}`} />
+      <button type="button" aria-label={`删除参考图 ${index + 1}`} onClick={() => onRemoveImage(index)}><DeleteOutlined /></button>
+    </div>)}</div>}
     <Input.TextArea value={prompt} onChange={(event) => onPromptChange(event.target.value)} onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); onSubmit() } }} placeholder="描述你想创作的画面…" autoSize={{ minRows: 2, maxRows: 6 }} maxLength={maxLength} disabled={disabled || generating} aria-label="提示词" className={styles['image-creator-composer__input']} />
     <div className={styles['image-creator-composer__toolbar']}>
       <Tooltip title="上传参考图"><Button type="text" icon={<InboxOutlined />} onClick={upload} disabled={disabled || generating} aria-label="上传参考图" /></Tooltip>

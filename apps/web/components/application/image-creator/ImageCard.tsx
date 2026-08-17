@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Button, Tooltip } from 'antd'
 import { CopyOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, HeartFilled, HeartOutlined, ReloadOutlined } from '@ant-design/icons'
-import type { ImageCardActions, ImageTask } from './types.js'
+import type { ImageCardActions, ImageTask } from './types'
 import styles from './image-creator.module.css'
 
 export interface ImageCardProps extends ImageCardActions { task: ImageTask; className?: string }

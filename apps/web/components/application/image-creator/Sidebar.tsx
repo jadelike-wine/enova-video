@@ -13,7 +13,7 @@ import {
   SettingOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons'
-import type { SidebarItem } from './types.js'
+import type { SidebarItem } from './types'
 import styles from './image-creator.module.css'
 
 export interface SidebarProps {

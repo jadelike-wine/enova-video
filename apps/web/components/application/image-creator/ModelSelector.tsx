@@ -1,7 +1,7 @@
 'use client'
 
 import { Select } from 'antd'
-import { IMAGE_MODELS, IMAGE_QUALITY_SIZES, IMAGE_RATIOS, getImageOutputDimensions } from '../../../lib/models.js'
+import { IMAGE_MODELS, IMAGE_QUALITY_SIZES, IMAGE_RATIOS, getImageOutputDimensions } from '../../../lib/models'
 import styles from './image-creator.module.css'
 
 export interface ModelSelectorProps {

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import type { TaskItem } from '../task-types.js'
+import type { TaskItem } from '../task-types'
 
 /** The image modes supported by the existing image-generation form. */
 export type GenerationMode = 'text2img' | 'img2img' | 'multi_img'

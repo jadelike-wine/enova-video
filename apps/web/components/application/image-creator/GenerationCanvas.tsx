@@ -2,8 +2,8 @@
 
 import { Button, Spin } from 'antd'
 import { RobotOutlined, ReloadOutlined } from '@ant-design/icons'
-import ImageGrid from './ImageGrid.js'
-import type { ImageCardActions, ImageTask, PreviewState } from './types.js'
+import ImageGrid from './ImageGrid'
+import type { ImageCardActions, ImageTask, PreviewState } from './types'
 import styles from './image-creator.module.css'
 
 export interface GenerationCanvasProps extends ImageCardActions {

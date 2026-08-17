@@ -1,7 +1,7 @@
 'use client'
 
-import ImageCard from './ImageCard.js'
-import type { ImageCardActions, ImageTask } from './types.js'
+import ImageCard from './ImageCard'
+import type { ImageCardActions, ImageTask } from './types'
 import styles from './image-creator.module.css'
 
 export interface ImageGridProps extends ImageCardActions { tasks: ImageTask[]; className?: string }

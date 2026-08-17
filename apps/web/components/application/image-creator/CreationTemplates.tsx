@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 import { PictureOutlined, UserOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import type { ReactNode } from 'react'
-import type { CreationTemplate } from './types.js'
+import type { CreationTemplate } from './types'
 import styles from './image-creator.module.css'
 
 const templates: Array<CreationTemplate & { icon: ReactNode }> = [

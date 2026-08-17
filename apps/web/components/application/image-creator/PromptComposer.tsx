@@ -1,9 +1,9 @@
 'use client'
 
-import { ArrowUpOutlined, DeleteOutlined, InboxOutlined, PictureOutlined } from '@ant-design/icons'
+import { ArrowUpOutlined, DeleteOutlined, InboxOutlined, PictureOutlined, SwapOutlined } from '@ant-design/icons'
 import { Button, Input, Segmented, Tooltip } from 'antd'
-import ModelSelector from './ModelSelector.js'
-import type { GenerationMode, InputImage } from './types.js'
+import ModelSelector from './ModelSelector'
+import type { GenerationMode, InputImage } from './types'
 import styles from './image-creator.module.css'
 
 export interface PromptComposerProps {
@@ -19,6 +19,7 @@ export interface PromptComposerProps {
   onSizeChange: (value: string) => void
   inputImages?: InputImage[]
   onUpload: (file: File) => void | boolean
+  onReplaceImage?: (index: number) => void
   onRemoveImage: (index: number) => void
   onSubmit: () => void
   generating?: boolean
@@ -31,7 +32,7 @@ export interface PromptComposerProps {
   maxLength?: number
 }
 
-export default function PromptComposer({ prompt, onPromptChange, mode, model, ratio, size, onModeChange, onModelChange, onRatioChange, onSizeChange, inputImages = [], onUpload, onRemoveImage, onSubmit, generating = false, generateStep, error, balance, estimatedCost, modeOptions, disabled, maxLength = 2000 }: PromptComposerProps) {
+export default function PromptComposer({ prompt, onPromptChange, mode, model, ratio, size, onModeChange, onModelChange, onRatioChange, onSizeChange, inputImages = [], onUpload, onReplaceImage, onRemoveImage, onSubmit, generating = false, generateStep, error, balance, estimatedCost, modeOptions, disabled, maxLength = 2000 }: PromptComposerProps) {
   const upload = () => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -45,6 +46,7 @@ export default function PromptComposer({ prompt, onPromptChange, mode, model, ra
       {/* Blob URLs and local upload previews are not compatible with next/image. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={image.preview} alt={`参考图 ${index + 1}`} />
+      <button type="button" aria-label={`替换参考图 ${index + 1}`} onClick={() => onReplaceImage?.(index)}><SwapOutlined /></button>
       <button type="button" aria-label={`删除参考图 ${index + 1}`} onClick={() => onRemoveImage(index)}><DeleteOutlined /></button>
     </div>)}</div>}
     <Input.TextArea value={prompt} onChange={(event) => onPromptChange(event.target.value)} onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); onSubmit() } }} placeholder="描述你想创作的画面…" autoSize={{ minRows: 2, maxRows: 6 }} maxLength={maxLength} disabled={disabled || generating} aria-label="提示词" className={styles['image-creator-composer__input']} />

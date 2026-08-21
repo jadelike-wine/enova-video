@@ -48,7 +48,7 @@ export function groupAssetsByDate(assets: Asset[], locale: string): AssetDateGro
 
 export function buildAssetsQuery(params: ListAssetsParams = {}): string {
   const query = new URLSearchParams()
-  if (params.type) query.set('type', params.type)
+  if (params.type && params.type !== 'ALL') query.set('type', params.type)
   if (params.from) query.set('from', params.from)
   if (params.to) query.set('to', params.to)
   if (params.sort && params.sort !== 'NEWEST') query.set('sort', params.sort)

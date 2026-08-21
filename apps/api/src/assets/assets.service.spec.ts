@@ -16,12 +16,25 @@ function createDb(rows: unknown[]) {
   };
 }
 
-function sqlIncludesValue(value: unknown, expected: string): boolean {
-  if (Array.isArray(value)) return value.some((entry) => sqlIncludesValue(entry, expected));
-  if (!value || typeof value !== 'object') return value === expected;
+function sqlIncludes(value: unknown, matches: (entry: unknown) => boolean): boolean {
+  if (matches(value)) return true;
+  if (Array.isArray(value)) return value.some((entry) => sqlIncludes(entry, matches));
+  if (!value || typeof value !== 'object') return false;
 
   const chunk = value as { value?: unknown; queryChunks?: unknown };
-  return sqlIncludesValue(chunk.value, expected) || sqlIncludesValue(chunk.queryChunks, expected);
+  return sqlIncludes(chunk.value, matches) || sqlIncludes(chunk.queryChunks, matches);
+}
+
+function sqlIncludesValue(value: unknown, expected: unknown): boolean {
+  return sqlIncludes(value, (entry) => entry === expected);
+}
+
+function sqlIncludesDate(value: unknown, expected: string): boolean {
+  return sqlIncludes(value, (entry) => entry instanceof Date && entry.toISOString() === expected);
+}
+
+function sqlIncludesText(value: unknown, expected: string): boolean {
+  return sqlIncludes(value, (entry) => typeof entry === 'string' && entry.includes(expected));
 }
 
 describe('AssetsService', () => {
@@ -120,8 +133,18 @@ describe('AssetsService', () => {
     expect(chain.from).toHaveBeenCalledTimes(1);
     expect(chain.leftJoin).toHaveBeenCalledTimes(1);
     expect(chain.where).toHaveBeenCalledTimes(1);
+    expect(sqlIncludesValue(chain.leftJoin.mock.calls[0]?.[1], 'workspace-42')).toBe(true);
     expect(sqlIncludesValue(chain.where.mock.calls[0]?.[0], 'workspace-42')).toBe(true);
+    expect(sqlIncludesValue(chain.where.mock.calls[0]?.[0], 'VIDEO')).toBe(true);
+    expect(sqlIncludesDate(chain.where.mock.calls[0]?.[0], dto.from)).toBe(true);
+    expect(sqlIncludesDate(chain.where.mock.calls[0]?.[0], dto.to)).toBe(true);
     expect(chain.orderBy).toHaveBeenCalledTimes(1);
+    expect(sqlIncludesText(chain.orderBy.mock.calls[0]?.[0], ' asc')).toBe(true);
     expect(chain.limit).toHaveBeenCalledWith(25);
+
+    await service.list('workspace-42', { ...dto, sort: 'NEWEST' } as any);
+
+    expect(chain.orderBy).toHaveBeenCalledTimes(2);
+    expect(sqlIncludesText(chain.orderBy.mock.calls[1]?.[0], ' desc')).toBe(true);
   });
 });

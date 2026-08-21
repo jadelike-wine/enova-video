@@ -44,7 +44,13 @@ export class AssetsService {
     const rows = await this.db
       .select({ asset: assets, generation: generationJobs })
       .from(assets)
-      .leftJoin(generationJobs, eq(assets.generationJobId, generationJobs.id))
+      .leftJoin(
+        generationJobs,
+        and(
+          eq(assets.generationJobId, generationJobs.id),
+          eq(generationJobs.workspaceId, workspaceId),
+        ),
+      )
       .where(and(...conditions))
       .orderBy(
         (dto.sort ?? ASSET_SORTS.NEWEST) === ASSET_SORTS.OLDEST

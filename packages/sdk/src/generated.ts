@@ -362,6 +362,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出当前 Workspace 的媒体资产（Workspace 隔离） */
+        get: operations["AssetsController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/providers": {
         parameters: {
             query?: never;
@@ -1841,10 +1858,16 @@ export interface components {
             provider: string;
             /** @example kling-v2 */
             model: string;
-            /** @example 120 */
-            credits: number;
+            /**
+             * @description 固定 Credits。动态定价模式下可为 0 或省略。
+             * @example 120
+             */
+            credits?: number;
+            /** @description 完整定价配置。动态规则放在 pricingJson.rules 中。 */
             pricingJson?: Record<string, never>;
             dimensionsJson?: Record<string, never>;
+            /** @description 动态定价规则。包含 baseCredits、duration、resolution、quality、fps 等。传入后自动嵌入 pricingJson.rules。 */
+            dynamicRules?: Record<string, never>;
         };
         PreviewQuoteDto: {
             /** @enum {string} */
@@ -1853,6 +1876,7 @@ export interface components {
             provider: string;
             /** @example kling-v2 */
             model: string;
+            /** @description 定价维度参数（width/height/resolution/quality/duration/numFrames/frameRate/fps 等） */
             dimensions?: Record<string, never>;
         };
         UpdateVersionDto: {
@@ -2317,6 +2341,28 @@ export interface operations {
         requestBody?: never;
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AssetsController_list: {
+        parameters: {
+            query?: {
+                type?: "ALL" | "IMAGE" | "VIDEO";
+                from?: string;
+                to?: string;
+                sort?: "NEWEST" | "OLDEST";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

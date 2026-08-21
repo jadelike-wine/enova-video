@@ -444,6 +444,67 @@
         ]
       }
     },
+    "/api/v1/assets": {
+      "get": {
+        "operationId": "AssetsController_list",
+        "summary": "列出当前 Workspace 的媒体资产（Workspace 隔离）",
+        "parameters": [
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "ALL",
+              "enum": [
+                "ALL",
+                "IMAGE",
+                "VIDEO"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "NEWEST",
+              "enum": [
+                "NEWEST",
+                "OLDEST"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "assets"
+        ]
+      }
+    },
     "/api/v1/admin/providers": {
       "get": {
         "operationId": "ProvidersAdminController_list",
@@ -3192,20 +3253,25 @@
           },
           "credits": {
             "type": "number",
-            "example": 120
+            "example": 120,
+            "description": "固定 Credits。动态定价模式下可为 0 或省略。"
           },
           "pricingJson": {
-            "type": "object"
+            "type": "object",
+            "description": "完整定价配置。动态规则放在 pricingJson.rules 中。"
           },
           "dimensionsJson": {
             "type": "object"
+          },
+          "dynamicRules": {
+            "type": "object",
+            "description": "动态定价规则。包含 baseCredits、duration、resolution、quality、fps 等。传入后自动嵌入 pricingJson.rules。"
           }
         },
         "required": [
           "generationType",
           "provider",
-          "model",
-          "credits"
+          "model"
         ]
       },
       "PreviewQuoteDto": {
@@ -3232,7 +3298,8 @@
             "example": "kling-v2"
           },
           "dimensions": {
-            "type": "object"
+            "type": "object",
+            "description": "定价维度参数（width/height/resolution/quality/duration/numFrames/frameRate/fps 等）"
           }
         },
         "required": [

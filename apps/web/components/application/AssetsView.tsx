@@ -18,6 +18,22 @@ interface DateRange {
   to: string
 }
 
+export function getAssetDateRangeForQuery(preset: AssetTimePreset, from: string, to: string): DateRange {
+  if (preset === 'ALL' || (preset === 'CUSTOM' && (!from || !to))) return { from: '', to: '' }
+  return { from, to }
+}
+
+export function hasActiveAssetFilters(
+  type: AssetListType,
+  timePreset: AssetTimePreset,
+  sort: AssetSort,
+  from: string,
+  to: string,
+): boolean {
+  const hasDateFilter = timePreset === 'CUSTOM' ? Boolean(from && to) : timePreset !== 'ALL'
+  return type !== 'ALL' || hasDateFilter || sort !== 'NEWEST'
+}
+
 /** Build an inclusive local-calendar range for the quick time filters. */
 export function getDateRangeForPreset(preset: AssetTimePreset, now = new Date()): DateRange {
   if (preset === 'ALL' || preset === 'CUSTOM') return { from: '', to: '' }
@@ -90,9 +106,13 @@ export default function AssetsView() {
   const [retryToken, setRetryToken] = useState(0)
   const requestIdRef = useRef(0)
 
+  const dateRange = useMemo(
+    () => getAssetDateRangeForQuery(timePreset, from, to),
+    [from, timePreset, to],
+  )
   const query = useMemo(
-    () => ({ type, from, to, sort, limit: 60 }),
-    [from, sort, to, type],
+    () => ({ type, ...dateRange, sort, limit: 60 }),
+    [dateRange, sort, type],
   )
 
   useEffect(() => {
@@ -160,7 +180,8 @@ export default function AssetsView() {
     () => groupAssetsByDate(visibleAssets, locale === 'zh-CN' ? 'zh-CN' : 'en-US'),
     [locale, visibleAssets],
   )
-  const hasActiveFilters = type !== 'ALL' || timePreset !== 'ALL' || sort !== 'NEWEST'
+  const hasActiveFilters = hasActiveAssetFilters(type, timePreset, sort, from, to)
+  const hasCompleteCustomRange = timePreset !== 'CUSTOM' || Boolean(from && to)
 
   const typeLabel = type === 'IMAGE' ? t('typeImages') : type === 'VIDEO' ? t('typeVideos') : t('typeAll')
   const timeLabel = timePreset === 'WEEK'
@@ -258,7 +279,7 @@ export default function AssetsView() {
               </Button>
             </Dropdown>
             <Dropdown trigger={['click']} menu={{ items: timeItems }}>
-              <Button type="text" className={styles.controlButton} data-active={timePreset !== 'ALL'}>
+              <Button type="text" className={styles.controlButton} data-active={timePreset !== 'ALL' && hasCompleteCustomRange}>
                 {t('time')} · {timeLabel}<DownOutlined />
               </Button>
             </Dropdown>
@@ -312,8 +333,9 @@ export default function AssetsView() {
             ) : (
               <Empty description={t('emptyTitle')}>
                 <p className="mb-4 text-sm text-slate-500">{t('emptyHint')}</p>
-                <Link href="/app/images">
-                  <Button type="primary" icon={<PictureOutlined />}>{t('createImage')}</Button>
+                <Link href="/app/images" className={styles.emptyAction}>
+                  <PictureOutlined />
+                  <span>{t('createImage')}</span>
                 </Link>
               </Empty>
             )}
@@ -335,6 +357,7 @@ export default function AssetsView() {
         title={previewAsset?.prompt || t('videoPreview')}
         footer={null}
         centered
+        destroyOnHidden
         onCancel={() => setPreviewAsset(null)}
       >
         {previewAsset?.url && (

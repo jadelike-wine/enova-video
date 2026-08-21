@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { assetsApi, type Asset } from '@/lib/api'
-import { getDateRangeForPreset } from '../AssetsView'
+import { getAssetDateRangeForQuery, getDateRangeForPreset, hasActiveAssetFilters } from '../AssetsView'
 import { buildAssetsQuery, formatAssetDate, groupAssetsByDate } from './asset-view'
 
 function asset(id: string, createdAt: string): Asset {
@@ -130,5 +130,12 @@ describe('asset view helpers', () => {
       from: new Date(2026, 6, 23, 0, 0, 0, 0).toISOString(),
       to: new Date(2026, 7, 21, 23, 59, 59, 999).toISOString(),
     })
+  })
+
+  it('does not activate or query an incomplete custom date range', () => {
+    expect(hasActiveAssetFilters('ALL', 'CUSTOM', 'NEWEST', '', '')).toBe(false)
+    expect(hasActiveAssetFilters('ALL', 'CUSTOM', 'NEWEST', '2026-08-01T00:00:00.000Z', '')).toBe(false)
+    expect(getAssetDateRangeForQuery('CUSTOM', '2026-08-01T00:00:00.000Z', '')).toEqual({ from: '', to: '' })
+    expect(hasActiveAssetFilters('ALL', 'CUSTOM', 'NEWEST', '2026-08-01T00:00:00.000Z', '2026-08-07T23:59:59.999Z')).toBe(true)
   })
 })

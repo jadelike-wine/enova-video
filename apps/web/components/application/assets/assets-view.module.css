@@ -175,8 +175,28 @@
 
 .assetMeta {
   margin-top: 3px;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 12px;
+}
+
+.emptyAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 20px;
+  border-radius: 10px;
+  color: #fff;
+  background: #0d9488;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 160ms ease;
+}
+
+.emptyAction:hover {
+  color: #fff;
+  background: #0f766e;
 }
 
 .skeletonGrid {

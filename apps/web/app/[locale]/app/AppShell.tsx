@@ -5,6 +5,20 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { usePathname, useRouter } from '@/i18n.config'
 import { useTranslations } from 'next-intl'
 import { Button } from 'antd'
+import {
+  AppstoreOutlined,
+  DownOutlined,
+  ExperimentOutlined,
+  FileImageOutlined,
+  FolderOpenOutlined,
+  LogoutOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  PictureOutlined,
+  SettingOutlined,
+  VideoCameraOutlined,
+  WalletOutlined,
+} from '@ant-design/icons'
 import { DialogProvider } from '@/components/application/DialogProvider'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { SessionProvider, useSession } from '@/lib/auth'
@@ -12,20 +26,24 @@ import { BRAND } from '@/lib/brand'
 import { ContentLoading } from '@/components/application/admin/AdminUi'
 import { SiteConfigProvider, useSiteConfig } from '@/lib/useSiteConfig'
 import type { CustomMenuItem } from '@/lib/api'
+import { workspaceShellMode } from '@/components/application/image-creator/workbench'
+import { assetNavItem, getSidebarItemClass, hasActiveSidebarChild, isSidebarItemActive } from './sidebar-navigation'
 
 // 普通用户（个人端）导航项
 // 图片/视频为可展开菜单，包含「生成」和「历史记录」二级菜单
 const userNavItems = [
-  { path: '/app/wallet', labelKey: 'navigation.wallet', icon: '💰' },
-  { path: '/app/settings', labelKey: 'navigation.settings', icon: '⚙️' },
+  { path: '/app/settings', labelKey: 'navigation.settings', icon: <SettingOutlined /> },
 ]
 
 // 可展开的生成菜单配置
-const expandableMenus = [
+type NavChild = { path: string; labelKey: string; disabled?: boolean }
+type ExpandableMenu = { basePath: string; labelKey: string; icon: ReactNode; children: NavChild[] }
+
+const expandableMenus: ExpandableMenu[] = [
   {
     basePath: '/app/images',
     labelKey: 'navigation.images',
-    icon: '🎨',
+    icon: <PictureOutlined />,
     children: [
       { path: '/app/images', labelKey: 'navigation.generateImage' },
       { path: '/app/images/history', labelKey: 'navigation.history' },
@@ -34,13 +52,25 @@ const expandableMenus = [
   {
     basePath: '/app/videos',
     labelKey: 'navigation.videos',
-    icon: '🎬',
+    icon: <VideoCameraOutlined />,
     children: [
       { path: '/app/videos', labelKey: 'navigation.generateVideo' },
       { path: '/app/videos/history', labelKey: 'navigation.history' },
     ],
   },
 ]
+
+const creatorGenerationMenu: ExpandableMenu = {
+  basePath: '/app/images',
+  labelKey: 'navigation.generate',
+  icon: <ExperimentOutlined />,
+  children: [
+    { path: '/app/images', labelKey: 'navigation.generateImage' },
+    { path: '/app/videos', labelKey: 'navigation.generateVideo' },
+  ],
+}
+
+const assetNavLinkItem = { ...assetNavItem, icon: <FolderOpenOutlined /> }
 
 // 管理员后台导航项（仅管理员可见）
 const adminNavItems = [
@@ -105,11 +135,11 @@ function RoutePendingProvider({ children }: { children: ReactNode }) {
   )
 }
 
-function NavLink({ item, pathname }: { item: { path: string; labelKey: string; icon: string }; pathname: string }) {
+function NavLink({ item, pathname, collapsed = false }: { item: { path: string; labelKey: string; icon: ReactNode }; pathname: string; collapsed?: boolean }) {
   const t = useTranslations()
   const { trigger } = useRoutePending()
   // pathname 来自 next-intl 的 usePathname，已去除 locale 前缀
-  const active = pathname === item.path || pathname.startsWith(item.path + '/')
+  const active = isSidebarItemActive(pathname, item.path)
   return (
     <Link
       href={item.path}
@@ -118,13 +148,10 @@ function NavLink({ item, pathname }: { item: { path: string; labelKey: string; i
         if (active) return
         trigger()
       }}
-      className={`nav-item ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
+      title={collapsed ? t(item.labelKey) : undefined}
+      className={`nav-item ${collapsed ? 'nav-item-collapsed' : ''} ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
     >
-      <span
-        className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
-          active ? 'bg-gradient-to-br from-primary-500 to-primary-600' : 'bg-gray-100'
-        }`}
-      >
+      <span className="nav-item-icon">
         {item.icon}
       </span>
       <span className="nav-item-label">{t(item.labelKey)}</span>
@@ -136,17 +163,20 @@ function NavLink({ item, pathname }: { item: { path: string; labelKey: string; i
 function ExpandableNavLink({
   menu,
   pathname,
+  collapsed = false,
 }: {
-  menu: (typeof expandableMenus)[number]
+  menu: ExpandableMenu
   pathname: string
+  collapsed?: boolean
 }) {
   const t = useTranslations()
   const { trigger } = useRoutePending()
   const router = useRouter()
 
-  // 判断当前是否处于该菜单的子路由下（包括生成页面和历史记录页面）
-  const isChildRoute =
-    pathname === menu.basePath || pathname.startsWith(menu.basePath + '/')
+  // 判断当前是否处于该菜单的子路由下。
+  // 精确匹配 basePath 或子菜单项路径，以及子菜单项路径的子路径。
+  // 不用 basePath 做宽泛前缀匹配，否则 /app/images/history 会误匹配 basePath 为 /app/images 的菜单。
+  const isChildRoute = hasActiveSidebarChild(pathname, menu.children)
 
   // 当处于子路由时自动展开；也可手动收起
   const [expanded, setExpanded] = useState(false)
@@ -171,33 +201,36 @@ function ExpandableNavLink({
   }
 
   return (
-    <div>
+    <div className={collapsed ? 'nav-group-collapsed' : ''}>
       {/* 一级菜单：点击展开/收起 */}
       <button
         type="button"
         onClick={handleToggle}
-        className={`nav-item w-full text-left ${isChildRoute ? 'nav-item-active' : 'nav-item-inactive'}`}
+        title={collapsed ? t(menu.labelKey) : undefined}
+        className={`nav-item w-full text-left ${collapsed ? 'nav-item-collapsed' : ''} ${getSidebarItemClass({ pathname, itemPath: menu.basePath, parent: true })}`}
       >
-        <span
-          className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
-            isChildRoute ? 'bg-gradient-to-br from-primary-500 to-primary-600' : 'bg-gray-100'
-          }`}
-        >
+        <span className="nav-item-icon">
           {menu.icon}
         </span>
         <span className="nav-item-label flex-1">{t(menu.labelKey)}</span>
-        <span className="text-gray-400 text-sm flex-shrink-0 ml-1">
-          {expanded ? '▾' : '▸'}
+        <span className="nav-chevron">
+          {expanded ? <DownOutlined /> : <DownOutlined className="-rotate-90" />}
         </span>
       </button>
 
       {/* 二级菜单 */}
       {expanded && (
-        <div className="ml-4 mt-1 space-y-1 border-l border-gray-100 pl-3">
+        <div className="nav-submenu">
           {menu.children.map((child) => {
-            const childActive =
-              pathname === child.path ||
-              (child.path === menu.basePath && pathname === menu.basePath)
+            if (child.disabled) {
+              return (
+                <div key={child.labelKey} className="nav-subitem nav-subitem-disabled">
+                  <span className="nav-subitem-dot" />
+                  {t(child.labelKey)}
+                </div>
+              )
+            }
+            const childActive = isSidebarItemActive(pathname, child.path)
             return (
               <Link
                 key={child.path}
@@ -207,13 +240,13 @@ function ExpandableNavLink({
                   if (childActive) return
                   trigger()
                 }}
-                className={`flex items-center px-3 py-2 rounded-lg text-sm transition-colors ${
+                className={`nav-subitem ${
                   childActive
-                    ? 'text-primary-600 font-medium bg-primary-50/60'
-                    : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                    ? 'nav-subitem-active'
+                    : 'nav-subitem-inactive'
                 }`}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50 mr-2.5" />
+                <span className="nav-subitem-dot" />
                 {t(child.labelKey)}
               </Link>
             )
@@ -225,7 +258,7 @@ function ExpandableNavLink({
 }
 
 /** 自定义菜单项导航链接。 */
-function CustomMenuLink({ item, pathname }: { item: CustomMenuItem; pathname: string }) {
+function CustomMenuLink({ item, pathname, collapsed = false }: { item: CustomMenuItem; pathname: string; collapsed?: boolean }) {
   const { trigger } = useRoutePending()
   const customPath = `/app/custom/${item.id}`
   const active = pathname === customPath
@@ -237,34 +270,29 @@ function CustomMenuLink({ item, pathname }: { item: CustomMenuItem; pathname: st
         if (active) return
         trigger()
       }}
-      className={`nav-item ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
+      title={collapsed ? item.label : undefined}
+      className={`nav-item ${collapsed ? 'nav-item-collapsed' : ''} ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
     >
-      <span
-        className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
-          active ? 'bg-gradient-to-br from-primary-500 to-primary-600' : 'bg-gray-100'
-        }`}
-      >
-        🔗
-      </span>
+      <span className="nav-item-icon"><AppstoreOutlined /></span>
       <span className="nav-item-label">{item.label}</span>
     </Link>
   )
 }
 
 /** Logo 渲染：有配置 Logo 则用图片，否则用默认渐变占位。 */
-function SiteLogo({ logoUrl, fallbackMark, size = 'w-12 h-12' }: { logoUrl: string; fallbackMark: string; size?: string }) {
+function SiteLogo({ logoUrl, fallbackMark, size = 'w-9 h-9' }: { logoUrl: string; fallbackMark: string; size?: string }) {
   if (logoUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={logoUrl}
         alt="Logo"
-        className={`${size} rounded-2xl object-cover`}
+        className={`${size} rounded-xl object-cover`}
       />
     )
   }
   return (
-    <div className={`${size} rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-xl font-extrabold text-white`}>
+    <div className={`${size} rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-base font-extrabold text-white`}>
       {fallbackMark}
     </div>
   )
@@ -281,6 +309,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   const { config: siteConfig } = useSiteConfig()
   const navRef = useRef<HTMLElement>(null)
   const { pending: routePending } = useRoutePending()
+  const isAdminRoute = workspaceShellMode(pathname) === 'admin'
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   // Layout 级别：ShellInner 在路由切换时保持 mounted，不再重新挂载。
   // sidebarScrollTop 仅在首次进入时恢复（浏览器硬刷新场景）。
@@ -308,22 +339,25 @@ function ShellInner({ children }: { children: React.ReactNode }) {
     : siteConfig.customMenuItems.filter((m) => m.visibility === 'user')
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="app-shell flex h-screen overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-80 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between gap-3">
+      {mobileSidebarOpen && <button aria-label={t('appShell.closeSidebar')} className="sidebar-backdrop" onClick={() => setMobileSidebarOpen(false)} />}
+      <aside className={`app-sidebar ${sidebarCollapsed ? 'app-sidebar-collapsed' : ''} ${mobileSidebarOpen ? 'app-sidebar-mobile-open' : ''}`}>
+        <div className="sidebar-brand">
           <Link href="/" className="block min-w-0">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <SiteLogo logoUrl={siteConfig.siteLogo} fallbackMark={BRAND.logoMarkZh} />
               <div className="min-w-0">
-                <h1 className="font-bold text-lg leading-tight text-[#111827] truncate">{siteConfig.siteName || BRAND.nameZh}</h1>
-                {siteConfig.siteSubtitle && (
-                  <p className="text-xs text-gray-500 mt-0.5 truncate">{siteConfig.siteSubtitle}</p>
-                )}
+                <h1 className="font-semibold text-[15px] leading-tight text-slate-900 truncate">{siteConfig.siteName || BRAND.name}</h1>
+                <p className="text-[11px] text-slate-400 mt-0.5 truncate">{siteConfig.siteSubtitle || t('appShell.tagline')}</p>
               </div>
             </div>
           </Link>
-          <LanguageSwitcher />
+          <div className="sidebar-brand-actions">
+            <button type="button" className="sidebar-toggle" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={t(sidebarCollapsed ? 'appShell.expandSidebar' : 'appShell.collapseSidebar')}>
+              {sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            </button>
+          </div>
         </div>
 
         <nav
@@ -331,14 +365,14 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           onScroll={(e) => {
             sidebarScrollTop = e.currentTarget.scrollTop
           }}
-          className="flex-1 p-4 overflow-y-auto"
+          className="app-sidebar-nav"
         >
-          {user?.role === 'ADMIN' ? (
+          {isAdminRoute && user?.role === 'ADMIN' ? (
             <>
               {/* 管理员后台 */}
-              <div className="space-y-2">
+            <div className="space-y-1.5">
                 {adminNavItems.map((item) => (
-                  <NavLink key={item.path} item={item} pathname={pathname} />
+                  <NavLink key={item.path} item={{ ...item, icon: <ExperimentOutlined /> }} pathname={pathname} collapsed={sidebarCollapsed} />
                 ))}
               </div>
 
@@ -347,22 +381,22 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 <span className="text-[11px] uppercase tracking-widest text-gray-400">{t('navigation.myAccount')}</span>
                 <span className="h-px flex-1 bg-gray-200" />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {expandableMenus.map((menu) => (
-                  <ExpandableNavLink key={menu.basePath} menu={menu} pathname={pathname} />
+                  <ExpandableNavLink key={menu.basePath} menu={menu} pathname={pathname} collapsed={sidebarCollapsed} />
                 ))}
+                <NavLink item={assetNavLinkItem} pathname={pathname} collapsed={sidebarCollapsed} />
                 {userNavItems.map((item) => (
-                  <NavLink key={item.path} item={item} pathname={pathname} />
+                  <NavLink key={item.path} item={item} pathname={pathname} collapsed={sidebarCollapsed} />
                 ))}
               </div>
             </>
           ) : (
-            <div className="space-y-2">
-              {expandableMenus.map((menu) => (
-                <ExpandableNavLink key={menu.basePath} menu={menu} pathname={pathname} />
-              ))}
+            <div className="space-y-1.5">
+              <ExpandableNavLink menu={creatorGenerationMenu} pathname={pathname} collapsed={sidebarCollapsed} />
+              <NavLink item={assetNavLinkItem} pathname={pathname} collapsed={sidebarCollapsed} />
               {userNavItems.map((item) => (
-                <NavLink key={item.path} item={item} pathname={pathname} />
+                <NavLink key={item.path} item={item} pathname={pathname} collapsed={sidebarCollapsed} />
               ))}
             </div>
           )}
@@ -376,7 +410,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               </div>
               <div className="space-y-2">
                 {visibleCustomMenuItems.map((item) => (
-                  <CustomMenuLink key={item.id} item={item} pathname={pathname} />
+                  <CustomMenuLink key={item.id} item={item} pathname={pathname} collapsed={sidebarCollapsed} />
                 ))}
               </div>
             </>
@@ -389,49 +423,54 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 href={siteConfig.docUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="nav-item nav-item-inactive"
+                className={`nav-item nav-item-inactive ${sidebarCollapsed ? 'nav-item-collapsed' : ''}`}
               >
-                <span className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0 bg-gray-100">
-                  📖
-                </span>
+                  <span className="nav-item-icon"><FileImageOutlined /></span>
                 <span className="nav-item-label">{t('navigation.documentation')}</span>
               </a>
             </div>
           )}
         </nav>
 
-        <div className="p-5 border-t border-gray-100 space-y-3">
+        <div className="sidebar-footer">
           {/* 余额 */}
           <Link
             href="/app/wallet"
-            className="flex items-center justify-between bg-white border border-gray-100 rounded-2xl px-4 py-3 hover:border-gray-200 transition-colors"
+            title={sidebarCollapsed ? `${t('appShell.balance')}: ${balance.toLocaleString()}` : undefined}
+            className={`credits-link ${sidebarCollapsed ? 'credits-link-collapsed' : ''}`}
           >
-            <div>
-              <p className="text-xs text-gray-500">{t('appShell.balance')}</p>
-              <p className="font-bold text-primary-600">
+            <WalletOutlined className="credits-icon" />
+            <div className="credits-copy">
+              <p className="text-[11px] text-slate-400">{t('appShell.balance')}</p>
+              <p className="font-semibold text-primary-600 text-sm">
                 {balance.toLocaleString()} <span className="text-xs font-normal text-gray-500">Credits</span>
               </p>
             </div>
-            <span className="text-gray-400">→</span>
+            {!sidebarCollapsed && <span className="text-slate-300">→</span>}
           </Link>
           {/* 用户 + 登出 */}
-          <div className="flex items-center justify-between">
-            <div className="min-w-0">
+          <div className={`account-row ${sidebarCollapsed ? 'account-row-collapsed' : ''}`}>
+            <div className="account-avatar">{user.email.slice(0, 1).toUpperCase()}</div>
+            <div className="account-copy min-w-0">
               <p className="text-sm text-gray-700 truncate">{user.email}</p>
+              <p className="text-[11px] text-slate-400">{t('appShell.account')}</p>
             </div>
-            <Button type="text" size="small" danger onClick={() => void logout()} title={t('appShell.logoutTitle')}>
-              {t('appShell.logout')}
+            <Button type="text" size="small" icon={<LogoutOutlined />} onClick={() => void logout()} title={t('appShell.logoutTitle')} className="logout-button">
+              {!sidebarCollapsed && t('appShell.logout')}
             </Button>
           </div>
-          <p className="text-xs text-gray-400 text-center">
-            © {new Date().getFullYear()} {siteConfig.siteName || BRAND.nameZh} · {BRAND.name}
-          </p>
         </div>
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-hidden bg-slate-50">
-        <div className="relative h-full m-4 bg-white rounded-2xl border border-gray-100 overflow-hidden" style={{ boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06)' }}>
+      <main className={`app-main flex-1 overflow-hidden ${sidebarCollapsed ? 'app-main-collapsed' : ''}`}>
+        <button type="button" className="mobile-sidebar-trigger" onClick={() => setMobileSidebarOpen(true)} aria-label={t('appShell.openSidebar')}>
+          <MenuUnfoldOutlined />
+        </button>
+        <div className="app-main-lang-switcher">
+          <LanguageSwitcher />
+        </div>
+        <div className="relative h-full bg-white overflow-hidden">
           {children}
           {routePending && (
             <div className="absolute inset-0 z-10 bg-white">

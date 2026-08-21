@@ -8,6 +8,15 @@ export const assetNavItem = {
   labelKey: 'navigation.assets',
 } as const
 
+export function shouldCloseMobileSidebarOnPathChange(previousPathname: string, pathname: string): boolean {
+  return previousPathname !== pathname
+}
+
+export function getExpandableSidebarSubmenuId(itemPath: string): string {
+  const normalizedPath = itemPath.replace(/^\/+|\/+$/g, '').replace(/[^a-zA-Z0-9_-]+/g, '-')
+  return `sidebar-submenu-${normalizedPath || 'root'}`
+}
+
 /** Active styles belong only to the exact leaf route. */
 export function isSidebarItemActive(pathname: string, itemPath: string): boolean {
   return itemPath !== '' && pathname === itemPath

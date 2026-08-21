@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assetNavItem, getSidebarItemClass, hasActiveSidebarChild, isSidebarItemActive } from './sidebar-navigation'
+import { assetNavItem, getExpandableSidebarSubmenuId, getSidebarItemClass, hasActiveSidebarChild, isSidebarItemActive, shouldCloseMobileSidebarOnPathChange } from './sidebar-navigation'
 
 describe('sidebar route matching', () => {
   it('activates only the leaf item whose route exactly matches the pathname', () => {
@@ -30,5 +30,16 @@ describe('sidebar route matching', () => {
   it('defines assets as a standalone first-level route', () => {
     expect(assetNavItem).toEqual({ path: '/app/assets', labelKey: 'navigation.assets' })
     expect(isSidebarItemActive('/app/assets', assetNavItem.path)).toBe(true)
+  })
+
+  it('closes an open mobile sidebar only after the pathname changes', () => {
+    expect(shouldCloseMobileSidebarOnPathChange('/app/images', '/app/assets')).toBe(true)
+    expect(shouldCloseMobileSidebarOnPathChange('/app/images', '/app/images')).toBe(false)
+  })
+
+  it('generates stable accessible ids for expandable submenus', () => {
+    expect(getExpandableSidebarSubmenuId('/app/images')).toBe('sidebar-submenu-app-images')
+    expect(getExpandableSidebarSubmenuId('/app/images')).toBe(getExpandableSidebarSubmenuId('/app/images'))
+    expect(getExpandableSidebarSubmenuId('/app/videos')).not.toBe(getExpandableSidebarSubmenuId('/app/images'))
   })
 })

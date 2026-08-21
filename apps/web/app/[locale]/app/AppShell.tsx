@@ -27,7 +27,7 @@ import { ContentLoading } from '@/components/application/admin/AdminUi'
 import { SiteConfigProvider, useSiteConfig } from '@/lib/useSiteConfig'
 import type { CustomMenuItem } from '@/lib/api'
 import { workspaceShellMode } from '@/components/application/image-creator/workbench'
-import { assetNavItem, getSidebarItemClass, hasActiveSidebarChild, isSidebarItemActive } from './sidebar-navigation'
+import { assetNavItem, getExpandableSidebarSubmenuId, getSidebarItemClass, hasActiveSidebarChild, isSidebarItemActive, shouldCloseMobileSidebarOnPathChange } from './sidebar-navigation'
 
 // 普通用户（个人端）导航项
 // 图片/视频为可展开菜单，包含「生成」和「历史记录」二级菜单
@@ -180,6 +180,7 @@ function ExpandableNavLink({
 
   // 当处于子路由时自动展开；也可手动收起
   const [expanded, setExpanded] = useState(false)
+  const submenuId = getExpandableSidebarSubmenuId(menu.basePath)
 
   // 路由变化时同步展开状态
   useEffect(() => {
@@ -206,6 +207,8 @@ function ExpandableNavLink({
       <button
         type="button"
         onClick={handleToggle}
+        aria-expanded={expanded}
+        aria-controls={submenuId}
         title={collapsed ? t(menu.labelKey) : undefined}
         className={`nav-item w-full text-left ${collapsed ? 'nav-item-collapsed' : ''} ${getSidebarItemClass({ pathname, itemPath: menu.basePath, parent: true })}`}
       >
@@ -219,40 +222,43 @@ function ExpandableNavLink({
       </button>
 
       {/* 二级菜单 */}
-      {expanded && (
-        <div className="nav-submenu">
-          {menu.children.map((child) => {
-            if (child.disabled) {
-              return (
-                <div key={child.labelKey} className="nav-subitem nav-subitem-disabled">
-                  <span className="nav-subitem-dot" />
-                  {t(child.labelKey)}
-                </div>
-              )
-            }
-            const childActive = isSidebarItemActive(pathname, child.path)
+      <div
+        id={submenuId}
+        className="nav-submenu"
+        hidden={!expanded}
+        style={!expanded ? { display: 'none' } : undefined}
+      >
+        {expanded && menu.children.map((child) => {
+          if (child.disabled) {
             return (
-              <Link
-                key={child.path}
-                href={child.path}
-                prefetch
-                onClick={() => {
-                  if (childActive) return
-                  trigger()
-                }}
-                className={`nav-subitem ${
-                  childActive
-                    ? 'nav-subitem-active'
-                    : 'nav-subitem-inactive'
-                }`}
-              >
+              <div key={child.labelKey} className="nav-subitem nav-subitem-disabled">
                 <span className="nav-subitem-dot" />
                 {t(child.labelKey)}
-              </Link>
+              </div>
             )
-          })}
-        </div>
-      )}
+          }
+          const childActive = isSidebarItemActive(pathname, child.path)
+          return (
+            <Link
+              key={child.path}
+              href={child.path}
+              prefetch
+              onClick={() => {
+                if (childActive) return
+                trigger()
+              }}
+              className={`nav-subitem ${
+                childActive
+                  ? 'nav-subitem-active'
+                  : 'nav-subitem-inactive'
+              }`}
+            >
+              <span className="nav-subitem-dot" />
+              {t(child.labelKey)}
+            </Link>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -312,6 +318,15 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   const isAdminRoute = workspaceShellMode(pathname) === 'admin'
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const previousPathnameRef = useRef(pathname)
+
+  useEffect(() => {
+    const previousPathname = previousPathnameRef.current
+    previousPathnameRef.current = pathname
+    if (mobileSidebarOpen && shouldCloseMobileSidebarOnPathChange(previousPathname, pathname)) {
+      setMobileSidebarOpen(false)
+    }
+  }, [mobileSidebarOpen, pathname])
 
   // Layout 级别：ShellInner 在路由切换时保持 mounted，不再重新挂载。
   // sidebarScrollTop 仅在首次进入时恢复（浏览器硬刷新场景）。

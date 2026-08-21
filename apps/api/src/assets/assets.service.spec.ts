@@ -16,6 +16,14 @@ function createDb(rows: unknown[]) {
   };
 }
 
+function sqlIncludesValue(value: unknown, expected: string): boolean {
+  if (Array.isArray(value)) return value.some((entry) => sqlIncludesValue(entry, expected));
+  if (!value || typeof value !== 'object') return value === expected;
+
+  const chunk = value as { value?: unknown; queryChunks?: unknown };
+  return sqlIncludesValue(chunk.value, expected) || sqlIncludesValue(chunk.queryChunks, expected);
+}
+
 describe('AssetsService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -112,6 +120,7 @@ describe('AssetsService', () => {
     expect(chain.from).toHaveBeenCalledTimes(1);
     expect(chain.leftJoin).toHaveBeenCalledTimes(1);
     expect(chain.where).toHaveBeenCalledTimes(1);
+    expect(sqlIncludesValue(chain.where.mock.calls[0]?.[0], 'workspace-42')).toBe(true);
     expect(chain.orderBy).toHaveBeenCalledTimes(1);
     expect(chain.limit).toHaveBeenCalledWith(25);
   });

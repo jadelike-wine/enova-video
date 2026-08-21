@@ -314,7 +314,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   const { loading, user, balance, logout } = useSession()
   const { config: siteConfig } = useSiteConfig()
   const navRef = useRef<HTMLElement>(null)
-  const { pending: routePending } = useRoutePending()
+  const { pending: routePending, trigger } = useRoutePending()
   const isAdminRoute = workspaceShellMode(pathname) === 'admin'
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -413,6 +413,25 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               {userNavItems.map((item) => (
                 <NavLink key={item.path} item={item} pathname={pathname} collapsed={sidebarCollapsed} />
               ))}
+            </div>
+          )}
+
+          {/* 非管理员路由下，为 ADMIN 用户提供管理后台入口 */}
+          {!isAdminRoute && user?.role === 'ADMIN' && (
+            <div className="mt-6 space-y-2">
+              <div className="mb-2 flex items-center gap-3">
+                <span className="text-[11px] uppercase tracking-widest text-gray-400">{t('navigation.adminCenter')}</span>
+                <span className="h-px flex-1 bg-gray-200" />
+              </div>
+              <Link
+                href="/app/admin/dashboard"
+                prefetch
+                onClick={() => trigger()}
+                className={`nav-item nav-item-inactive ${sidebarCollapsed ? 'nav-item-collapsed' : ''}`}
+              >
+                <span className="nav-item-icon"><ExperimentOutlined /></span>
+                <span className="nav-item-label">{t('navigation.adminDashboard')}</span>
+              </Link>
             </div>
           )}
 

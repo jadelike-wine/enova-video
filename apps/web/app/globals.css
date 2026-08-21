@@ -78,26 +78,80 @@
     @apply input-field appearance-none cursor-pointer;
   }
 
-  /* 导航 */
+  /* 创作工作区导航：窄、轻、以内容为主 */
   .nav-item {
-    @apply flex items-center gap-3.5 px-4 rounded-xl text-sm font-medium transition-all duration-300
+    @apply flex items-center gap-3 px-3 rounded-lg text-sm font-medium transition-colors duration-200
       whitespace-nowrap overflow-hidden;
     min-height: 44px;
   }
 
   .nav-item-active {
-    @apply bg-primary-50 text-primary-600 border border-primary-200/80 font-semibold;
+    @apply bg-primary-50 text-primary-700 font-semibold;
   }
 
   .nav-item-inactive {
-    @apply text-gray-500 hover:bg-gray-100 hover:text-gray-900 border border-transparent;
+    @apply text-slate-500 hover:bg-slate-50 hover:text-slate-900;
+  }
+
+  .nav-item-disabled {
+    @apply cursor-default text-slate-400;
+  }
+
+  .nav-item-icon {
+    @apply flex h-5 w-5 flex-shrink-0 items-center justify-center text-[17px] text-current;
+  }
+
+  .nav-item-collapsed {
+    @apply justify-center px-0;
+  }
+
+  .nav-item-collapsed .nav-item-label,
+  .nav-item-collapsed .nav-chevron,
+  .nav-item-collapsed .nav-reserved {
+    display: none;
+  }
+
+  .nav-chevron {
+    @apply ml-1 flex-shrink-0 text-[10px] text-slate-400 transition-transform;
+  }
+
+  .nav-submenu {
+    @apply ml-5 mt-1 space-y-0.5 border-l border-slate-100 pl-3;
+  }
+
+  .nav-group-collapsed .nav-submenu {
+    display: none;
+  }
+
+  .nav-subitem {
+    @apply flex min-h-[34px] items-center gap-2 rounded-md px-2 text-[13px] transition-colors;
+  }
+
+  .nav-subitem-dot {
+    @apply h-1.5 w-1.5 flex-shrink-0 rounded-full bg-current opacity-40;
+  }
+
+  .nav-subitem-active {
+    @apply bg-primary-50/70 font-medium text-primary-700;
+  }
+
+  .nav-subitem-inactive {
+    @apply text-slate-500 hover:bg-slate-50 hover:text-slate-900;
+  }
+
+  .nav-subitem-disabled {
+    @apply cursor-default text-slate-300;
+  }
+
+  .nav-reserved {
+    @apply ml-auto text-[10px] font-normal text-slate-300;
   }
 
   /* 导航文字标签：防止截断，自适应宽度 */
   .nav-item-label {
     @apply flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap;
     letter-spacing: 0.01em;
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1.5;
   }
 
@@ -129,6 +183,274 @@
 
   .progress-fill {
     @apply h-full rounded-full bg-gradient-to-r from-primary-500 to-primary-400 transition-all duration-500;
+  }
+}
+
+/* ============ EnovaMotion creative workspace shell ============ */
+.app-shell {
+  background: #f8fafc;
+}
+
+.app-sidebar {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  width: 248px;
+  flex-shrink: 0;
+  flex-direction: column;
+  border-right: 1px solid #eef2f3;
+  background: #fff;
+  transition: width 180ms ease, transform 180ms ease;
+}
+
+.app-sidebar-collapsed {
+  width: 72px;
+}
+
+.sidebar-brand {
+  display: flex;
+  min-height: 74px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px 14px 14px 16px;
+}
+
+.app-sidebar-collapsed .sidebar-brand {
+  justify-content: center;
+  padding-inline: 10px;
+}
+
+.app-sidebar-collapsed .sidebar-brand > a > div > div:last-child,
+.app-sidebar-collapsed .sidebar-brand-actions .ant-btn {
+  display: none;
+}
+
+.sidebar-brand-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sidebar-brand-actions .ant-btn {
+  color: #94a3b8;
+  font-size: 12px;
+  padding-inline: 5px;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  height: 28px;
+  width: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  color: #94a3b8;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sidebar-toggle:hover {
+  color: #0d9488;
+  background: #f0fdfa;
+}
+
+.app-sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+}
+
+.app-sidebar-nav > .space-y-1\.5 {
+  margin-bottom: 14px;
+}
+
+.sidebar-footer {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #f1f5f9;
+  padding: 12px;
+}
+
+.credits-link {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  border-radius: 9px;
+  padding: 7px 10px;
+  background: #f8fafc;
+  transition: background 160ms ease;
+}
+
+.credits-link:hover {
+  background: #f0fdfa;
+}
+
+.credits-link-collapsed {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.credits-icon {
+  color: #0d9488;
+  font-size: 17px;
+}
+
+.credits-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.credits-link-collapsed .credits-copy {
+  display: none;
+}
+
+.account-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 0;
+}
+
+.account-avatar {
+  display: flex;
+  height: 30px;
+  width: 30px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #0f766e;
+  background: #ccfbf1;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.account-copy {
+  flex: 1;
+}
+
+.account-row-collapsed {
+  justify-content: center;
+}
+
+.account-row-collapsed .account-copy {
+  display: none;
+}
+
+.logout-button {
+  color: #94a3b8 !important;
+  padding-inline: 4px !important;
+}
+
+.app-main {
+  min-width: 0;
+  border-left: 1px solid #f1f5f9;
+  background: #fff;
+  position: relative;
+}
+
+.app-main-lang-switcher {
+  position: absolute;
+  z-index: 50;
+  top: 14px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.app-main-lang-switcher .ant-btn {
+  color: #475569;
+  font-size: 13px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  height: 34px;
+  padding-inline: 10px;
+}
+
+.app-main-lang-switcher .ant-btn:hover {
+  color: #0d9488;
+  border-color: #0d9488;
+}
+
+.mobile-sidebar-trigger,
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .app-sidebar {
+    width: 72px;
+  }
+
+  .app-sidebar:not(.app-sidebar-mobile-open) .sidebar-brand > a > div > div:last-child,
+  .app-sidebar:not(.app-sidebar-mobile-open) .sidebar-brand-actions .ant-btn,
+  .app-sidebar:not(.app-sidebar-mobile-open) .nav-item-label,
+  .app-sidebar:not(.app-sidebar-mobile-open) .nav-chevron,
+  .app-sidebar:not(.app-sidebar-mobile-open) .nav-reserved,
+  .app-sidebar:not(.app-sidebar-mobile-open) .nav-submenu,
+  .app-sidebar:not(.app-sidebar-mobile-open) .credits-copy,
+  .app-sidebar:not(.app-sidebar-mobile-open) .account-copy,
+  .app-sidebar:not(.app-sidebar-mobile-open) .logout-button > span:not(.anticon) {
+    display: none;
+  }
+
+  .app-sidebar:not(.app-sidebar-mobile-open) .sidebar-brand,
+  .app-sidebar:not(.app-sidebar-mobile-open) .nav-item,
+  .app-sidebar:not(.app-sidebar-mobile-open) .credits-link,
+  .app-sidebar:not(.app-sidebar-mobile-open) .account-row {
+    justify-content: center;
+  }
+
+  .app-sidebar-mobile-open {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 248px;
+    box-shadow: 12px 0 32px rgba(15, 23, 42, 0.12);
+  }
+
+  .app-sidebar-mobile-open .sidebar-brand > a > div > div:last-child,
+  .app-sidebar-mobile-open .sidebar-brand-actions .ant-btn,
+  .app-sidebar-mobile-open .nav-item-label,
+  .app-sidebar-mobile-open .nav-chevron,
+  .app-sidebar-mobile-open .nav-submenu,
+  .app-sidebar-mobile-open .credits-copy,
+  .app-sidebar-mobile-open .account-copy {
+    display: block;
+  }
+
+  .app-sidebar-mobile-open .nav-submenu {
+    display: block;
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    z-index: 20;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: rgba(15, 23, 42, 0.22);
+  }
+
+  .mobile-sidebar-trigger {
+    position: absolute;
+    z-index: 5;
+    top: 14px;
+    left: 14px;
+    display: inline-flex;
+    height: 34px;
+    width: 34px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    color: #475569;
+    background: rgba(255, 255, 255, 0.92);
   }
 }
 

@@ -5,6 +5,7 @@ import { HealthModule } from './health/health.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BillingModule } from './billing/billing.module.js';
 import { GenerationsModule } from './generations/generations.module.js';
+import { AssetsModule } from './assets/assets.module.js';
 import { QueueModule } from './queue/queue.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { PaymentModule } from './payment/payment.module.js';
@@ -22,6 +23,7 @@ import { AccessLogMiddleware } from './common/access-log/access-log.middleware.j
     AuthModule,
     BillingModule,
     GenerationsModule,
+    AssetsModule,
     QueueModule,
     AdminModule,
     PaymentModule,

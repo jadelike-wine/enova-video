@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 Git history is the ultimate source of truth; this file aggregates user-, developer-, and ops-relevant changes. Not every commit is listed — only changes that matter to consumers, operators, or maintainers.
 
+## Unreleased
+
+---
+
+## [1.7.21] — 2026-08-21
+
+### Added
+- Image workbench conversation panel: the `/app/images` page projects the existing generation history into an expandable recent-creations list, and a workspace header (conversation title, prompt, model/ratio/size metadata); selecting a task backfills its prompt and generation params into the composer. This is a frontend interaction only — no new persistent `GenerationConversation` model and no change to the `GenerationJob` state machine.
+- Creative workspace shell navigation styles: narrower nav items with icon/collapsed/chevron/submenu states and an app sidebar with brand, toggle, credits footer and mobile drawer.
+
+---
+
 ## [1.7.20] — 2026-08-17
 
 ### Changed

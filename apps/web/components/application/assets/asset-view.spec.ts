@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { assetsApi, type Asset } from '@/lib/api'
+import { getDateRangeForPreset } from '../AssetsView'
 import { buildAssetsQuery, formatAssetDate, groupAssetsByDate } from './asset-view'
 
 function asset(id: string, createdAt: string): Asset {
@@ -116,5 +117,18 @@ describe('asset view helpers', () => {
 
   it('formats a date using the requested locale', () => {
     expect(formatAssetDate(new Date(2026, 7, 20, 12), 'en-US')).toBe('August 20, 2026')
+  })
+
+  it('builds inclusive rolling ranges for the quick time presets', () => {
+    const now = new Date(2026, 7, 21, 15, 30, 0)
+
+    expect(getDateRangeForPreset('WEEK', now)).toEqual({
+      from: new Date(2026, 7, 15, 0, 0, 0, 0).toISOString(),
+      to: new Date(2026, 7, 21, 23, 59, 59, 999).toISOString(),
+    })
+    expect(getDateRangeForPreset('MONTH', now)).toEqual({
+      from: new Date(2026, 6, 23, 0, 0, 0, 0).toISOString(),
+      to: new Date(2026, 7, 21, 23, 59, 59, 999).toISOString(),
+    })
   })
 })

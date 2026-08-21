@@ -2,16 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Form, Input } from 'antd'
-import { usePathname } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { generationApi, uploadApi, type CreateGenerationPayload, type Generation } from '../../lib/api'
 import { useSession } from '../../lib/auth'
 import { DEFAULT_IMAGE_MODEL, IMAGE_MODES, legacySizeToNative } from '../../lib/models'
 import CreationTemplates from './image-creator/CreationTemplates'
+import ConversationPanel from './image-creator/ConversationPanel'
 import GenerationCanvas from './image-creator/GenerationCanvas'
 import PromptComposer from './image-creator/PromptComposer'
-import Sidebar from './image-creator/Sidebar'
+import WorkspaceHeader from './image-creator/WorkspaceHeader'
 import type { ImageCardActions, ImageFormValues, ImageTask, InputImage, PreviewState, GenerationMode } from './image-creator/types.js'
+import { formValuesFromTask } from './image-creator/workbench'
 import { useApiKeyGuard } from './useApiKeyGuard'
 import { useDialog } from './DialogProvider'
 import { usePaginatedTaskHistory } from './usePaginatedTaskHistory'
@@ -47,8 +48,7 @@ export default function ImageView() {
   const t = useTranslations('image')
   const { alert } = useDialog()
   const { hasActiveKey, keyStatusLoading, refreshKeyStatus, requireApiKey } = useApiKeyGuard()
-  const { balance, user } = useSession()
-  const pathname = usePathname()
+  const { balance } = useSession()
   const [form] = Form.useForm<ImageFormValues>()
   const [inputImages, setInputImages] = useState<InputImage[]>([])
   const [generating, setGenerating] = useState(false)
@@ -57,10 +57,11 @@ export default function ImageView() {
   const [error, setError] = useState('')
   const [currentMode, setCurrentMode] = useState<GenerationMode>('text2img')
   const [promptValue, setPromptValue] = useState('')
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [conversationOpen, setConversationOpen] = useState(false)
   const formCardRef = useRef<HTMLDivElement>(null)
   const historyRef = useRef<ImageTask[]>([])
   const selectedTaskRef = useRef<string | number | null>(null)
+  const shouldAutoSelectLatestRef = useRef(true)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pollingRef = useRef(false)
   const mountedRef = useRef(true)
@@ -102,7 +103,9 @@ export default function ImageView() {
     } finally { setGenerating(false); setGenerateStep('') }
   }, [alert, inputImages, requireApiKey, setHistory, t, uploadLocalFiles])
 
-  const fillFormFromTask = useCallback((task: ImageTask) => { if (!task || task._optimistic) return; form.setFieldsValue({ model: task.model || DEFAULT_IMAGE_MODEL, mode: task.mode || 'text2img', prompt: task.prompt || '', size: task.size || '1K', ratio: task.ratio || '1:1' }); setPromptValue(task.prompt || ''); setCurrentMode((task.mode as GenerationMode) || 'text2img'); inputImages.forEach(revokePreview); setInputImages(inputImagesOf(task).map((url) => ({ preview: url }))); setError(''); formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [form, inputImages, revokePreview])
+  const fillFormFromTask = useCallback((task: ImageTask) => { if (!task || task._optimistic) return; const values = formValuesFromTask(task); form.setFieldsValue(values); setPromptValue(values.prompt); setCurrentMode(values.mode as GenerationMode); inputImages.forEach(revokePreview); setInputImages(inputImagesOf(task).map((url) => ({ preview: url }))); setError(''); formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [form, inputImages, revokePreview])
+  const handleNewConversation = useCallback(() => { inputImages.forEach(revokePreview); shouldAutoSelectLatestRef.current = false; setInputImages([]); setSelectedTaskId(null); setPromptValue(''); setCurrentMode('text2img'); setError(''); form.setFieldsValue({ model: DEFAULT_IMAGE_MODEL, mode: 'text2img', prompt: '', size: '1K', ratio: '1:1' }); setConversationOpen(false) }, [form, inputImages, revokePreview])
+  const handleSelectTask = useCallback((task: ImageTask) => { fillFormFromTask(task); setSelectedTaskId(task.id); setConversationOpen(false) }, [fillFormFromTask])
   const copyPrompt = useCallback(async (prompt?: string) => { if (!prompt) return; try { await navigator.clipboard.writeText(prompt) } catch { /* optional */ } }, [])
   const downloadImage = useCallback(async (url: string, name?: string) => { try { const response = await fetch(url); const objectUrl = URL.createObjectURL(await response.blob()); const anchor = document.createElement('a'); anchor.href = objectUrl; anchor.download = name || `enova-${Date.now()}.png`; anchor.click(); URL.revokeObjectURL(objectUrl) } catch { window.open(url, '_blank') } }, [])
   const regenerateFromTask = useCallback((task: ImageTask) => { fillFormFromTask(task); form.submit() }, [fillFormFromTask, form])
@@ -152,7 +155,7 @@ export default function ImageView() {
   useEffect(() => () => inputImagesRef.current.forEach(revokePreview), [revokePreview])
   useEffect(() => {
     if (!history.length) { stopPolling(); return }
-    if (selectedTaskId === null) {
+    if (selectedTaskId === null && shouldAutoSelectLatestRef.current) {
       const latest = (history as ImageTask[]).find((task) => !task._optimistic && (displayUrl(task) || ACTIVE_STATUSES.includes(task.status) || task.status === 'FAILED' || task.status === 'CANCELED'))
       if (latest) setSelectedTaskId(latest.id)
     }
@@ -162,7 +165,6 @@ export default function ImageView() {
   const currentSize = Form.useWatch('size', form) || '1K'
   const currentRatio = Form.useWatch('ratio', form) || '1:1'
   const modeOptions = useMemo(() => IMAGE_MODES.map((mode) => ({ value: mode.id, label: mode.name })), [])
-  const activeItem = pathname?.includes('/videos') ? 'video' : pathname?.includes('/settings') ? 'settings' : 'generate'
   const handleDeleteTask = useCallback((task: ImageTask) => {
     // No user-facing image deletion endpoint exists; preserve the prior local-history semantics.
     const next = historyRef.current.filter((item) => item.id !== task.id)
@@ -173,12 +175,13 @@ export default function ImageView() {
   const setFormValue = useCallback(<K extends keyof ImageFormValues>(field: K, value: ImageFormValues[K]) => form.setFieldValue(field, value), [form])
 
   return <div className="flex h-full min-h-0 overflow-hidden bg-[#fafafa]">
-    <Sidebar collapsed={sidebarCollapsed} onCollapsedChange={setSidebarCollapsed} activeItem={activeItem} credits={balance} creditsHref="/app/wallet" userName={user?.email?.split('@')[0] || '创作者'} userEmail={user?.email} userHref="/app/settings" />
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden"><Form form={form} onFinish={generate} initialValues={{ model: DEFAULT_IMAGE_MODEL, mode: 'text2img', prompt: '', size: '1K', ratio: '1:1' }} className="flex min-h-0 flex-1 flex-col">
       <div ref={formCardRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-5 sm:px-8 sm:pt-8">
-        <header className="mb-6 flex items-start justify-between gap-4"><div><h1 className="text-2xl font-semibold tracking-tight text-gray-900">{t('title')}</h1><p className="mt-1 text-sm text-gray-500">{t('subtitle')}</p></div>{!keyStatusLoading && !hasActiveKey && <Alert type="warning" showIcon message={t('insufficientBalance')} className="max-w-sm" />}</header>
+        <WorkspaceHeader task={selectedTask} conversationOpen={conversationOpen} onToggleConversation={() => setConversationOpen((value) => !value)} />
+        <ConversationPanel open={conversationOpen} tasks={history as ImageTask[]} selectedTaskId={selectedTaskId} onClose={() => setConversationOpen(false)} onNewConversation={handleNewConversation} onSelectTask={handleSelectTask} />
+        {!keyStatusLoading && !hasActiveKey && <Alert type="warning" showIcon message={t('insufficientBalance')} className="mb-5 max-w-sm" />}
         {previewState === 'empty' && <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center py-8"><div className="mb-8 text-center"><h2 className="text-3xl font-semibold text-gray-900">{t('emptyTitle')}</h2><p className="mt-2 text-sm text-gray-500">{t('emptyHint')}</p></div><CreationTemplates onSelect={(prompt) => { setFormValue('prompt', prompt); setPromptValue(prompt) }} /></section>}
-        {previewState !== 'empty' && <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col"><GenerationCanvas state={previewState} task={selectedTask} tasks={history as ImageTask[]} status={generateStep === 'uploading' ? t('generatingWithUpload') : t('generatingNow')} errorMessage={selectedTask?.error_message ? String(selectedTask.error_message) : error} {...imageActions} /></section>}
+        {previewState !== 'empty' && <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col"><GenerationCanvas state={previewState} task={selectedTask} tasks={selectedTask ? [selectedTask] : []} status={generateStep === 'uploading' ? t('generatingWithUpload') : t('generatingNow')} errorMessage={selectedTask?.error_message ? String(selectedTask.error_message) : error} {...imageActions} /></section>}
         <Form.Item name="prompt" hidden><Input /></Form.Item><Form.Item name="mode" hidden><Input /></Form.Item><Form.Item name="model" hidden><Input /></Form.Item><Form.Item name="ratio" hidden><Input /></Form.Item><Form.Item name="size" hidden><Input /></Form.Item>
       </div>
       <div className="sticky bottom-0 z-10 px-4 pb-4 sm:px-8"><PromptComposer prompt={promptValue} onPromptChange={(value) => { setPromptValue(value); setFormValue('prompt', value) }} mode={currentMode} model={form.getFieldValue('model') || DEFAULT_IMAGE_MODEL} ratio={currentRatio} size={currentSize} onModeChange={(value) => { handleModeChange(value); setFormValue('mode', value) }} onModelChange={(value) => setFormValue('model', value)} onRatioChange={(value) => setFormValue('ratio', value)} onSizeChange={(value) => setFormValue('size', value)} inputImages={inputImages} onUpload={(file) => currentMode === 'multi_img' ? handleMultiUpload(file) : handleSingleUpload(file)} onReplaceImage={replaceInputImage} onRemoveImage={removeInputImage} onSubmit={() => form.submit()} generating={generating} generateStep={generateStep} error={error} balance={balance} estimatedCost={2} modeOptions={modeOptions} maxImages={MAX_COMPOSE_IMAGES} maxLength={MAX_PROMPT_LENGTH} /></div>

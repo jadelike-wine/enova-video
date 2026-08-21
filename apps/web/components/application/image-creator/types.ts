@@ -1,5 +1,3 @@
-import type { ReactNode } from 'react'
-
 import type { TaskItem } from '../task-types'
 
 /** The image modes supported by the existing image-generation form. */
@@ -32,15 +30,6 @@ export interface ImageFormValues {
   prompt: string
   size: string
   ratio: string
-}
-
-export interface SidebarItem {
-  id: string
-  label: string
-  href?: string
-  icon?: ReactNode
-  active?: boolean
-  disabled?: boolean
 }
 
 export type ComposerControlId = 'mode' | 'model' | 'ratio' | 'size'

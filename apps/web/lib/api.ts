@@ -300,6 +300,45 @@ export const generationApi = {
   cancel: (id: string) => json<Generation>(`/generations/${id}/cancel`, { method: 'POST' }),
 }
 
+export type AssetType = 'IMAGE' | 'VIDEO' | 'UPLOAD'
+export type AssetSort = 'NEWEST' | 'OLDEST'
+
+export interface Asset {
+  id: string
+  type: AssetType
+  url: string | null
+  mimeType: string | null
+  size: number
+  width: number | null
+  height: number | null
+  duration: number | null
+  createdAt: string
+  generationId: string | null
+  prompt: string | null
+}
+
+export interface ListAssetsParams {
+  type?: AssetType
+  from?: string
+  to?: string
+  sort?: AssetSort
+  limit?: number
+}
+
+export const assetsApi = {
+  list: (params: ListAssetsParams = {}) => {
+    const query = new URLSearchParams()
+    if (params.type) query.set('type', params.type)
+    if (params.from) query.set('from', params.from)
+    if (params.to) query.set('to', params.to)
+    if (params.sort && params.sort !== 'NEWEST') query.set('sort', params.sort)
+    if (params.limit !== undefined && params.limit !== 60) query.set('limit', String(params.limit))
+
+    const search = query.toString()
+    return json<Asset[]>(`/assets${search ? `?${search}` : ''}`)
+  },
+}
+
 // ---------------------------------------------------------------------------
 // 计费 / 钱包 / 充值
 // ---------------------------------------------------------------------------
@@ -546,6 +585,7 @@ export const uploadApi = {
 const api = {
   authApi,
   generationApi,
+  assetsApi,
   billingApi,
   paymentApi,
 }

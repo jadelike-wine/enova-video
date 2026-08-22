@@ -399,7 +399,7 @@ export class SettingsAdminService {
    * 这些校验不区分生产/开发环境，始终生效。
    */
   private async validateGeneralSetting(key: string, value: string): Promise<void> {
-    const urlSettingKeys = new Set(['general.siteUrl', 'general.docUrl']);
+    const urlSettingKeys = new Set(['general.siteUrl', 'general.docUrl', 'ai.titleGenerationBaseUrl']);
     if (urlSettingKeys.has(key) && value) {
       await this.validateHttpUrl(key, value);
     }

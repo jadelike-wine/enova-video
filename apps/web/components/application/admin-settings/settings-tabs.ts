@@ -11,6 +11,7 @@ export type SettingsTabKey =
   | 'features'
   | 'security'
   | 'users'
+  | 'ai'
   | 'gateway'
   | 'payment'
   | 'email'
@@ -94,6 +95,12 @@ export const SETTINGS_TABS: readonly SettingsTabDef[] = [
     label: '用户默认值',
     description: '新用户注册赠金等用户默认策略。',
     groups: ['billing'],
+  },
+  {
+    key: 'ai',
+    label: 'AI 标题',
+    description: '配置用于生成图片与视频历史标题的 OpenAI 兼容模型、凭证和中英文提示词。',
+    groups: ['ai'],
   },
   {
     key: 'gateway',

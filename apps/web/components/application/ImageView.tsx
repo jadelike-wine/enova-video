@@ -11,6 +11,7 @@ import ConversationPanel from './image-creator/ConversationPanel'
 import GenerationCanvas from './image-creator/GenerationCanvas'
 import PromptComposer from './image-creator/PromptComposer'
 import WorkspaceHeader from './image-creator/WorkspaceHeader'
+import GenerationWorkspaceChrome from './GenerationWorkspaceChrome'
 import type { ImageCardActions, ImageFormValues, ImageTask, InputImage, PreviewState, GenerationMode } from './image-creator/types.js'
 import { formValuesFromTask } from './image-creator/workbench'
 import { useApiKeyGuard } from './useApiKeyGuard'
@@ -22,6 +23,7 @@ const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 const MAX_PROMPT_LENGTH = 2000
 const ACTIVE_STATUSES = ['PENDING', 'QUEUED', 'RUNNING']
+const TITLE_PENDING = 'PENDING'
 
 function toImageTask(g: Generation): ImageTask {
   const input = (g.input ?? {}) as Record<string, unknown>
@@ -33,7 +35,7 @@ function toImageTask(g: Generation): ImageTask {
     ratio = native.ratio
     size = native.size
   }
-  return { id: g.id, status: g.status, prompt: typeof input.prompt === 'string' ? input.prompt : undefined, mode: typeof input.mode === 'string' ? input.mode : undefined, size, ratio, model: g.model ?? undefined, input_images: Array.isArray(images) ? images as string[] : undefined, output_url: g.output?.url ?? undefined, error_message: g.errorMessage, created_at: g.completedAt ?? g.createdAt }
+  return { id: g.id, status: g.status, title: g.title, title_generation_status: g.titleGenerationStatus, prompt: typeof input.prompt === 'string' ? input.prompt : undefined, mode: typeof input.mode === 'string' ? input.mode : undefined, size, ratio, model: g.model ?? undefined, input_images: Array.isArray(images) ? images as string[] : undefined, output_url: g.output?.url ?? undefined, error_message: g.errorMessage, created_at: g.completedAt ?? g.createdAt }
 }
 function displayUrl(task: ImageTask) { return task.output_url || '' }
 function inputImagesOf(task: ImageTask) { return task.input_images || [] }
@@ -120,7 +122,7 @@ export default function ImageView() {
       stopPolling()
     }
   }, [stopPolling])
-  const pendingTasks = useCallback(() => historyRef.current.filter((task) => ACTIVE_STATUSES.includes(task.status) && !String(task.id).startsWith('temp-')), [])
+  const pendingTasks = useCallback(() => historyRef.current.filter((task) => (ACTIVE_STATUSES.includes(task.status) || task.title_generation_status === TITLE_PENDING) && !String(task.id).startsWith('temp-')), [])
   const schedulePoll = useCallback(() => {
     if (!mountedRef.current) return
     stopPolling()
@@ -174,7 +176,14 @@ export default function ImageView() {
   const imageActions: ImageCardActions = { onDownload: (task) => { const url = displayUrl(task); if (url) return downloadImage(url) }, onRegenerate: regenerateFromTask, onEdit: fillFormFromTask, onCopyPrompt: copyPrompt, onDelete: handleDeleteTask }
   const setFormValue = useCallback(<K extends keyof ImageFormValues>(field: K, value: ImageFormValues[K]) => form.setFieldValue(field, value), [form])
 
-  return <div className="flex h-full min-h-0 overflow-hidden bg-[#fafafa]">
+  return <div className="relative flex h-full min-h-0 overflow-hidden bg-[#fafafa]">
+    <GenerationWorkspaceChrome
+      mode="image"
+      tasks={(history as ImageTask[]).map((task) => ({ id: task.id, title: task.title || '未命名对话', status: task.status }))}
+      selectedTaskId={selectedTaskId}
+      onNewConversation={handleNewConversation}
+      onSelectTask={(id) => { const task = history.find((item) => item.id === id) as ImageTask | undefined; if (task) handleSelectTask(task) }}
+    />
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden"><Form form={form} onFinish={generate} initialValues={{ model: DEFAULT_IMAGE_MODEL, mode: 'text2img', prompt: '', size: '1K', ratio: '1:1' }} className="flex min-h-0 flex-1 flex-col">
       <div ref={formCardRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-5 sm:px-8 sm:pt-8">
         <WorkspaceHeader task={selectedTask} conversationOpen={conversationOpen} onToggleConversation={() => setConversationOpen((value) => !value)} />

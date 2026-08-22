@@ -2,7 +2,6 @@
 
 import { CloseOutlined, HistoryOutlined, LoadingOutlined, PlusOutlined, PictureOutlined } from '@ant-design/icons'
 import { useTranslations } from 'next-intl'
-import { conversationTitle } from './workbench'
 import type { ImageTask } from './types'
 import styles from './image-creator.module.css'
 
@@ -64,7 +63,7 @@ export default function ConversationPanel({ open, tasks, selectedTaskId, onClose
           >
             <TaskThumbnail task={task} />
             <span className={styles['image-creator-conversation__item-copy']}>
-              <strong>{conversationTitle(task, t('workbench.promptFallback'))}</strong>
+              <strong>{task.title?.trim() || '未命名对话'}</strong>
               <small>{task.status === 'SUCCEEDED' ? t('workbench.createdAt') : task.status}</small>
             </span>
           </button>)}

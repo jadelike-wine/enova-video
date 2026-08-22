@@ -237,7 +237,7 @@ export default function AssetsView() {
               className={styles.imageMedia}
               src={asset.url ?? undefined}
               alt={label}
-              preview={{ mask: <span className={styles.previewMask}><EyeOutlined />{t('preview')}</span> }}
+              preview={{ cover: <span className={styles.previewMask}><EyeOutlined />{t('preview')}</span> }}
             />
           )}
         </div>

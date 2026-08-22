@@ -28,6 +28,7 @@ import {
   PlayCircleOutlined,
   ReloadOutlined,
   SwapOutlined,
+  ArrowUpOutlined,
 } from '@ant-design/icons'
 import { useTranslations } from 'next-intl'
 import {
@@ -48,6 +49,7 @@ import {
   DEFAULT_VIDEO_MODEL,
   modelDisplayName,
 } from '../../lib/models'
+import GenerationWorkspaceChrome from './GenerationWorkspaceChrome'
 
 // ---------------------------------------------------------------------------
 // 常量
@@ -55,6 +57,7 @@ import {
 
 /** 新架构统一状态：PENDING/QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELED */
 const ACTIVE_STATUSES = ['PENDING', 'QUEUED', 'RUNNING']
+const TITLE_PENDING = 'PENDING'
 
 /** 上传图片允许的格式 */
 const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
@@ -84,6 +87,8 @@ interface VideoTask extends TaskItem {
   negative_prompt?: string
   mode?: string
   model?: string
+  title?: string
+  title_generation_status?: string
   width?: number
   height?: number
   num_frames?: number
@@ -125,6 +130,8 @@ function toVideoTask(g: Generation): VideoTask {
   return {
     id: g.id,
     status: g.status,
+    title: g.title,
+    title_generation_status: g.titleGenerationStatus,
     prompt: typeof input.prompt === 'string' ? input.prompt : undefined,
     negative_prompt:
       typeof input.negativePrompt === 'string' ? input.negativePrompt : undefined,
@@ -232,6 +239,7 @@ export default function VideoView() {
   const [selectedDurationLabel, setSelectedDurationLabel] = useState<string>('5s')
   const [selectedRatio, setSelectedRatio] = useState<string>('16:9')
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   // 监听表单中 num_frames 变化
   const watchedNumFrames = Form.useWatch<number>('num_frames', form)
   useEffect(() => {
@@ -297,7 +305,7 @@ export default function VideoView() {
   const pendingTasks = useCallback(
     () =>
       historyRef.current.filter(
-        (t) => ACTIVE_STATUSES.includes(t.status) && !String(t.id).startsWith('temp-'),
+        (t) => (ACTIVE_STATUSES.includes(t.status) || t.title_generation_status === TITLE_PENDING) && !String(t.id).startsWith('temp-'),
       ),
     [],
   )
@@ -692,7 +700,14 @@ export default function VideoView() {
   const insufficientCredits = balance < estimatedCredits
 
   return (
-    <div className="flex h-full overflow-hidden" style={{ backgroundColor: '#F7F8FA' }}>
+    <div className={`relative flex h-full overflow-hidden video-unified-workspace ${settingsOpen ? 'video-settings-open' : ''}`} style={{ backgroundColor: '#F7F8FA' }}>
+      <GenerationWorkspaceChrome
+        mode="video"
+        tasks={history.map((task) => ({ id: task.id, title: task.title || '未命名对话', status: task.status }))}
+        selectedTaskId={selectedTaskId}
+        onNewConversation={() => { form.resetFields(); setSelectedTaskId(null); setInputImages([]); setError('') }}
+        onSelectTask={(id) => setSelectedTaskId(id)}
+      />
       {/* ================================================================ */}
       {/* Workspace (两栏布局: 配置 + 预览)                                */}
       {/* ================================================================ */}
@@ -702,7 +717,7 @@ export default function VideoView() {
         {/* ================================================================ */}
         <div
           ref={formCardRef}
-          className="flex-shrink-0 flex flex-col overflow-y-auto bg-white border-r"
+          className="video-legacy-settings flex-shrink-0 flex flex-col overflow-y-auto bg-white border-r"
           style={{ borderColor: '#EAECF0', width: '47%' }}
         >
         <Form
@@ -1400,6 +1415,19 @@ export default function VideoView() {
               </div>
             </div>
           )}
+        </div>
+      </div>
+      <div className="video-unified-composer">
+        <div className="mb-2">
+          <Input.TextArea value={promptValue} onChange={(event) => { setPromptValue(event.target.value); form.setFieldValue('prompt', event.target.value) }} onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); form.submit() } }} autoSize={{ minRows: 2, maxRows: 5 }} placeholder={t('promptComposerPlaceholder')} maxLength={MAX_PROMPT_LENGTH} className="!resize-none" />
+        </div>
+        {inputImages.length > 0 && <div className="video-composer-reference">已添加 {inputImages.length} 张参考图</div>}
+        <div className="video-composer-toolbar">
+          <Segmented size="small" value={currentMode} options={modeOptions} onChange={(value) => handleModeChange(value as GenerationMode)} />
+          <Button type="text" size="small" onClick={() => setSettingsOpen((value) => !value)}>{settingsOpen ? '收起参数' : '参数设置'}</Button>
+          <span className="video-composer-spacer" />
+          <span className="video-composer-cost">预计 {estimatedCredits} Credits · 余额 {balance}</span>
+          <Button type="primary" shape="circle" icon={<ArrowUpOutlined />} loading={submitting} disabled={insufficientCredits || !promptValue.trim()} onClick={() => form.submit()} aria-label="生成视频" />
         </div>
       </div>
       </div>

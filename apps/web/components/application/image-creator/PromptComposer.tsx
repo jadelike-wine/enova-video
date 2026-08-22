@@ -1,7 +1,8 @@
 'use client'
 
 import { ArrowUpOutlined, DeleteOutlined, InboxOutlined, PictureOutlined, SwapOutlined } from '@ant-design/icons'
-import { Button, Input, Segmented, Tooltip } from 'antd'
+import { Button, Input, Segmented, Select, Tooltip } from 'antd'
+import { useRouter } from '@/i18n.config'
 import ModelSelector from './ModelSelector'
 import type { GenerationMode, InputImage } from './types'
 import styles from './image-creator.module.css'
@@ -34,6 +35,7 @@ export interface PromptComposerProps {
 }
 
 export default function PromptComposer({ prompt, onPromptChange, mode, model, ratio, size, onModeChange, onModelChange, onRatioChange, onSizeChange, inputImages = [], onUpload, onReplaceImage, onRemoveImage, onSubmit, generating = false, generateStep, error, balance, estimatedCost, modeOptions, maxImages = 6, disabled, maxLength = 2000 }: PromptComposerProps) {
+  const router = useRouter()
   const upload = () => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -56,6 +58,7 @@ export default function PromptComposer({ prompt, onPromptChange, mode, model, ra
     </div>)}</div>}
     <Input.TextArea value={prompt} onChange={(event) => onPromptChange(event.target.value)} onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); onSubmit() } }} placeholder="描述你想创作的画面…" autoSize={{ minRows: 2, maxRows: 6 }} maxLength={maxLength} disabled={disabled || generating} aria-label="提示词" className={styles['image-creator-composer__input']} />
     <div className={styles['image-creator-composer__toolbar']}>
+      <Select aria-label="生成类型" value="image" variant="borderless" onChange={(value) => router.push(value === 'image' ? '/app/images' : '/app/videos')} options={[{ value: 'image', label: '图片生成' }, { value: 'video', label: '视频生成' }]} popupMatchSelectWidth={false} className={styles['image-creator-composer__creation-type']} />
       <Tooltip title="上传参考图"><Button type="text" icon={<InboxOutlined />} onClick={upload} disabled={disabled || generating} aria-label="上传参考图" /></Tooltip>
       <span className={styles['image-creator-composer__count']}>{prompt.length}/{maxLength}</span>
       <Segmented size="small" value={mode} options={modeOptions} onChange={(value) => onModeChange(value as GenerationMode)} disabled={disabled || generating} />

@@ -28,7 +28,8 @@ export type SettingGroup =
   | 'email'
   | 'general'
   | 'table'
-  | 'customization';
+  | 'customization'
+  | 'ai';
 
 export interface SettingDef {
   key: string;
@@ -109,6 +110,31 @@ const EMAIL_GROUP_KEYS = [
 ];
 
 export const SETTINGS: SettingDef[] = [
+  // ---- AI 标题生成（OpenAI Chat Completions 兼容）----
+  {
+    key: 'ai.titleGenerationEnabled', valueType: 'boolean', group: 'ai', label: '启用对话标题生成',
+    description: '为图片和视频生成历史异步生成简短标题。未配置完整或请求失败时始终显示“未命名对话”。', envKey: 'TITLE_GENERATION_ENABLED', envDefault: 'false',
+  },
+  {
+    key: 'ai.titleGenerationBaseUrl', valueType: 'string', group: 'ai', label: 'OpenAI 兼容 Base URL',
+    description: '填写服务根地址或 /v1 地址，例如 https://apihub.agnes-ai.com。服务端会调用 /v1/chat/completions。', envKey: 'TITLE_GENERATION_BASE_URL', envDefault: 'https://apihub.agnes-ai.com',
+  },
+  {
+    key: 'ai.titleGenerationApiKey', valueType: 'string', group: 'ai', label: 'API Key',
+    description: '仅用于标题生成，AES-GCM 加密存储，绝不会返回前端。', isSecret: true, envKey: 'TITLE_GENERATION_API_KEY',
+  },
+  {
+    key: 'ai.titleGenerationModel', valueType: 'string', group: 'ai', label: '模型名称',
+    description: '例如 agnes-2.0-flash。模型须兼容 OpenAI Chat Completions。', envKey: 'TITLE_GENERATION_MODEL', envDefault: 'agnes-2.0-flash',
+  },
+  {
+    key: 'ai.titleGenerationPromptZh', valueType: 'string', group: 'ai', label: '中文标题提示词',
+    description: '可使用 {{prompt}} 注入用户原始提示词；未写占位符时原始提示词会作为单独的用户消息发送。', envKey: 'TITLE_GENERATION_PROMPT_ZH', envDefault: '根据用户的创作提示词生成一个简短、准确的中文对话标题。只返回标题，不要引号、解释或标点。用户提示词：{{prompt}}',
+  },
+  {
+    key: 'ai.titleGenerationPromptEn', valueType: 'string', group: 'ai', label: '英文标题提示词',
+    description: '可使用 {{prompt}} 注入用户原始提示词；未写占位符时原始提示词会作为单独的用户消息发送。', envKey: 'TITLE_GENERATION_PROMPT_EN', envDefault: 'Create a concise, accurate English conversation title from the user creation prompt. Return only the title, with no quotes, explanation, or punctuation. User prompt: {{prompt}}',
+  },
   // ---- 计费 ----
   {
     key: 'billing.welcomeCredits',

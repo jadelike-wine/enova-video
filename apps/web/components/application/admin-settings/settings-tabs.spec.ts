@@ -9,13 +9,14 @@ import {
 } from './settings-tabs.js'
 
 describe('system settings metadata', () => {
-  it('keeps the nine system settings tabs in the product order', () => {
+  it('keeps the system settings tabs in the product order', () => {
     expect(SETTINGS_TABS.map((tab) => tab.key)).toEqual([
       'general',
       'agreement',
       'features',
       'security',
       'users',
+      'ai',
       'gateway',
       'payment',
       'email',

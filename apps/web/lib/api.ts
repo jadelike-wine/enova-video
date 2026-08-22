@@ -79,6 +79,8 @@ export interface Generation {
   estimatedCredits: number
   reservedCredits: number
   actualCredits: number
+  title: string
+  titleGenerationStatus: string
   createdAt: string
   completedAt?: string | null
 }

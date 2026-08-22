@@ -12,6 +12,7 @@ import AgreementSettingsPanel from './AgreementSettingsPanel'
 import FeaturesSettingsPanel from './FeaturesSettingsPanel'
 import SecuritySettingsPanel from './SecuritySettingsPanel'
 import UserDefaultsSettingsPanel from './UserDefaultsSettingsPanel'
+import AiTitleSettingsPanel from './AiTitleSettingsPanel'
 import GatewaySettingsPanel from './GatewaySettingsPanel'
 import PaymentSettingsPanel from './PaymentSettingsPanel'
 import BackupSettingsPanel from './BackupSettingsPanel'
@@ -135,6 +136,7 @@ async function renderPanels(): Promise<{ container: HTMLDivElement; root: Root }
         <FeaturesSettingsPanel {...commonProps(byTab('features'))} />
         <SecuritySettingsPanel {...commonProps(byTab('security'))} />
         <UserDefaultsSettingsPanel {...commonProps(byTab('users'))} />
+        <AiTitleSettingsPanel {...commonProps(byTab('ai'))} />
         <GatewaySettingsPanel {...commonProps(byTab('gateway'))} />
         <PaymentSettingsPanel {...commonProps(byTab('payment'))} />
         <BackupSettingsPanel />
@@ -170,6 +172,7 @@ describe('business settings panels', () => {
       'features-settings-panel',
       'security-settings-panel',
       'users-settings-panel',
+      'ai-title-settings-panel',
       'gateway-settings-panel',
       'payment-settings-panel',
       'backup-settings-panel',

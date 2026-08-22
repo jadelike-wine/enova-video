@@ -18,6 +18,7 @@ import { ContentLoading } from './admin/AdminUi'
 import { normalizeDocumentsJson } from './AgreementDocumentsEditor'
 import EmailSettingsPanel from './admin/EmailSettingsPanel'
 import AgreementSettingsPanel from './admin-settings/AgreementSettingsPanel'
+import AiTitleSettingsPanel from './admin-settings/AiTitleSettingsPanel'
 import BackupSettingsPanel from './admin-settings/BackupSettingsPanel'
 import FeaturesSettingsPanel from './admin-settings/FeaturesSettingsPanel'
 import GatewaySettingsPanel from './admin-settings/GatewaySettingsPanel'
@@ -48,6 +49,7 @@ const GROUP_PANEL_META: Record<string, { title: string; description?: string; da
   queue: { title: '生成任务', description: '生成任务的并发、重试与轮询策略。' },
   storage: { title: '对象存储', description: '生成结果的对象存储与媒体下载安全策略。' },
   billing: { title: '用户默认值', description: '新用户注册赠金等用户默认策略。' },
+  ai: { title: 'AI 标题生成', description: 'OpenAI 兼容标题模型、凭证与中英文提示词。' },
 }
 
 const AWS_STORAGE_KEYS = new Set([
@@ -151,6 +153,7 @@ const SETTINGS_TAB_ICON_PATHS: Record<SettingsTabKey, string> = {
   features: 'm12 3 1.8 5.3L19 10l-5.2 1.7L12 17l-1.8-5.3L5 10l5.2-1.7zM19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z',
   security: 'M12 3 19 6v5c0 4.7-3 8.2-7 10-4-1.8-7-5.3-7-10V6zM9 12l2 2 4-4',
   users: 'M16 20v-1.5A3.5 3.5 0 0 0 12.5 15h-5A3.5 3.5 0 0 0 4 18.5V20M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M16 4.5a4 4 0 0 1 0 7.8M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.4',
+  ai: 'M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4',
   gateway: 'M4 5h16v12H4zM8 21h8M12 17v4M8 9h8M8 12h5',
   payment: 'M3 6h18v12H3zM3 10h18M7 15h3',
   email: 'M3 5h18v14H3zM3 6l9 7 9-7',
@@ -952,6 +955,10 @@ function AdminSettingsInner() {
           onStorageTest={() => void handleStorageTest()}
         />
       )
+    }
+
+    if (tab.key === 'ai') {
+      return <AiTitleSettingsPanel settings={items} drafts={drafts} onDraftChange={(key, value) => setDrafts((p) => ({ ...p, [key]: value }))} onBatchSave={(keys) => void handleBatchSave('ai', keys)} saving={Boolean(saving[batchId])} saved={Boolean(justSaved[batchId])} />
     }
 
     if (tab.key === 'payment') {

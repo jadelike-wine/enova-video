@@ -16,6 +16,7 @@ import { WalletService } from '../billing/wallet.service.js';
 import { EntitlementService } from '@enova/billing';
 import { SettingsService } from '../settings/settings.service.js';
 import { EnovaLogger } from '../common/logger/enova-logger.js';
+import { GenerationTitleService } from './generation-title.service.js';
 import type { Queue } from 'bullmq';
 
 export interface GenerationView {
@@ -36,6 +37,8 @@ export interface GenerationView {
   finalCostMicrousd: number;
   costStatus: string;
   attemptCount: number;
+  title: string;
+  titleGenerationStatus: string;
   createdAt: Date;
   completedAt?: Date | null;
 }
@@ -61,6 +64,7 @@ export class GenerationsService {
     @Inject(EntitlementService) private readonly entitlement: EntitlementService,
     @Inject(SettingsService) private readonly settings: SettingsService,
     @Optional() @Inject(EnovaLogger) private readonly logger?: EnovaLogger,
+    @Optional() @Inject(GenerationTitleService) private readonly titleGenerator?: GenerationTitleService,
   ) {}
 
   /** 从动态配置获取当前 job 级别 options。 */
@@ -154,6 +158,10 @@ export class GenerationsService {
       if (await this.settings.getLogPrompts()) fields.prompt = typeof input.prompt === 'string' ? input.prompt : undefined;
       this.logger.info('generation job queued', fields);
     }
+
+    // 标题是纯展示增强，不能阻塞 API 响应或影响主生成/计费状态机。
+    const prompt = typeof input.prompt === 'string' ? input.prompt : '';
+    if (this.titleGenerator) void this.titleGenerator.generateFor(jobId, prompt);
 
     return this.toView(job);
   }
@@ -296,6 +304,8 @@ export class GenerationsService {
     finalCostMicrousd: number;
     costStatus: string;
     attemptCount: number;
+    title: string;
+    titleGenerationStatus: string;
     createdAt: Date;
     completedAt: Date | null;
     canceledAt?: Date | null;
@@ -318,6 +328,8 @@ export class GenerationsService {
       finalCostMicrousd: r.finalCostMicrousd,
       costStatus: r.costStatus,
       attemptCount: r.attemptCount,
+      title: r.title,
+      titleGenerationStatus: r.titleGenerationStatus,
       createdAt: r.createdAt,
       completedAt: r.completedAt,
     };

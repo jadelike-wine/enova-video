@@ -7,13 +7,11 @@ import { useTranslations } from 'next-intl'
 import { Button } from 'antd'
 import {
   AppstoreOutlined,
-  DownOutlined,
   ExperimentOutlined,
   FileImageOutlined,
   FolderOpenOutlined,
   LogoutOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
+  DownOutlined,
   PictureOutlined,
   SettingOutlined,
   VideoCameraOutlined,
@@ -27,19 +25,19 @@ import { ContentLoading } from '@/components/application/admin/AdminUi'
 import { SiteConfigProvider, useSiteConfig } from '@/lib/useSiteConfig'
 import type { CustomMenuItem } from '@/lib/api'
 import { workspaceShellMode } from '@/components/application/image-creator/workbench'
-import { assetNavItem, getExpandableSidebarSubmenuId, getSidebarItemClass, hasActiveSidebarChild, isSidebarItemActive, shouldCloseMobileSidebarOnPathChange } from './sidebar-navigation'
+import { assetNavItem, getExpandableSidebarSubmenuId, getSidebarItemClass, hasActiveSidebarChild, isSidebarItemActive } from './sidebar-navigation'
 
 // 普通用户（个人端）导航项
 // 图片/视频为可展开菜单，包含「生成」和「历史记录」二级菜单
 const userNavItems = [
-  { path: '/app/settings', labelKey: 'navigation.settings', icon: <SettingOutlined /> },
+  { path: '/app/settings', labelKey: 'navigation.settings', shortLabel: '设置', icon: <SettingOutlined /> },
 ]
 
 // 可展开的生成菜单配置
 type NavChild = { path: string; labelKey: string; disabled?: boolean }
 type ExpandableMenu = { basePath: string; labelKey: string; icon: ReactNode; children: NavChild[] }
 
-const expandableMenus: ExpandableMenu[] = [
+export const expandableMenus: ExpandableMenu[] = [
   {
     basePath: '/app/images',
     labelKey: 'navigation.images',
@@ -60,7 +58,7 @@ const expandableMenus: ExpandableMenu[] = [
   },
 ]
 
-const creatorGenerationMenu: ExpandableMenu = {
+export const creatorGenerationMenu: ExpandableMenu = {
   basePath: '/app/images',
   labelKey: 'navigation.generate',
   icon: <ExperimentOutlined />,
@@ -70,7 +68,7 @@ const creatorGenerationMenu: ExpandableMenu = {
   ],
 }
 
-const assetNavLinkItem = { ...assetNavItem, icon: <FolderOpenOutlined /> }
+const assetNavLinkItem = { ...assetNavItem, shortLabel: '资产', icon: <FolderOpenOutlined /> }
 
 // 管理员后台导航项（仅管理员可见）
 const adminNavItems = [
@@ -135,7 +133,7 @@ function RoutePendingProvider({ children }: { children: ReactNode }) {
   )
 }
 
-function NavLink({ item, pathname, collapsed = false }: { item: { path: string; labelKey: string; icon: ReactNode }; pathname: string; collapsed?: boolean }) {
+function NavLink({ item, pathname, collapsed = false }: { item: { path: string; labelKey: string; shortLabel?: string; icon: ReactNode }; pathname: string; collapsed?: boolean }) {
   const t = useTranslations()
   const { trigger } = useRoutePending()
   // pathname 来自 next-intl 的 usePathname，已去除 locale 前缀
@@ -154,13 +152,13 @@ function NavLink({ item, pathname, collapsed = false }: { item: { path: string; 
       <span className="nav-item-icon">
         {item.icon}
       </span>
-      <span className="nav-item-label">{t(item.labelKey)}</span>
+      <span className="nav-item-label">{collapsed ? item.shortLabel ?? t(item.labelKey).slice(0, 2) : t(item.labelKey)}</span>
     </Link>
   )
 }
 
 /** 可展开的二级菜单导航组件 */
-function ExpandableNavLink({
+export function ExpandableNavLink({
   menu,
   pathname,
   collapsed = false,
@@ -280,7 +278,7 @@ function CustomMenuLink({ item, pathname, collapsed = false }: { item: CustomMen
       className={`nav-item ${collapsed ? 'nav-item-collapsed' : ''} ${active ? 'nav-item-active' : 'nav-item-inactive'}`}
     >
       <span className="nav-item-icon"><AppstoreOutlined /></span>
-      <span className="nav-item-label">{item.label}</span>
+      <span className="nav-item-label">{collapsed ? item.label.slice(0, 2) : item.label}</span>
     </Link>
   )
 }
@@ -316,17 +314,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   const navRef = useRef<HTMLElement>(null)
   const { pending: routePending, trigger } = useRoutePending()
   const isAdminRoute = workspaceShellMode(pathname) === 'admin'
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
-  const previousPathnameRef = useRef(pathname)
-
-  useEffect(() => {
-    const previousPathname = previousPathnameRef.current
-    previousPathnameRef.current = pathname
-    if (mobileSidebarOpen && shouldCloseMobileSidebarOnPathChange(previousPathname, pathname)) {
-      setMobileSidebarOpen(false)
-    }
-  }, [mobileSidebarOpen, pathname])
+  const sidebarCollapsed = true
 
   // Layout 级别：ShellInner 在路由切换时保持 mounted，不再重新挂载。
   // sidebarScrollTop 仅在首次进入时恢复（浏览器硬刷新场景）。
@@ -356,8 +344,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell flex h-screen overflow-hidden">
       {/* Sidebar */}
-      {mobileSidebarOpen && <button aria-label={t('appShell.closeSidebar')} className="sidebar-backdrop" onClick={() => setMobileSidebarOpen(false)} />}
-      <aside className={`app-sidebar ${sidebarCollapsed ? 'app-sidebar-collapsed' : ''} ${mobileSidebarOpen ? 'app-sidebar-mobile-open' : ''}`}>
+      <aside className="app-sidebar app-sidebar-collapsed" aria-label="Primary navigation">
         <div className="sidebar-brand">
           <Link href="/" className="block min-w-0">
             <div className="flex items-center gap-3">
@@ -368,11 +355,6 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               </div>
             </div>
           </Link>
-          <div className="sidebar-brand-actions">
-            <button type="button" className="sidebar-toggle" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={t(sidebarCollapsed ? 'appShell.expandSidebar' : 'appShell.collapseSidebar')}>
-              {sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            </button>
-          </div>
         </div>
 
         <nav
@@ -397,21 +379,19 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 <span className="h-px flex-1 bg-gray-200" />
               </div>
               <div className="space-y-1.5">
-                {expandableMenus.map((menu) => (
-                  <ExpandableNavLink key={menu.basePath} menu={menu} pathname={pathname} collapsed={sidebarCollapsed} />
-                ))}
-                <NavLink item={assetNavLinkItem} pathname={pathname} collapsed={sidebarCollapsed} />
+                <ExpandableNavLink menu={creatorGenerationMenu} pathname={pathname} collapsed />
+                <NavLink item={assetNavLinkItem} pathname={pathname} collapsed />
                 {userNavItems.map((item) => (
-                  <NavLink key={item.path} item={item} pathname={pathname} collapsed={sidebarCollapsed} />
+                  <NavLink key={item.path} item={item} pathname={pathname} collapsed />
                 ))}
               </div>
             </>
           ) : (
             <div className="space-y-1.5">
-              <ExpandableNavLink menu={creatorGenerationMenu} pathname={pathname} collapsed={sidebarCollapsed} />
-              <NavLink item={assetNavLinkItem} pathname={pathname} collapsed={sidebarCollapsed} />
+              <ExpandableNavLink menu={creatorGenerationMenu} pathname={pathname} collapsed />
+              <NavLink item={assetNavLinkItem} pathname={pathname} collapsed />
               {userNavItems.map((item) => (
-                <NavLink key={item.path} item={item} pathname={pathname} collapsed={sidebarCollapsed} />
+                <NavLink key={item.path} item={item} pathname={pathname} collapsed />
               ))}
             </div>
           )}
@@ -427,7 +407,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 href="/app/admin/dashboard"
                 prefetch
                 onClick={() => trigger()}
-                className={`nav-item nav-item-inactive ${sidebarCollapsed ? 'nav-item-collapsed' : ''}`}
+                className="nav-item nav-item-collapsed nav-item-inactive"
               >
                 <span className="nav-item-icon"><ExperimentOutlined /></span>
                 <span className="nav-item-label">{t('navigation.adminDashboard')}</span>
@@ -444,7 +424,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               </div>
               <div className="space-y-2">
                 {visibleCustomMenuItems.map((item) => (
-                  <CustomMenuLink key={item.id} item={item} pathname={pathname} collapsed={sidebarCollapsed} />
+                  <CustomMenuLink key={item.id} item={item} pathname={pathname} collapsed />
                 ))}
               </div>
             </>
@@ -457,7 +437,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 href={siteConfig.docUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`nav-item nav-item-inactive ${sidebarCollapsed ? 'nav-item-collapsed' : ''}`}
+                className="nav-item nav-item-collapsed nav-item-inactive"
               >
                   <span className="nav-item-icon"><FileImageOutlined /></span>
                 <span className="nav-item-label">{t('navigation.documentation')}</span>
@@ -470,8 +450,8 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           {/* 余额 */}
           <Link
             href="/app/wallet"
-            title={sidebarCollapsed ? `${t('appShell.balance')}: ${balance.toLocaleString()}` : undefined}
-            className={`credits-link ${sidebarCollapsed ? 'credits-link-collapsed' : ''}`}
+            title={`${t('appShell.balance')}: ${balance.toLocaleString()}`}
+            className="credits-link credits-link-collapsed"
           >
             <WalletOutlined className="credits-icon" />
             <div className="credits-copy">
@@ -480,27 +460,24 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 {balance.toLocaleString()} <span className="text-xs font-normal text-gray-500">Credits</span>
               </p>
             </div>
-            {!sidebarCollapsed && <span className="text-slate-300">→</span>}
+            <span className="sr-only">{t('appShell.balance')}</span>
           </Link>
           {/* 用户 + 登出 */}
-          <div className={`account-row ${sidebarCollapsed ? 'account-row-collapsed' : ''}`}>
+          <div className="account-row account-row-collapsed" title={user.email}>
             <div className="account-avatar">{user.email.slice(0, 1).toUpperCase()}</div>
             <div className="account-copy min-w-0">
               <p className="text-sm text-gray-700 truncate">{user.email}</p>
               <p className="text-[11px] text-slate-400">{t('appShell.account')}</p>
             </div>
             <Button type="text" size="small" icon={<LogoutOutlined />} onClick={() => void logout()} title={t('appShell.logoutTitle')} className="logout-button">
-              {!sidebarCollapsed && t('appShell.logout')}
+              <span className="sr-only">{t('appShell.logout')}</span>
             </Button>
           </div>
         </div>
       </aside>
 
       {/* Main content */}
-      <main className={`app-main flex-1 overflow-hidden ${sidebarCollapsed ? 'app-main-collapsed' : ''}`}>
-        <button type="button" className="mobile-sidebar-trigger" onClick={() => setMobileSidebarOpen(true)} aria-label={t('appShell.openSidebar')}>
-          <MenuUnfoldOutlined />
-        </button>
+      <main className="app-main flex-1 overflow-hidden">
         <div className="app-main-lang-switcher">
           <LanguageSwitcher />
         </div>

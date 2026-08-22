@@ -11,6 +11,8 @@ export interface ImageTask extends TaskItem {
   size?: string
   ratio?: string
   model?: string
+  title?: string
+  title_generation_status?: string
   input_images?: string[]
   output_url?: string
   error_message?: unknown

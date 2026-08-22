@@ -207,6 +207,10 @@ export const generationJobs = pgTable('generation_jobs', {
   status: generationStatus('status').notNull().default('PENDING'),
   provider: varchar('provider', { length: 50 }),
   model: varchar('model', { length: 100 }),
+  /** 对话历史展示标题；未完成或失败时保留默认“未命名对话”。 */
+  title: varchar('title', { length: 120 }).notNull().default('未命名对话'),
+  /** PENDING / SUCCEEDED / FAILED / SKIPPED，标题生成不影响主生成任务。 */
+  titleGenerationStatus: varchar('title_generation_status', { length: 20 }).notNull().default('PENDING'),
   inputJson: jsonb('input_json').$type<Record<string, unknown>>(),
   outputJson: jsonb('output_json').$type<Record<string, unknown>>(),
   providerJobId: varchar('provider_job_id', { length: 255 }),

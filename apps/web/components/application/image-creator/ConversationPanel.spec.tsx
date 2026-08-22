@@ -26,6 +26,7 @@ const task: ImageTask = {
   id: 'generation-1',
   status: 'SUCCEEDED',
   prompt: '浮空城市海报',
+  title: '浮空城市海报',
   output_url: 'https://cdn.example.com/city.png',
 }
 

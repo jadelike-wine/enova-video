@@ -23,37 +23,48 @@ import BackupSettingsPanel from './BackupSettingsPanel'
 vi.mock('antd', () => {
   const element = (tag: string, props: Record<string, unknown> = {}, children?: ReactNode) =>
     React.createElement(tag, props, children)
-  const Button = ({ children, loading, ...props }: { children?: ReactNode; loading?: boolean; [key: string]: unknown }) => {
+  const Button = ({ children, loading, danger, ...props }: { children?: ReactNode; loading?: boolean; danger?: boolean; [key: string]: unknown }) => {
     void loading
+    void danger
     return element('button', props, children)
   }
-  const Input = ({ value, onChange, ...props }: { value?: string; onChange?: (event: unknown) => void; [key: string]: unknown }) =>
-    element('input', { ...props, value, onChange })
-  Input.TextArea = ({ value, onChange, autoSize, ...props }: { value?: string; onChange?: (event: unknown) => void; autoSize?: unknown; [key: string]: unknown }) => {
+  const Input = ({ value, onChange, allowClear, onPressEnter, ...props }: { value?: string; onChange?: (event: unknown) => void; allowClear?: boolean; onPressEnter?: (event: unknown) => void; [key: string]: unknown }) => {
+    void allowClear
+    void onPressEnter
+    return element('input', { ...props, value, onChange })
+  }
+  Input.TextArea = ({ value, onChange, autoSize, onPressEnter, ...props }: { value?: string; onChange?: (event: unknown) => void; autoSize?: unknown; onPressEnter?: (event: unknown) => void; [key: string]: unknown }) => {
     void autoSize
+    void onPressEnter
     return element('textarea', { ...props, value, onChange })
   }
   Input.Password = Input
   const InputNumber = ({ value, onChange, ...props }: { value?: string | number; onChange?: (value: unknown) => void; [key: string]: unknown }) =>
     element('input', { ...props, type: 'number', value, onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) })
-  const Select = ({ value, onChange, options = [], ...props }: { value?: string; onChange?: (value: string) => void; options?: Array<{ value: string; label: string }>; [key: string]: unknown }) =>
-    element('select', { ...props, value, onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) }, options.map((option) => element('option', { key: option.value, value: option.value }, option.label)))
+  const Select = ({ value, onChange, options = [], allowClear, ...props }: { value?: string; onChange?: (value: string) => void; options?: Array<{ value: string; label: string }>; allowClear?: boolean; [key: string]: unknown }) => {
+    void allowClear
+    return element('select', { ...props, value, onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) }, options.map((option) => element('option', { key: option.value, value: option.value }, option.label)))
+  }
   const Switch = ({ checked, onChange, ...props }: { checked?: boolean; onChange?: (checked: boolean) => void; [key: string]: unknown }) =>
     element('button', { ...props, type: 'button', role: 'switch', 'aria-checked': checked, onClick: () => onChange?.(!checked) }, checked ? 'on' : 'off')
   const Segmented = ({ value, onChange, options = [], ...props }: { value?: string; onChange?: (value: string) => void; options?: Array<{ value: string; label: string }>; [key: string]: unknown }) =>
     element('select', { ...props, value, onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) }, options.map((option) => element('option', { key: option.value, value: option.value }, option.label)))
   const Tag = ({ children }: { children?: ReactNode }) => element('span', {}, children)
   const Empty = ({ description }: { description?: ReactNode }) => element('div', {}, description)
-  const DatePicker = ({ value, onChange, ...props }: { value?: unknown; onChange?: (value: unknown) => void; [key: string]: unknown }) =>
-    element('input', { ...props, type: 'date', 'data-testid': 'date-picker', value: typeof value === 'object' && value !== null ? String(value) : '', onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) })
+  const DatePicker = ({ value, onChange, allowClear, ...props }: { value?: unknown; onChange?: (value: unknown) => void; allowClear?: boolean; [key: string]: unknown }) => {
+    void allowClear
+    return element('input', { ...props, type: 'date', 'data-testid': 'date-picker', value: typeof value === 'object' && value !== null ? String(value) : '', onChange: (event: { target: { value: string } }) => onChange?.(event.target.value) })
+  }
   // Spin: 将 children 包裹在 div 中，spinning 属性接受但在此忽略
   const Spin = ({ children, spinning, ...props }: { children?: ReactNode; spinning?: boolean; [key: string]: unknown }) => {
     void spinning
     return element('div', props, children)
   }
   // Alert: 渲染为简单 div
-  const Alert = ({ title, message, description, ...props }: { title?: ReactNode; message?: ReactNode; description?: ReactNode; [key: string]: unknown }) =>
-    element('div', props, [title ?? message, description].filter(Boolean))
+  const Alert = ({ title, message, description, showIcon, ...props }: { title?: ReactNode; message?: ReactNode; description?: ReactNode; showIcon?: boolean; [key: string]: unknown }) => {
+    void showIcon
+    return element('div', props, [title ?? message, description].filter(Boolean))
+  }
   // Result: 渲染为简单 div
   const Result = ({ title, subTitle, extra, ...props }: { title?: ReactNode; subTitle?: ReactNode; extra?: ReactNode; [key: string]: unknown }) =>
     element('div', props, [title, subTitle, extra].filter(Boolean))

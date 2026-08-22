@@ -19,7 +19,6 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
 import { OrdersAdminService } from './orders.admin.service.js';
 import { AdminAuditService } from './admin.audit.service.js';
-import { SensitiveActionService } from '../common/services/sensitive-action.service.js';
 import { OrderListQueryDto, RecordManualRefundDto } from './dto/admin.dto.js';
 
 @ApiTags('admin/orders')
@@ -29,7 +28,6 @@ export class OrdersAdminController {
   constructor(
     @Inject(OrdersAdminService) private readonly service: OrdersAdminService,
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
-    @Inject(SensitiveActionService) private readonly sensitiveAction: SensitiveActionService,
   ) {}
 
   @Get()
@@ -60,17 +58,6 @@ export class OrdersAdminController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     const before = await this.service.getStatus(id);
-    // P1.5: Sensitive action gate (step-up + audit) before retrying fulfillment.
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.ORDERS_FULFILL,
-      target: `order:${id}`,
-      reason: 'Retry order fulfillment',
-      before: before ? { fulfillmentStatus: before.fulfillmentStatus } : undefined,
-      requestId: req.id,
-      stepUpPassword,
-    });
     const result = await this.service.retryFulfillment(id);
     await this.audit.record({
       actorUserId: user.userId,
@@ -94,17 +81,6 @@ export class OrdersAdminController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     const before = await this.service.getStatus(id);
-    // P1.5: Sensitive action gate (step-up + audit) before closing order.
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.ORDERS_FULFILL,
-      target: `order:${id}`,
-      reason: 'Close unpaid order',
-      before: before ? { status: before.status } : undefined,
-      requestId: req.id,
-      stepUpPassword,
-    });
     await this.service.closeOrder(id);
     await this.audit.record({
       actorUserId: user.userId,
@@ -134,16 +110,6 @@ export class OrdersAdminController {
     @Body() dto: RecordManualRefundDto,
   ) {
     const before = await this.service.getStatus(id);
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.ORDERS_REFUND,
-      target: `order:${id}`,
-      reason: `Record manual refund: ${dto.reason}`,
-      before: before ? { status: before.status } : undefined,
-      requestId: req.id,
-      stepUpPassword,
-    });
     const result = await this.service.recordManualRefund(id, {
       operatorId: user.userId,
       reason: dto.reason,
@@ -188,16 +154,6 @@ export class OrdersAdminController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     const before = await this.service.getStatus(id);
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.ORDERS_REFUND,
-      target: `order:${id}`,
-      reason: 'Retry credits revocation for manual refund',
-      before: before ? { status: before.status } : undefined,
-      requestId: req.id,
-      stepUpPassword,
-    });
     const result = await this.service.retryCreditsRevocation(id, {
       operatorId: user.userId,
     });

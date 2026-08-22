@@ -22,7 +22,6 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
 import { SettingsAdminService } from './settings.admin.service.js';
 import { AdminAuditService } from './admin.audit.service.js';
-import { SensitiveActionService } from '../common/services/sensitive-action.service.js';
 import {
   UpdateSettingDto,
   BatchUpdateSettingsDto,
@@ -37,7 +36,6 @@ export class SettingsAdminController {
   constructor(
     @Inject(SettingsAdminService) private readonly service: SettingsAdminService,
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
-    @Inject(SensitiveActionService) private readonly sensitiveAction: SensitiveActionService,
     @Inject(RbacStore) private readonly rbac: RbacStore,
   ) {}
 
@@ -52,19 +50,6 @@ export class SettingsAdminController {
     if (!hasPermission) {
       throw new Error(`Permission denied: ${def.permission} required for setting ${key}`);
     }
-  }
-
-  /**
-   * 判断配置项是否属于安全敏感类别（需要 SETTINGS_SECURITY_WRITE 权限）。
-   *
-   * 只有 ssrf.* 和 security.rateLimit* 等降低安全边界的配置项才需要 step-up 密码二次验证；
-   * general.siteLogo、general.siteName 等普通配置项不需要 step-up，
-   * 只走基础 SETTINGS_WRITE 权限 + 审计日志。与 sub2api 的设计一致：
-   * settings 路由本身不挂载 step-up 中间件，仅在真正敏感操作时条件触发。
-   */
-  private isSensitiveSetting(key: string): boolean {
-    const def = SETTINGS_BY_KEY.get(key);
-    return Boolean(def?.permission);
   }
 
   @Get()
@@ -91,19 +76,6 @@ export class SettingsAdminController {
     @Body() dto: UpdateSettingDto,
   ): Promise<SettingValueView> {
     await this.checkSettingPermission(user.userId, key);
-    // 仅安全敏感配置（ssrf.*、security.rateLimit*）需要 step-up 密码二次验证；
-    // 普通配置（general.siteLogo 等）只需基础权限 + 审计日志。
-    if (this.isSensitiveSetting(key)) {
-      const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-      await this.sensitiveAction.execute({
-        actorUserId: user.userId,
-        permission: PERMISSIONS.SETTINGS_WRITE,
-        target: `setting:${key}`,
-        reason: `Update setting: ${key}`,
-        requestId: req.id,
-        stepUpPassword,
-      });
-    }
     const view = await this.service.update(key, dto.value, {
       expectedVersion: dto.expectedVersion,
       updatedBy: user.userId,
@@ -135,20 +107,6 @@ export class SettingsAdminController {
       await this.checkSettingPermission(user.userId, item.key);
     }
     const keys = dto.items.map((i) => i.key).join(', ');
-    // 仅当 batch 中包含安全敏感配置（ssrf.*、security.rateLimit*）时才需要 step-up；
-    // 普通配置批量保存（如 general.siteLogo + general.siteName）不需 step-up。
-    const hasSensitiveKey = dto.items.some((item) => this.isSensitiveSetting(item.key));
-    if (hasSensitiveKey) {
-      const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-      await this.sensitiveAction.execute({
-        actorUserId: user.userId,
-        permission: PERMISSIONS.SETTINGS_WRITE,
-        target: `settings:batch`,
-        reason: `Batch update settings: ${keys}`,
-        requestId: req.id,
-        stepUpPassword,
-      });
-    }
     const views = await this.service.updateGroup(
       dto.items.map((i) => ({ key: i.key, value: i.value })),
       {
@@ -178,18 +136,6 @@ export class SettingsAdminController {
     @Param('key') key: string,
   ): Promise<SettingValueView> {
     await this.checkSettingPermission(user.userId, key);
-    // 仅安全敏感配置的 Secret 清除需要 step-up；普通 Secret 清除只需基础权限 + 审计。
-    if (this.isSensitiveSetting(key)) {
-      const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-      await this.sensitiveAction.execute({
-        actorUserId: user.userId,
-        permission: PERMISSIONS.SETTINGS_WRITE,
-        target: `setting:${key}`,
-        reason: `Clear secret: ${key}`,
-        requestId: req.id,
-        stepUpPassword,
-      });
-    }
     const view = await this.service.clearSecret(key, {
       updatedBy: user.userId,
       requestId: req.id,

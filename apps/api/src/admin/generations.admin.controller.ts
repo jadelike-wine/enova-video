@@ -19,7 +19,6 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
 import { GenerationsAdminService } from './generations.admin.service.js';
 import { AdminAuditService } from './admin.audit.service.js';
-import { SensitiveActionService } from '../common/services/sensitive-action.service.js';
 import { ForceFailJobDto, GenerationListQueryDto } from './dto/admin.dto.js';
 
 @ApiTags('admin/generations')
@@ -29,7 +28,6 @@ export class GenerationsAdminController {
   constructor(
     @Inject(GenerationsAdminService) private readonly service: GenerationsAdminService,
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
-    @Inject(SensitiveActionService) private readonly sensitiveAction: SensitiveActionService,
   ) {}
 
   @Get()
@@ -61,17 +59,6 @@ export class GenerationsAdminController {
     @Body() dto: ForceFailJobDto,
   ) {
     const before = await this.service.getStatus(id);
-    // P1.5: Sensitive action gate (step-up + audit) before force-failing a generation job.
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.GENERATION_FORCE_FAIL,
-      target: `generation:${id}`,
-      reason: dto.reason ?? 'Force fail generation job',
-      before: before ? { status: before } : undefined,
-      requestId: req.id,
-      stepUpPassword,
-    });
     const result = await this.service.forceFail(id, dto.reason);
     await this.audit.record({
       actorUserId: user.userId,
@@ -94,16 +81,6 @@ export class GenerationsAdminController {
     @Req() req: FastifyRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    // P1.5: Sensitive action gate (step-up + audit) before replaying outbox.
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.GENERATION_REPLAY,
-      target: `generation:${id}`,
-      reason: 'Replay outbox for generation job',
-      requestId: req.id,
-      stepUpPassword,
-    });
     const result = await this.service.replayOutbox(id);
     await this.audit.record({
       actorUserId: user.userId,

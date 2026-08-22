@@ -3,7 +3,6 @@ import { BillingModule } from '../billing/billing.module.js';
 import { PaymentModule } from '../payment/payment.module.js';
 import { AdminGuard } from './admin.guard.js';
 import { PermissionGuard } from '../common/guards/permission.guard.js';
-import { SensitiveActionService } from '../common/services/sensitive-action.service.js';
 import { AdminBootstrapService } from './admin-bootstrap.service.js';
 import { AdminAuditService } from './admin.audit.service.js';
 import { ProvidersAdminService } from './providers.admin.service.js';
@@ -70,8 +69,6 @@ import { ENV } from '../config/config.module.js';
     // P1-5: RBAC permission guard（@RequirePermission 元数据驱动，无元数据时 default deny）。
     // Reflector 由 NestJS core 全局提供，无需在此显式注册。
     PermissionGuard,
-    // P1.5: 高危操作 step-up + 安全审计服务（依赖 RbacStore / PasswordService / DATABASE，均由全局模块提供）。
-    SensitiveActionService,
     AdminBootstrapService,
     AdminAuditService,
     ProvidersAdminService,

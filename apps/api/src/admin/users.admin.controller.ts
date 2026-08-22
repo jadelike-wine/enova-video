@@ -20,7 +20,6 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator.js';
 import { UsersAdminService, type AdminUserView } from './users.admin.service.js';
 import { AdminAuditService } from './admin.audit.service.js';
-import { SensitiveActionService } from '../common/services/sensitive-action.service.js';
 import { AdjustCreditsDto, ListQueryDto, SetUserStatusDto } from './dto/admin.dto.js';
 
 @ApiTags('admin/users')
@@ -30,7 +29,6 @@ export class UsersAdminController {
   constructor(
     @Inject(UsersAdminService) private readonly service: UsersAdminService,
     @Inject(AdminAuditService) private readonly audit: AdminAuditService,
-    @Inject(SensitiveActionService) private readonly sensitiveAction: SensitiveActionService,
   ) {}
 
   @Get()
@@ -50,17 +48,6 @@ export class UsersAdminController {
     @Body() dto: SetUserStatusDto,
   ): Promise<AdminUserView> {
     const before = await this.service.getStatus(id);
-    // P1.5: Sensitive action gate (step-up + audit) before mutating user status.
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.USERS_DISABLE,
-      target: `user:${id}`,
-      reason: `Set user status: ${dto.status}`,
-      before: before ? { status: before } : undefined,
-      requestId: req.id,
-      stepUpPassword,
-    });
     const view = await this.service.setStatus(id, dto.status);
     await this.audit.record({
       actorUserId: user.userId,
@@ -84,17 +71,6 @@ export class UsersAdminController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AdjustCreditsDto,
   ): Promise<{ balance: number; reservedBalance: number }> {
-    // P1.5: Sensitive action gate (step-up + audit) before adjusting wallet balance.
-    const stepUpPassword = (req.headers['x-step-up-password'] as string) || undefined;
-    await this.sensitiveAction.execute({
-      actorUserId: user.userId,
-      permission: PERMISSIONS.WALLET_ADJUST,
-      target: `user:${id}`,
-      reason: dto.description ?? `Credit adjustment: ${dto.delta}`,
-      before: { userId: id, delta: dto.delta },
-      requestId: req.id,
-      stepUpPassword,
-    });
     const result = await this.service.adjustCredits(id, dto.delta, dto.description);
     await this.audit.record({
       actorUserId: user.userId,

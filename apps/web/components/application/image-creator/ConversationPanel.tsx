@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import { CloseOutlined, HistoryOutlined, LoadingOutlined, PlusOutlined, PictureOutlined } from '@ant-design/icons'
 import { useTranslations } from 'next-intl'
 import type { ImageTask } from './types'
@@ -27,11 +28,25 @@ function TaskThumbnail({ task }: { task: ImageTask }) {
 
 export default function ConversationPanel({ open, tasks, selectedTaskId, onClose, onNewConversation, onSelectTask }: ConversationPanelProps) {
   const t = useTranslations('image')
+  const panelRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handleKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [open, onClose])
+
   if (!open) return null
 
   return <>
     <button type="button" className={styles['image-creator-conversation__backdrop']} onClick={onClose} aria-label={t('workbench.closeConversation')} />
-    <aside className={styles['image-creator-conversation']} aria-label={t('workbench.conversation')}>
+    <aside
+      ref={panelRef}
+      className={styles['image-creator-conversation']}
+      aria-label={t('workbench.conversation')}
+      onClick={(event) => event.stopPropagation()}
+    >
       <header className={styles['image-creator-conversation__header']}>
         <div>
           <p className={styles['image-creator-conversation__eyebrow']}>{t('workbench.conversation')}</p>

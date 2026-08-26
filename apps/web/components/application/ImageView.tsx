@@ -63,7 +63,7 @@ export default function ImageView() {
   const formCardRef = useRef<HTMLDivElement>(null)
   const historyRef = useRef<ImageTask[]>([])
   const selectedTaskRef = useRef<string | number | null>(null)
-  const shouldAutoSelectLatestRef = useRef(true)
+  const shouldAutoSelectLatestRef = useRef(false)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pollingRef = useRef(false)
   const mountedRef = useRef(true)
@@ -105,9 +105,9 @@ export default function ImageView() {
     } finally { setGenerating(false); setGenerateStep('') }
   }, [alert, inputImages, requireApiKey, setHistory, t, uploadLocalFiles])
 
-  const fillFormFromTask = useCallback((task: ImageTask) => { if (!task || task._optimistic) return; const values = formValuesFromTask(task); form.setFieldsValue(values); setPromptValue(values.prompt); setCurrentMode(values.mode as GenerationMode); inputImages.forEach(revokePreview); setInputImages(inputImagesOf(task).map((url) => ({ preview: url }))); setError(''); formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [form, inputImages, revokePreview])
+  const fillFormFromTask = useCallback((task: ImageTask, options?: { fillPrompt?: boolean }) => { if (!task || task._optimistic) return; const values = formValuesFromTask(task); const shouldFillPrompt = options?.fillPrompt !== false; form.setFieldsValue({ ...values, prompt: shouldFillPrompt ? values.prompt : '' }); setPromptValue(shouldFillPrompt ? values.prompt : ''); setCurrentMode(values.mode as GenerationMode); inputImages.forEach(revokePreview); setInputImages(inputImagesOf(task).map((url) => ({ preview: url }))); setError(''); formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [form, inputImages, revokePreview])
   const handleNewConversation = useCallback(() => { inputImages.forEach(revokePreview); shouldAutoSelectLatestRef.current = false; setInputImages([]); setSelectedTaskId(null); setPromptValue(''); setCurrentMode('text2img'); setError(''); form.setFieldsValue({ model: DEFAULT_IMAGE_MODEL, mode: 'text2img', prompt: '', size: '1K', ratio: '1:1' }); setConversationOpen(false) }, [form, inputImages, revokePreview])
-  const handleSelectTask = useCallback((task: ImageTask) => { fillFormFromTask(task); setSelectedTaskId(task.id); setConversationOpen(false) }, [fillFormFromTask])
+  const handleSelectTask = useCallback((task: ImageTask) => { fillFormFromTask(task, { fillPrompt: false }); setSelectedTaskId(task.id); setConversationOpen(false) }, [fillFormFromTask])
   const copyPrompt = useCallback(async (prompt?: string) => { if (!prompt) return; try { await navigator.clipboard.writeText(prompt) } catch { /* optional */ } }, [])
   const downloadImage = useCallback(async (url: string, name?: string) => { try { const response = await fetch(url); const objectUrl = URL.createObjectURL(await response.blob()); const anchor = document.createElement('a'); anchor.href = objectUrl; anchor.download = name || `enova-${Date.now()}.png`; anchor.click(); URL.revokeObjectURL(objectUrl) } catch { window.open(url, '_blank') } }, [])
   const regenerateFromTask = useCallback((task: ImageTask) => { fillFormFromTask(task); form.submit() }, [fillFormFromTask, form])

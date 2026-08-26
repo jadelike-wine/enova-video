@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { CloseOutlined, HistoryOutlined, LoadingOutlined, PlusOutlined, PictureOutlined } from '@ant-design/icons'
+import { CloseOutlined, LoadingOutlined, PlusOutlined, PictureOutlined } from '@ant-design/icons'
 import { useTranslations } from 'next-intl'
 import type { ImageTask } from './types'
 import styles from './image-creator.module.css'
@@ -60,10 +60,6 @@ export default function ConversationPanel({ open, tasks, selectedTaskId, onClose
         <button type="button" className={styles['image-creator-conversation__primary']} onClick={onNewConversation}>
           <PlusOutlined />
           {t('workbench.newConversation')}
-        </button>
-        <button type="button" className={styles['image-creator-conversation__default']} onClick={onNewConversation}>
-          <HistoryOutlined />
-          {t('workbench.defaultCreation')}
         </button>
       </div>
       <div className={styles['image-creator-conversation__section']}>

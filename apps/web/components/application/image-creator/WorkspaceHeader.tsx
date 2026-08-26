@@ -18,17 +18,6 @@ export default function WorkspaceHeader({ task, conversationOpen, onToggleConver
 
   return <header className={styles['image-creator-workspace-header']}>
     <div className={styles['image-creator-workspace-header__topline']}>
-      <button
-        type="button"
-        className={styles['image-creator-workspace-header__conversation-trigger']}
-        onClick={onToggleConversation}
-        aria-expanded={conversationOpen}
-        aria-label={conversationOpen ? t('workbench.closeConversation') : t('workbench.openConversation')}
-      >
-        <MenuOutlined />
-        <span>{title}</span>
-        <DownOutlined className={conversationOpen ? styles['is-open'] : ''} />
-      </button>
       <span className={styles['image-creator-workspace-header__mode']}>{task ? t('result') : t('title')}</span>
     </div>
   </header>

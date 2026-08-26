@@ -40,7 +40,7 @@ afterEach(async () => {
 })
 
 describe('ConversationPanel', () => {
-  it('renders new/default/recent creation actions and selected state', async () => {
+  it('renders new conversation action and selected state', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -59,7 +59,6 @@ describe('ConversationPanel', () => {
 
     expect(container.querySelector('[aria-label="创作列表"]')).not.toBeNull()
     expect(container.textContent).toContain('新对话')
-    expect(container.textContent).toContain('默认创作')
     expect(container.textContent).toContain('浮空城市海报')
     expect(container.querySelector('[aria-current="true"]')).not.toBeNull()
   })

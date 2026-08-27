@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, inArray, type SQL } from 'drizzle-orm';
 import { domainError, ERROR_CODES, GENERATION_STATUSES, type GenerationStatus } from '@enova/contracts';
 import {
+  assets,
   costEvents,
   creditReservations,
   generationAttempts,
@@ -9,7 +10,10 @@ import {
   generationJobs,
   priceQuotes,
   pricingVersions,
+  providerCredentials,
+  providers,
   usageEvents,
+  users,
   type Database,
 } from '@enova/db';
 import { DATABASE } from '../database/database.module.js';
@@ -35,7 +39,36 @@ export interface AdminGenerationView {
   completedAt: Date | null;
 }
 
+export interface AdminGenerationDetailUser {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+}
+
+export interface AdminGenerationDetailCredential {
+  id: string;
+  name: string | null;
+  provider: string;
+  status: string;
+}
+
+export interface AdminGenerationDetailAsset {
+  id: string;
+  type: string;
+  mimeType: string | null;
+  size: number;
+  width: number | null;
+  height: number | null;
+  duration: number | null;
+  metadata: Record<string, unknown> | null;
+  displayUrl: string | null;
+  createdAt: Date;
+}
+
 export interface AdminGenerationDetailView extends AdminGenerationView {
+  /** 发起用户摘要（用户不存在时为 null）。 */
+  user: AdminGenerationDetailUser | null;
   quote: {
     id: string;
     pricingVersionId: string;
@@ -57,6 +90,8 @@ export interface AdminGenerationDetailView extends AdminGenerationView {
     attemptNo: number;
     provider: string;
     model: string;
+    credentialId: string | null;
+    credential: AdminGenerationDetailCredential | null;
     status: string;
     providerJobId: string | null;
     errorCode: string | null;
@@ -66,6 +101,8 @@ export interface AdminGenerationDetailView extends AdminGenerationView {
     startedAt: Date;
     endedAt: Date | null;
   }>;
+  /** 成功生成的媒体资产（图片/视频等）。 */
+  assets: AdminGenerationDetailAsset[];
   outbox: Array<{
     id: string;
     eventType: string;
@@ -147,16 +184,35 @@ export class GenerationsAdminService {
     const job = jobRows[0];
     if (!job) throw domainError(ERROR_CODES.NOT_FOUND, 'Generation job not found', 404);
 
-    const [quoteRow, reservationRow, usageRow] = await Promise.all([
+    const [quoteRow, reservationRow, usageRow, userRow, assetRows] = await Promise.all([
       this.db.select().from(priceQuotes).where(eq(priceQuotes.generationJobId, jobId)).limit(1),
       this.db.select().from(creditReservations).where(eq(creditReservations.generationJobId, jobId)).limit(1),
       this.db.select().from(usageEvents).where(eq(usageEvents.generationJobId, jobId)).limit(1),
+      // 查询发起用户（可能因删除/数据异常不存在）
+      this.db
+        .select({ id: users.id, email: users.email, role: users.role, status: users.status })
+        .from(users)
+        .where(eq(users.id, job.userId))
+        .limit(1),
+      // 查询关联的媒体资产
+      this.db
+        .select()
+        .from(assets)
+        .where(eq(assets.generationJobId, jobId))
+        .orderBy(desc(assets.createdAt)),
     ]);
     const attemptRows = await this.db
       .select()
       .from(generationAttempts)
       .where(eq(generationAttempts.generationJobId, jobId))
       .orderBy(generationAttempts.attemptNo);
+
+    // 批量查询 attempts 关联的 credentials（避免 N+1）
+    const credentialIds = attemptRows
+      .map((a) => a.credentialId)
+      .filter((id): id is string => id !== null);
+    const credentialMap = await this.fetchCredentials(credentialIds);
+
     const outboxRows = await this.db
       .select()
       .from(generationDispatchOutbox)
@@ -186,8 +242,34 @@ export class GenerationsAdminService {
       }
     }
 
+    // 从 generation job 的 outputJson 中提取展示 URL（与 AssetsService 逻辑一致）。
+    // assets 表对 generationJobId 有唯一约束（assets_generation_job_id_unique），
+    // 一个 Job 最多只有一条 Asset，因此所有 Asset 共享同一 URL 不会产生歧义。
+    const outputUrl = job.outputJson?.url;
+    const displayUrl = typeof outputUrl === 'string' ? outputUrl : null;
+
     return {
       ...this.toView(job),
+      user: userRow[0]
+        ? {
+            id: userRow[0].id,
+            email: userRow[0].email,
+            role: userRow[0].role,
+            status: userRow[0].status,
+          }
+        : null,
+      assets: assetRows.map((a) => ({
+        id: a.id,
+        type: a.type,
+        mimeType: a.mimeType,
+        size: a.size,
+        width: a.width,
+        height: a.height,
+        duration: a.duration,
+        metadata: a.metadata,
+        displayUrl,
+        createdAt: a.createdAt,
+      })),
       quote: quoteRow[0]
         ? {
             id: quoteRow[0].id,
@@ -213,6 +295,8 @@ export class GenerationsAdminService {
         attemptNo: a.attemptNo,
         provider: a.provider,
         model: a.model,
+        credentialId: a.credentialId,
+        credential: a.credentialId ? (credentialMap.get(a.credentialId) ?? null) : null,
         status: a.status,
         providerJobId: a.providerJobId,
         errorCode: a.errorCode,
@@ -344,6 +428,40 @@ export class GenerationsAdminService {
       .where(eq(generationJobs.id, jobId))
       .limit(1);
     return rows[0]?.status ?? null;
+  }
+
+  /**
+   * 批量查询 credentials 并返回审计摘要 Map（避免 N+1）。
+   *
+   * 权限边界：生成详情只需 GENERATION_READ 权限即可访问，
+   * 因此这里仅返回 id/name/provider/status 用于审计定位，
+   * 不返回 maskedApiKey 或任何密钥衍生信息。
+   * 如需查看 API Key 脱敏信息，应通过 Credential 管理接口（需 CREDENTIAL_READ 权限）。
+   */
+  private async fetchCredentials(
+    credentialIds: string[],
+  ): Promise<Map<string, AdminGenerationDetailCredential>> {
+    const map = new Map<string, AdminGenerationDetailCredential>();
+    if (credentialIds.length === 0) return map;
+    const rows = await this.db
+      .select({
+        id: providerCredentials.id,
+        name: providerCredentials.name,
+        status: providerCredentials.status,
+        providerCode: providers.code,
+      })
+      .from(providerCredentials)
+      .innerJoin(providers, eq(providerCredentials.providerId, providers.id))
+      .where(inArray(providerCredentials.id, credentialIds));
+    for (const r of rows) {
+      map.set(r.id, {
+        id: r.id,
+        name: r.name,
+        provider: r.providerCode,
+        status: r.status,
+      });
+    }
+    return map;
   }
 
   private toView(r: typeof generationJobs.$inferSelect): AdminGenerationView {

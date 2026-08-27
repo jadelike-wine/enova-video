@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl'
 import { Button } from 'antd'
 import {
   AppstoreOutlined,
+  ArrowLeftOutlined,
   ExperimentOutlined,
   FileImageOutlined,
   FolderOpenOutlined,
@@ -72,15 +73,15 @@ const assetNavLinkItem = { ...assetNavItem, shortLabel: '资产', icon: <FolderO
 
 // 管理员后台导航项（仅管理员可见）
 const adminNavItems = [
-  { path: '/app/admin/dashboard', labelKey: 'navigation.adminDashboard', icon: '📊' },
-  { path: '/app/admin/users', labelKey: 'navigation.adminUsers', icon: '👥' },
-  { path: '/app/admin/orders', labelKey: 'navigation.adminOrders', icon: '💳' },
-  { path: '/app/admin/generations', labelKey: 'navigation.adminGenerations', icon: '🎬' },
-  { path: '/app/admin/providers', labelKey: 'navigation.adminProviders', icon: '🔌' },
-  { path: '/app/admin/pricing', labelKey: 'navigation.adminPricing', icon: '💰' },
-  { path: '/app/admin/audit', labelKey: 'navigation.adminAudit', icon: '🧾' },
-  { path: '/app/admin/settings', labelKey: 'navigation.adminSettings', icon: '🛠️' },
-  { path: '/app/admin/system-update', labelKey: 'navigation.adminSystemUpdate', icon: '🔄' },
+  { path: '/app/admin/dashboard', labelKey: 'navigation.adminDashboard', shortLabel: '概览' },
+  { path: '/app/admin/users', labelKey: 'navigation.adminUsers', shortLabel: '用户' },
+  { path: '/app/admin/orders', labelKey: 'navigation.adminOrders', shortLabel: '订单' },
+  { path: '/app/admin/generations', labelKey: 'navigation.adminGenerations', shortLabel: '任务' },
+  { path: '/app/admin/providers', labelKey: 'navigation.adminProviders', shortLabel: '渠道' },
+  { path: '/app/admin/pricing', labelKey: 'navigation.adminPricing', shortLabel: '定价' },
+  { path: '/app/admin/audit', labelKey: 'navigation.adminAudit', shortLabel: '审计' },
+  { path: '/app/admin/settings', labelKey: 'navigation.adminSettings', shortLabel: '设置' },
+  { path: '/app/admin/system-update', labelKey: 'navigation.adminSystemUpdate', shortLabel: '更新' },
 ]
 
 // ---- 路由切换 pending 状态 ----
@@ -373,17 +374,12 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 ))}
               </div>
 
-              {/* 个人（普通用户）区隔，参考 sub2api 管理后台：管理员能看到自己的个人菜单 */}
-              <div className="mt-6 mb-2 flex items-center gap-3">
-                <span className="text-[11px] uppercase tracking-widest text-gray-400">{t('navigation.myAccount')}</span>
-                <span className="h-px flex-1 bg-gray-200" />
-              </div>
-              <div className="space-y-1.5">
-                <ExpandableNavLink menu={creatorGenerationMenu} pathname={pathname} collapsed />
-                <NavLink item={assetNavLinkItem} pathname={pathname} collapsed />
-                {userNavItems.map((item) => (
-                  <NavLink key={item.path} item={item} pathname={pathname} collapsed />
-                ))}
+              <div className="mt-6 space-y-1.5">
+                <NavLink
+                  item={{ path: '/app/images', labelKey: 'navigation.returnToApp', shortLabel: '前台', icon: <ArrowLeftOutlined /> }}
+                  pathname={pathname}
+                  collapsed={sidebarCollapsed}
+                />
               </div>
             </>
           ) : (

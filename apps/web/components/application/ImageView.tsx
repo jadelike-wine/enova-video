@@ -7,10 +7,8 @@ import { generationApi, uploadApi, type CreateGenerationPayload, type Generation
 import { useSession } from '../../lib/auth'
 import { DEFAULT_IMAGE_MODEL, IMAGE_MODES, legacySizeToNative } from '../../lib/models'
 import CreationTemplates from './image-creator/CreationTemplates'
-import ConversationPanel from './image-creator/ConversationPanel'
 import GenerationCanvas from './image-creator/GenerationCanvas'
 import PromptComposer from './image-creator/PromptComposer'
-import WorkspaceHeader from './image-creator/WorkspaceHeader'
 import GenerationWorkspaceChrome from './GenerationWorkspaceChrome'
 import type { ImageCardActions, ImageFormValues, ImageTask, InputImage, PreviewState, GenerationMode } from './image-creator/types.js'
 import { formValuesFromTask } from './image-creator/workbench'
@@ -59,8 +57,7 @@ export default function ImageView() {
   const [error, setError] = useState('')
   const [currentMode, setCurrentMode] = useState<GenerationMode>('text2img')
   const [promptValue, setPromptValue] = useState('')
-  const [conversationOpen, setConversationOpen] = useState(false)
-  const formCardRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const historyRef = useRef<ImageTask[]>([])
   const selectedTaskRef = useRef<string | number | null>(null)
   const shouldAutoSelectLatestRef = useRef(false)
@@ -105,9 +102,9 @@ export default function ImageView() {
     } finally { setGenerating(false); setGenerateStep('') }
   }, [alert, inputImages, requireApiKey, setHistory, t, uploadLocalFiles])
 
-  const fillFormFromTask = useCallback((task: ImageTask, options?: { fillPrompt?: boolean }) => { if (!task || task._optimistic) return; const values = formValuesFromTask(task); const shouldFillPrompt = options?.fillPrompt !== false; form.setFieldsValue({ ...values, prompt: shouldFillPrompt ? values.prompt : '' }); setPromptValue(shouldFillPrompt ? values.prompt : ''); setCurrentMode(values.mode as GenerationMode); inputImages.forEach(revokePreview); setInputImages(inputImagesOf(task).map((url) => ({ preview: url }))); setError(''); formCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [form, inputImages, revokePreview])
-  const handleNewConversation = useCallback(() => { inputImages.forEach(revokePreview); shouldAutoSelectLatestRef.current = false; setInputImages([]); setSelectedTaskId(null); setPromptValue(''); setCurrentMode('text2img'); setError(''); form.setFieldsValue({ model: DEFAULT_IMAGE_MODEL, mode: 'text2img', prompt: '', size: '1K', ratio: '1:1' }); setConversationOpen(false) }, [form, inputImages, revokePreview])
-  const handleSelectTask = useCallback((task: ImageTask) => { fillFormFromTask(task, { fillPrompt: false }); setSelectedTaskId(task.id); setConversationOpen(false) }, [fillFormFromTask])
+  const fillFormFromTask = useCallback((task: ImageTask, options?: { fillPrompt?: boolean }) => { if (!task || task._optimistic) return; const values = formValuesFromTask(task); const shouldFillPrompt = options?.fillPrompt !== false; form.setFieldsValue({ ...values, prompt: shouldFillPrompt ? values.prompt : '' }); setPromptValue(shouldFillPrompt ? values.prompt : ''); setCurrentMode(values.mode as GenerationMode); inputImages.forEach(revokePreview); setInputImages(inputImagesOf(task).map((url) => ({ preview: url }))); setError('') }, [form, inputImages, revokePreview])
+  const handleNewConversation = useCallback(() => { inputImages.forEach(revokePreview); shouldAutoSelectLatestRef.current = false; setInputImages([]); setSelectedTaskId(null); setPromptValue(''); setCurrentMode('text2img'); setError(''); form.setFieldsValue({ model: DEFAULT_IMAGE_MODEL, mode: 'text2img', prompt: '', size: '1K', ratio: '1:1' }) }, [form, inputImages, revokePreview])
+  const handleSelectTask = useCallback((task: ImageTask) => { fillFormFromTask(task, { fillPrompt: false }); setSelectedTaskId(task.id) }, [fillFormFromTask])
   const copyPrompt = useCallback(async (prompt?: string) => { if (!prompt) return; try { await navigator.clipboard.writeText(prompt) } catch { /* optional */ } }, [])
   const downloadImage = useCallback(async (url: string, name?: string) => { try { const response = await fetch(url); const objectUrl = URL.createObjectURL(await response.blob()); const anchor = document.createElement('a'); anchor.href = objectUrl; anchor.download = name || `enova-${Date.now()}.png`; anchor.click(); URL.revokeObjectURL(objectUrl) } catch { window.open(url, '_blank') } }, [])
   const regenerateFromTask = useCallback((task: ImageTask) => { fillFormFromTask(task); form.submit() }, [fillFormFromTask, form])
@@ -164,6 +161,12 @@ export default function ImageView() {
     if (pendingTasks().length) schedulePoll()
     else stopPolling()
   }, [history, pendingTasks, schedulePoll, selectedTaskId, stopPolling])
+  // 生成完成后自动滚动到最新消息
+  useEffect(() => {
+    if (scrollRef.current && (previewState === 'success' || previewState === 'generating' || previewState === 'error')) {
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+    }
+  }, [previewState, selectedTaskId])
   const currentSize = Form.useWatch('size', form) || '1K'
   const currentRatio = Form.useWatch('ratio', form) || '1:1'
   const modeOptions = useMemo(() => IMAGE_MODES.map((mode) => ({ value: mode.id, label: mode.name })), [])
@@ -176,7 +179,8 @@ export default function ImageView() {
   const imageActions: ImageCardActions = { onDownload: (task) => { const url = displayUrl(task); if (url) return downloadImage(url) }, onRegenerate: regenerateFromTask, onEdit: fillFormFromTask, onCopyPrompt: copyPrompt, onDelete: handleDeleteTask }
   const setFormValue = useCallback(<K extends keyof ImageFormValues>(field: K, value: ImageFormValues[K]) => form.setFieldValue(field, value), [form])
 
-  return <div className="relative flex h-full min-h-0 overflow-hidden bg-[#fafafa]">
+  return <div className="relative flex h-full min-h-0 overflow-hidden bg-[#f8fafc]">
+    {/* 左侧导航 + 可折叠历史会话 */}
     <GenerationWorkspaceChrome
       mode="image"
       tasks={(history as ImageTask[]).map((task) => ({ id: task.id, title: task.title || '未命名对话', status: task.status }))}
@@ -184,16 +188,21 @@ export default function ImageView() {
       onNewConversation={handleNewConversation}
       onSelectTask={(id) => { const task = history.find((item) => item.id === id) as ImageTask | undefined; if (task) handleSelectTask(task) }}
     />
-    <main className="flex min-w-0 flex-1 flex-col overflow-hidden"><Form form={form} onFinish={generate} initialValues={{ model: DEFAULT_IMAGE_MODEL, mode: 'text2img', prompt: '', size: '1K', ratio: '1:1' }} className="flex min-h-0 flex-1 flex-col">
-      <div ref={formCardRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-5 sm:px-8 sm:pt-8">
-        <WorkspaceHeader task={selectedTask} conversationOpen={conversationOpen} onToggleConversation={() => setConversationOpen((value) => !value)} />
-        <ConversationPanel open={conversationOpen} tasks={history as ImageTask[]} selectedTaskId={selectedTaskId} onClose={() => setConversationOpen(false)} onNewConversation={handleNewConversation} onSelectTask={handleSelectTask} />
-        {!keyStatusLoading && !hasActiveKey && <Alert type="warning" showIcon message={t('insufficientBalance')} className="mb-5 max-w-sm" />}
-        {previewState === 'empty' && <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center py-8"><div className="mb-8 text-center"><h2 className="text-3xl font-semibold text-gray-900">{t('emptyTitle')}</h2><p className="mt-2 text-sm text-gray-500">{t('emptyHint')}</p></div><CreationTemplates onSelect={(prompt) => { setFormValue('prompt', prompt); setPromptValue(prompt) }} /></section>}
-        {previewState !== 'empty' && <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col"><GenerationCanvas state={previewState} task={selectedTask} tasks={selectedTask ? [selectedTask] : []} status={generateStep === 'uploading' ? t('generatingWithUpload') : t('generatingNow')} errorMessage={selectedTask?.error_message ? String(selectedTask.error_message) : error} {...imageActions} /></section>}
-        <Form.Item name="prompt" hidden><Input /></Form.Item><Form.Item name="mode" hidden><Input /></Form.Item><Form.Item name="model" hidden><Input /></Form.Item><Form.Item name="ratio" hidden><Input /></Form.Item><Form.Item name="size" hidden><Input /></Form.Item>
-      </div>
-      <div className="sticky bottom-0 z-10 px-4 pb-4 sm:px-8"><PromptComposer prompt={promptValue} onPromptChange={(value) => { setPromptValue(value); setFormValue('prompt', value) }} mode={currentMode} model={form.getFieldValue('model') || DEFAULT_IMAGE_MODEL} ratio={currentRatio} size={currentSize} onModeChange={(value) => { handleModeChange(value); setFormValue('mode', value) }} onModelChange={(value) => setFormValue('model', value)} onRatioChange={(value) => setFormValue('ratio', value)} onSizeChange={(value) => setFormValue('size', value)} inputImages={inputImages} onUpload={(file) => currentMode === 'multi_img' ? handleMultiUpload(file) : handleSingleUpload(file)} onReplaceImage={replaceInputImage} onRemoveImage={removeInputImage} onSubmit={() => form.submit()} generating={generating} generateStep={generateStep} error={error} balance={balance} estimatedCost={2} modeOptions={modeOptions} maxImages={MAX_COMPOSE_IMAGES} maxLength={MAX_PROMPT_LENGTH} /></div>
-    </Form></main>
+    {/* 主区域：聊天流内容 + 底部固定输入框 */}
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <Form form={form} onFinish={generate} initialValues={{ model: DEFAULT_IMAGE_MODEL, mode: 'text2img', prompt: '', size: '1K', ratio: '1:1' }} className="flex min-h-0 flex-1 flex-col">
+        {/* 内容滚动区域 */}
+        <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 pt-6 sm:px-8">
+          {!keyStatusLoading && !hasActiveKey && <Alert type="warning" showIcon message={t('insufficientBalance')} className="mb-5 max-w-sm" />}
+          {previewState === 'empty' && <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center py-8"><div className="mb-8 text-center"><h2 className="text-3xl font-semibold text-gray-900">{t('emptyTitle')}</h2><p className="mt-2 text-sm text-gray-500">{t('emptyHint')}</p></div><CreationTemplates onSelect={(prompt) => { setFormValue('prompt', prompt); setPromptValue(prompt) }} /></section>}
+          {previewState !== 'empty' && <section className="mx-auto flex w-full max-w-4xl flex-1 flex-col"><GenerationCanvas state={previewState} task={selectedTask} tasks={selectedTask ? [selectedTask] : []} status={generateStep === 'uploading' ? t('generatingWithUpload') : t('generatingNow')} errorMessage={selectedTask?.error_message ? String(selectedTask.error_message) : error} {...imageActions} /></section>}
+          <Form.Item name="prompt" hidden><Input /></Form.Item><Form.Item name="mode" hidden><Input /></Form.Item><Form.Item name="model" hidden><Input /></Form.Item><Form.Item name="ratio" hidden><Input /></Form.Item><Form.Item name="size" hidden><Input /></Form.Item>
+        </div>
+        {/* 底部固定输入框 */}
+        <div className="sticky bottom-0 z-10 border-t border-gray-100 bg-white/95 px-4 pb-4 pt-3 backdrop-blur sm:px-8">
+          <PromptComposer prompt={promptValue} onPromptChange={(value) => { setPromptValue(value); setFormValue('prompt', value) }} mode={currentMode} model={form.getFieldValue('model') || DEFAULT_IMAGE_MODEL} ratio={currentRatio} size={currentSize} onModeChange={(value) => { handleModeChange(value); setFormValue('mode', value) }} onModelChange={(value) => setFormValue('model', value)} onRatioChange={(value) => setFormValue('ratio', value)} onSizeChange={(value) => setFormValue('size', value)} inputImages={inputImages} onUpload={(file) => currentMode === 'multi_img' ? handleMultiUpload(file) : handleSingleUpload(file)} onReplaceImage={replaceInputImage} onRemoveImage={removeInputImage} onSubmit={() => form.submit()} generating={generating} generateStep={generateStep} error={error} balance={balance} estimatedCost={2} modeOptions={modeOptions} maxImages={MAX_COMPOSE_IMAGES} maxLength={MAX_PROMPT_LENGTH} />
+        </div>
+      </Form>
+    </main>
   </div>
 }

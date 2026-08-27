@@ -209,6 +209,11 @@
 }
 
 /* ============ EnovaMotion creative workspace shell ============ */
+:root {
+  --side-menu-width: 76px;
+  --side-menu-padding: 20px 12px 8px 12px;
+}
+
 .app-shell {
   background: #f8fafc;
 }
@@ -217,7 +222,8 @@
   position: relative;
   z-index: 30;
   display: flex;
-  width: 68px;
+  width: var(--side-menu-width);
+  padding: var(--side-menu-padding);
   flex-shrink: 0;
   flex-direction: column;
   border-right: 1px solid #eef2f3;
@@ -226,7 +232,7 @@
 }
 
 .app-sidebar-collapsed {
-  width: 68px;
+  width: var(--side-menu-width);
 }
 
 .sidebar-brand {
@@ -235,12 +241,12 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 14px 8px;
+  padding: 0;
 }
 
 .app-sidebar-collapsed .sidebar-brand {
   justify-content: center;
-  padding-inline: 8px;
+  padding-inline: 0;
 }
 
 .app-sidebar-collapsed .sidebar-brand > a > div > div:last-child,
@@ -281,7 +287,7 @@
 .app-sidebar-nav {
   flex: 1;
   overflow-y: auto;
-  padding: 10px 8px;
+  padding: 0;
 }
 
 .app-sidebar-collapsed .sidebar-brand-actions,
@@ -306,7 +312,7 @@
 }
 
 .app-sidebar-collapsed .nav-item {
-  width: 52px;
+  width: 100%;
   margin-inline: auto;
   min-height: 54px;
   flex-direction: column;
@@ -337,7 +343,7 @@
   display: grid;
   gap: 10px;
   border-top: 1px solid #f1f5f9;
-  padding: 10px 8px;
+  padding: 0;
 }
 
 .credits-link {
@@ -454,7 +460,7 @@
 
 @media (max-width: 900px) {
   .app-sidebar {
-    width: 68px;
+    width: var(--side-menu-width);
   }
 
   .app-sidebar:not(.app-sidebar-mobile-open) .sidebar-brand > a > div > div:last-child,

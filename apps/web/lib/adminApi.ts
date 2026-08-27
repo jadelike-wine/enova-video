@@ -122,7 +122,35 @@ export interface AdminGenerationView {
   completedAt: string | null
 }
 
+export interface AdminGenerationDetailUser {
+  id: string
+  email: string
+  role: string
+  status: string
+}
+
+export interface AdminGenerationDetailCredential {
+  id: string
+  name: string | null
+  provider: string
+  status: string
+}
+
+export interface AdminGenerationDetailAsset {
+  id: string
+  type: string
+  mimeType: string | null
+  size: number
+  width: number | null
+  height: number | null
+  duration: number | null
+  metadata: Record<string, unknown> | null
+  displayUrl: string | null
+  createdAt: string
+}
+
 export interface AdminGenerationDetailView extends AdminGenerationView {
+  user: AdminGenerationDetailUser | null
   quote: {
     id: string
     pricingVersionId: string
@@ -144,6 +172,8 @@ export interface AdminGenerationDetailView extends AdminGenerationView {
     attemptNo: number
     provider: string
     model: string
+    credentialId: string | null
+    credential: AdminGenerationDetailCredential | null
     status: string
     providerJobId: string | null
     errorCode: string | null
@@ -153,6 +183,7 @@ export interface AdminGenerationDetailView extends AdminGenerationView {
     startedAt: string
     endedAt: string | null
   }>
+  assets: AdminGenerationDetailAsset[]
   outbox: Array<{
     id: string
     eventType: string

@@ -23,11 +23,12 @@ The system calls upstream AI providers (currently Agnes) using API keys that mus
 
 ### Concurrency control
 
-- Use **Redis atomic Lua scripts** (INCR/DECR with TTL) for concurrency slot management.
+- Use **Redis atomic Lua scripts** with an owner-token ZSET for concurrency slot management.
 - `RedisCredentialManager` in `packages/provider/src/credential-manager/redis-credential-manager.ts`:
-  - `acquire()`: iterates candidate credentials by priority/weight/LRU, uses `ACQUIRE_LEASE_SCRIPT` (atomic INCR with TTL) to claim a slot. If `cur > maxConcurrency`, decrements and returns 0 (slot full).
-  - `release()`: uses `RELEASE_SCRIPT` to return the slot.
-  - Lease TTL (default 120s) ensures slots are returned if the Worker crashes.
+  - `acquire()`: removes expired owners, checks `ZCARD`, and atomically adds a unique owner token when capacity remains.
+  - Active calls renew only their own token; long provider calls therefore keep their slot without extending stale owners.
+  - `release()`: removes only the caller's owner token and is idempotent, so a duplicate/stale release cannot return another Worker's slot.
+  - Per-owner expiry (default 120s) ensures slots are returned if the Worker crashes.
 - Credential status transitions: `ACTIVE` → `COOLDOWN` (on 429, with `retryAfterMs` or exponential backoff) → auto-recovery; `ACTIVE` → `ERROR` (on 401/403, requires manual/health-check recovery).
 
 ### Secret hygiene
@@ -59,7 +60,7 @@ The system calls upstream AI providers (currently Agnes) using API keys that mus
 ## Risks
 
 - Redis failure blocks all generation tasks (fail-closed by design).
-- Lease TTL must be tuned: too short → slots lost mid-task; too long → slots held by crashed Workers delay new tasks.
+- Lease TTL must be tuned: too short increases heartbeat sensitivity; too long delays recovery of slots held by crashed Workers.
 - Master key leakage is catastrophic — it must never be logged, committed, or stored in the database.
 
 ## Follow-ups

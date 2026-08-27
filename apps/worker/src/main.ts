@@ -7,6 +7,7 @@ import { WalletGateway } from '@enova/billing';
 import { CredentialCrypto } from '@enova/provider';
 import { WorkerLogger } from './logger.js';
 import { GenerationAttemptsRepo } from './generation/attempts.repo.js';
+import { shouldFinalizeFailedJob } from './generation/failure-policy.js';
 import { GenerationRepo } from './generation/repo.js';
 import { GenerationPipeline, type GenerationPipelineConfig, type PipelineResourceProvider } from './generation/pipeline.js';
 import { isTerminal } from './generation/state.js';
@@ -158,6 +159,20 @@ async function main(): Promise<void> {
   worker.on('failed', async (job, err) => {
     const payload = job?.data as GenerationJobPayload | undefined;
     const fields = { generationJobId: payload?.generationJobId, workspaceId: payload?.workspaceId };
+
+    if (job && !shouldFinalizeFailedJob({
+      attemptsMade: job.attemptsMade,
+      attempts: job.opts.attempts ?? 1,
+      finishedOn: job.finishedOn,
+    })) {
+      logger.warn('generation job attempt failed; BullMQ retry remains scheduled', {
+        ...fields,
+        attemptsMade: job.attemptsMade,
+        attempts: job.opts.attempts ?? 1,
+      });
+      return;
+    }
+
     logger.error('generation job final failed', fields, err);
 
     if (!payload) return;

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Button, Empty, Image as AntdImage, InputNumber, Skeleton, Tag } from 'antd'
 import { useTranslations } from 'next-intl'
 import { billingApi, paymentApi, type LedgerEntry, type RechargeResult } from '../../lib/api'
+import { canConfirmSandboxPayment } from '../../lib/payment-result'
 import { useSiteConfig } from '../../lib/useSiteConfig'
 import { useDialog } from './DialogProvider'
 import { useSession } from '../../lib/auth'
@@ -287,9 +288,11 @@ export default function WalletView() {
                   />
                 </div>
               )}
-              <Button loading={confirming} onClick={handleSandboxConfirm}>
-                {confirming ? t('confirming') : t('sandboxConfirm')}
-              </Button>
+              {canConfirmSandboxPayment(rechargeResult) && (
+                <Button loading={confirming} onClick={handleSandboxConfirm}>
+                  {confirming ? t('confirming') : t('sandboxConfirm')}
+                </Button>
+              )}
             </div>
           )}
         </section>

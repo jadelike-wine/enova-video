@@ -10,7 +10,7 @@ import {
   WORKSPACE_TYPES,
   type ErrorCode,
 } from '@enova/contracts';
-import { RbacStore } from '@enova/billing';
+import { RbacStore, type Tx } from '@enova/billing';
 import {
   emailVerificationTokens,
   passwordResetTokens,
@@ -90,6 +90,7 @@ export class AuthService {
     turnstileToken?: string,
     remoteIP?: string,
     opts: AuthRequestOptions = {},
+    transaction?: Tx,
   ): Promise<AuthResult & { token: string }> {
     // 首启创建管理员走 setup.init，不经过人机验证和注册策略检查；普通注册始终校验。
     if (!opts.admin) {
@@ -134,7 +135,7 @@ export class AuthService {
     const tokenHash = this.session.hashToken(token);
     const welcome = (await this.settings.getNumber('billing.welcomeCredits')) ?? 0;
 
-    const result = await this.db.transaction(async (tx) => {
+    const createAccount = async (tx: Tx) => {
       const [user] = await tx
         .insert(users)
         .values({
@@ -182,6 +183,10 @@ export class AuthService {
       const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
       await tx.insert(sessions).values({ userId: user.id, tokenHash, expiresAt });
 
+      if (opts.admin) {
+        await this.rbacStore.assignRole(user.id, ADMIN_ROLES.SUPER_ADMIN, undefined, tx);
+      }
+
       if (opts.agreementRevision && this.loginAgreement) {
         await tx
           .insert(userAgreementAcceptances)
@@ -197,20 +202,21 @@ export class AuthService {
       }
 
       return { userId: user.id, email: user.email, role: user.role, status: user.status, workspaceId: workspace.id, balance: wallet.balance, reservedBalance: wallet.reservedBalance };
-    });
+    };
+    const result = transaction
+      ? await createAccount(transaction)
+      : await this.db.transaction(createAccount);
 
     // 5. 邮箱验证：开启时注册后发送验证邮件
     if (await this.shouldRequireEmailVerification()) {
       try {
-        await this.createEmailVerificationToken(result.userId);
+        await this.createEmailVerificationToken(result.userId, transaction);
       } catch {
         // Best-effort: don't fail registration if token creation fails
       }
     }
 
-    // 首启创建管理员：注册成功后授予 SUPER_ADMIN RBAC 角色。
     if (opts.admin) {
-      await this.rbacStore.assignRole(result.userId, ADMIN_ROLES.SUPER_ADMIN);
       this.logger.log(`[setup] Created initial admin user ${result.email}`);
     }
 
@@ -511,12 +517,12 @@ export class AuthService {
   // ---- P1.5: Email Verification ----
 
   /** 生成邮箱验证 token（只存 hash）。 */
-  async createEmailVerificationToken(userId: string): Promise<string> {
+  async createEmailVerificationToken(userId: string, transaction?: Tx): Promise<string> {
     const rawToken = this.session.issueToken();
     const tokenHash = this.session.hashToken(rawToken);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 小时
 
-    await this.db.insert(emailVerificationTokens).values({
+    await (transaction ?? this.db).insert(emailVerificationTokens).values({
       userId,
       tokenHash,
       expiresAt,
@@ -589,10 +595,19 @@ export class AuthService {
 
   /** 首启创建管理员：仅当系统尚无管理员时可用，成功后授予 SUPER_ADMIN 并返回已登录会话。 */
   async createAdmin(email: string, plainPassword: string, remoteIP?: string): Promise<AuthResult & { token: string }> {
-    if (await this.hasAdminUser()) {
-      fail(ERROR_CODES.CONFLICT, 'Admin already initialized', 409);
-    }
-    return this.register(email, plainPassword, undefined, remoteIP, { admin: true });
+    return this.db.transaction(async (tx) => {
+      // Serialize all setup attempts across API instances. The lock lives for
+      // this transaction, which also creates the account and RBAC assignment.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext('enova:setup:init'))`);
+      const [row] = await tx
+        .select({ n: count() })
+        .from(users)
+        .where(eq(users.role, USER_ROLES.ADMIN));
+      if ((row?.n ?? 0) > 0) {
+        fail(ERROR_CODES.CONFLICT, 'Admin already initialized', 409);
+      }
+      return this.register(email, plainPassword, undefined, remoteIP, { admin: true }, tx);
+    });
   }
 
   /** 解析用户身份 + 其 Personal Workspace + Wallet 余额。 */

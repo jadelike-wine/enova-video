@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl'
 import { generationApi, uploadApi, type CreateGenerationPayload, type Generation } from '../../lib/api'
 import { useSession } from '../../lib/auth'
 import { DEFAULT_IMAGE_MODEL, IMAGE_MODES, legacySizeToNative } from '../../lib/models'
+import { createSubmissionGuard } from '../../lib/submission-guard'
 import CreationTemplates from './image-creator/CreationTemplates'
 import GenerationCanvas from './image-creator/GenerationCanvas'
 import PromptComposer from './image-creator/PromptComposer'
@@ -66,6 +67,7 @@ export default function ImageView() {
   const mountedRef = useRef(true)
   const pollTickRef = useRef<() => Promise<void>>(async () => {})
   const inputImagesRef = useRef<InputImage[]>([])
+  const submissionGuardRef = useRef(createSubmissionGuard())
   const { history, resetHistory, setHistory } = usePaginatedTaskHistory(useCallback(async () => (await generationApi.list(50)).map(toImageTask), []))
   useEffect(() => { historyRef.current = history as ImageTask[] }, [history])
   useEffect(() => { selectedTaskRef.current = selectedTaskId }, [selectedTaskId])
@@ -85,21 +87,26 @@ export default function ImageView() {
     if (!values.prompt.trim()) { setError(t('promptRequired')); return }
     if (values.mode === 'img2img' && !inputImages.length) { setError(t('referenceRequired')); return }
     if (values.mode === 'multi_img' && !inputImages.length) { setError(t('inputImagesRequired')); return }
-    if (!(await requireApiKey())) return
-    setGenerating(true); setGenerateStep(values.mode === 'text2img' ? 'generating' : 'uploading'); setError('')
-    const tempId = `temp-${Date.now()}`
-    const optimisticTask: ImageTask = { id: tempId, status: 'RUNNING', prompt: values.prompt, mode: values.mode, size: values.size, ratio: values.ratio, model: values.model, _optimistic: true }
-    setHistory((previous) => [optimisticTask, ...previous]); setSelectedTaskId(tempId)
+    if (!submissionGuardRef.current.begin()) return
     try {
-      let images: string[] | undefined
-      if (values.mode !== 'text2img' && inputImages.length) images = await uploadLocalFiles(inputImages)
-      const payload: CreateGenerationPayload = { type: 'IMAGE', provider: 'agnes', model: values.model, input: { prompt: values.prompt, mode: values.mode, size: values.size, ratio: values.ratio, ...(images ? { images } : {}) } }
-      setGenerateStep('generating'); const task = toImageTask(await generationApi.create(payload))
-      setHistory((previous) => [task, ...previous.filter((item) => item.id !== tempId)]); setSelectedTaskId(task.id)
-    } catch (err) {
-      setHistory((previous) => previous.filter((item) => item.id !== tempId)); setSelectedTaskId(null); setError((err as Error).message)
-      await alert({ title: t('generateFailed'), message: (err as Error).message, confirmVariant: 'danger' })
-    } finally { setGenerating(false); setGenerateStep('') }
+      if (!(await requireApiKey())) return
+      setGenerating(true); setGenerateStep(values.mode === 'text2img' ? 'generating' : 'uploading'); setError('')
+      const tempId = `temp-${Date.now()}`
+      const optimisticTask: ImageTask = { id: tempId, status: 'RUNNING', prompt: values.prompt, mode: values.mode, size: values.size, ratio: values.ratio, model: values.model, _optimistic: true }
+      setHistory((previous) => [optimisticTask, ...previous]); setSelectedTaskId(tempId)
+      try {
+        let images: string[] | undefined
+        if (values.mode !== 'text2img' && inputImages.length) images = await uploadLocalFiles(inputImages)
+        const payload: CreateGenerationPayload = { type: 'IMAGE', provider: 'agnes', model: values.model, input: { prompt: values.prompt, mode: values.mode, size: values.size, ratio: values.ratio, ...(images ? { images } : {}) } }
+        setGenerateStep('generating'); const task = toImageTask(await generationApi.create(payload))
+        setHistory((previous) => [task, ...previous.filter((item) => item.id !== tempId)]); setSelectedTaskId(task.id)
+      } catch (err) {
+        setHistory((previous) => previous.filter((item) => item.id !== tempId)); setSelectedTaskId(null); setError((err as Error).message)
+        await alert({ title: t('generateFailed'), message: (err as Error).message, confirmVariant: 'danger' })
+      } finally { setGenerating(false); setGenerateStep('') }
+    } finally {
+      submissionGuardRef.current.end()
+    }
   }, [alert, inputImages, requireApiKey, setHistory, t, uploadLocalFiles])
 
   const fillFormFromTask = useCallback((task: ImageTask, options?: { fillPrompt?: boolean }) => { if (!task || task._optimistic) return; const values = formValuesFromTask(task); const shouldFillPrompt = options?.fillPrompt !== false; form.setFieldsValue({ ...values, prompt: shouldFillPrompt ? values.prompt : '' }); setPromptValue(shouldFillPrompt ? values.prompt : ''); setCurrentMode(values.mode as GenerationMode); inputImages.forEach(revokePreview); setInputImages(inputImagesOf(task).map((url) => ({ preview: url }))); setError('') }, [form, inputImages, revokePreview])

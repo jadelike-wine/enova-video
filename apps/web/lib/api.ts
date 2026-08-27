@@ -104,11 +104,13 @@ export interface LedgerEntry {
 
 export interface RechargeResult {
   orderId: string
-  provider: string
+  channel: 'sandbox' | 'alipay' | 'wechat'
   amountCents: number
   credits: number
   payUrl?: string | null
   qrCode?: string | null
+  discountAmountCents: number
+  couponCode: string | null
 }
 
 export interface OrderStatus {

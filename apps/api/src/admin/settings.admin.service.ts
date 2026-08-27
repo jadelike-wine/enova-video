@@ -97,7 +97,11 @@ export class SettingsAdminService {
       let publicUrlAccessible = false;
       if (publicUrl) {
         await validateFetchableUrl(publicUrl, { allowHttp: false, resolveDns: true, devAllowlist: [] });
-        const response = await fetch(publicUrl, { method: 'GET', signal: AbortSignal.timeout(5000) });
+        const response = await fetch(publicUrl, {
+          method: 'GET',
+          signal: AbortSignal.timeout(5000),
+          redirect: 'manual',
+        });
         publicUrlAccessible = response.ok;
         await response.body?.cancel();
       }

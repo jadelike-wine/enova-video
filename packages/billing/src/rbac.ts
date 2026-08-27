@@ -24,6 +24,7 @@ import {
   type AdminRole,
   type Permission,
 } from '@enova/contracts';
+import type { Tx } from './wallet.js';
 
 /** 权限不足错误。 */
 export class PermissionDeniedError extends Error {
@@ -219,11 +220,11 @@ export class RbacStore {
   }
 
   /** 分配角色（幂等）。 */
-  async assignRole(userId: string, roleCode: AdminRole, assignedBy?: string): Promise<void> {
-    const roleRows = await this.db.select().from(roles).where(eq(roles.code, roleCode)).limit(1);
+  async assignRole(userId: string, roleCode: AdminRole, assignedBy?: string, executor: Database | Tx = this.db): Promise<void> {
+    const roleRows = await executor.select().from(roles).where(eq(roles.code, roleCode)).limit(1);
     const role = roleRows[0];
     if (!role) throw new Error(`ROLE_NOT_FOUND: ${roleCode}`);
-    await this.db
+    await executor
       .insert(userRoleAssignments)
       .values({ userId, roleId: role.id, assignedBy })
       .onConflictDoNothing({ target: [userRoleAssignments.userId, userRoleAssignments.roleId] });

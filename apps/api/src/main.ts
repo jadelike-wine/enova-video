@@ -8,6 +8,7 @@ import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 import { loadEnv } from '@enova/config';
 import { AppModule } from './app.module.js';
 import { EnovaLogger } from './common/logger/enova-logger.js';
@@ -54,6 +55,9 @@ async function bootstrap(): Promise<void> {
   });
 
   await app.register(cookie);
+  await app.register(multipart, {
+    limits: { files: 1, fileSize: 10 * 1024 * 1024 },
+  });
 
   // ---- P0: Swagger protection ----
   // Swagger docs only enabled when SWAGGER_ENABLED=true (default: false).

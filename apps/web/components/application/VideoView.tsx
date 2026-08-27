@@ -42,6 +42,7 @@ import { useApiKeyGuard } from './useApiKeyGuard'
 import { usePaginatedTaskHistory, type TaskItem } from './usePaginatedTaskHistory'
 import { useSession } from '../../lib/auth'
 import { formatErrorMessage } from '../../lib/errorMessage'
+import { createSubmissionGuard } from '../../lib/submission-guard'
 import {
   VIDEO_MODELS,
   VIDEO_FRAME_PRESETS,
@@ -232,6 +233,7 @@ export default function VideoView() {
   const [form] = Form.useForm<VideoFormValues>()
   const [inputImages, setInputImages] = useState<InputImage[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const submissionGuardRef = useRef(createSubmissionGuard())
   const [selectedTaskId, setSelectedTaskId] = useState<string | number | null>(null)
   const [error, setError] = useState('')
   const [currentMode, setCurrentMode] = useState<GenerationMode>('text2video')
@@ -491,82 +493,86 @@ export default function VideoView() {
         setError(t('uploadImageRequired'))
         return
       }
-      if (!(await requireApiKey())) return
-
-      setError('')
-      setSubmitting(true)
-
-      const preset = VIDEO_RESOLUTION_PRESETS.find((p) => p.id === values.resolution)
-      const width = preset?.width ?? 1280
-      const height = preset?.height ?? 720
-
-      const tempId = `temp-${Date.now()}`
-      const optimisticInputImages =
-        values.mode === 'img2video' && inputImages.length
-          ? [inputImages[0].preview]
-          : undefined
-
-      const optimisticTask: VideoTask = {
-        id: tempId,
-        status: 'PENDING',
-        prompt: values.prompt,
-        negative_prompt: values.negative_prompt || undefined,
-        mode: values.mode,
-        width,
-        height,
-        num_frames: values.num_frames,
-        frame_rate: values.frame_rate,
-        seed: values.seed,
-        input_images: optimisticInputImages,
-        _optimistic: true,
-      }
-      setHistory((prev) => [optimisticTask, ...prev])
-      setSelectedTaskId(tempId)
-
+      if (!submissionGuardRef.current.begin()) return
       try {
-        let imageUrl: string | undefined
-        if (values.mode === 'img2video' && inputImages.length) {
-          const urls = await uploadLocalFiles([inputImages[0]])
-          imageUrl = urls[0]
-        }
+        if (!(await requireApiKey())) return
+        setError('')
+        setSubmitting(true)
 
-        const input: Record<string, unknown> = {
-          model: values.model,
+        const preset = VIDEO_RESOLUTION_PRESETS.find((p) => p.id === values.resolution)
+        const width = preset?.width ?? 1280
+        const height = preset?.height ?? 720
+
+        const tempId = `temp-${Date.now()}`
+        const optimisticInputImages =
+          values.mode === 'img2video' && inputImages.length
+            ? [inputImages[0].preview]
+            : undefined
+
+        const optimisticTask: VideoTask = {
+          id: tempId,
+          status: 'PENDING',
           prompt: values.prompt,
+          negative_prompt: values.negative_prompt || undefined,
           mode: values.mode,
           width,
           height,
-          numFrames: values.num_frames,
-          frameRate: values.frame_rate,
+          num_frames: values.num_frames,
+          frame_rate: values.frame_rate,
+          seed: values.seed,
+          input_images: optimisticInputImages,
+          _optimistic: true,
         }
-        if (values.negative_prompt) input.negativePrompt = values.negative_prompt
-        if (values.seed != null) input.seed = values.seed
-        if (values.mode === 'img2video' && imageUrl) {
-          input.image = imageUrl
-        }
+        setHistory((prev) => [optimisticTask, ...prev])
+        setSelectedTaskId(tempId)
 
-        const payload: CreateGenerationPayload = {
-          type: 'VIDEO',
-          provider: 'agnes',
-          model: values.model,
-          input,
+        try {
+          let imageUrl: string | undefined
+          if (values.mode === 'img2video' && inputImages.length) {
+            const urls = await uploadLocalFiles([inputImages[0]])
+            imageUrl = urls[0]
+          }
+
+          const input: Record<string, unknown> = {
+            model: values.model,
+            prompt: values.prompt,
+            mode: values.mode,
+            width,
+            height,
+            numFrames: values.num_frames,
+            frameRate: values.frame_rate,
+          }
+          if (values.negative_prompt) input.negativePrompt = values.negative_prompt
+          if (values.seed != null) input.seed = values.seed
+          if (values.mode === 'img2video' && imageUrl) {
+            input.image = imageUrl
+          }
+
+          const payload: CreateGenerationPayload = {
+            type: 'VIDEO',
+            provider: 'agnes',
+            model: values.model,
+            input,
+          }
+          const gen = await generationApi.create(payload)
+          const mapped = toVideoTask(gen)
+          setHistory((prev) => [
+            mapped,
+            ...prev.filter((t) => t.id !== tempId),
+          ])
+          setSelectedTaskId(mapped.id)
+          startPollingAll()
+          if (mapped.status === 'FAILED') setError(taskErrorMessage(mapped) || t('submitFailed'))
+        } catch (err) {
+          setHistory((prev) => prev.filter((t) => t.id !== tempId))
+          setSelectedTaskId(null)
+          setError((err as Error).message)
+          await alert({ title: t('submitFailed'), message: (err as Error).message, confirmVariant: 'danger' })
+        } finally {
+          setSubmitting(false)
         }
-        const gen = await generationApi.create(payload)
-        const mapped = toVideoTask(gen)
-        setHistory((prev) => [
-          mapped,
-          ...prev.filter((t) => t.id !== tempId),
-        ])
-        setSelectedTaskId(mapped.id)
-        startPollingAll()
-        if (mapped.status === 'FAILED') setError(taskErrorMessage(mapped) || t('submitFailed'))
-      } catch (err) {
-        setHistory((prev) => prev.filter((t) => t.id !== tempId))
-        setSelectedTaskId(null)
-        setError((err as Error).message)
-        await alert({ title: t('submitFailed'), message: (err as Error).message, confirmVariant: 'danger' })
       } finally {
-        setSubmitting(false)
+        submissionGuardRef.current.end()
       }
     },
     [

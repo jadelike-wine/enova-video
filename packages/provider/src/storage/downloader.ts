@@ -100,6 +100,9 @@ export async function downloadToTempFile(sourceUrl: string, opts: DownloadOption
       }
       break;
     }
+  } catch (error) {
+    await cleanupTempFile(filePath);
+    throw error;
   } finally {
     clearTimeout(timer);
   }

@@ -212,6 +212,14 @@ export class PaymentService {
         status: 'PENDING',
         fulfillmentStatus: 'PENDING',
       });
+      // Persist the selected channel before the external call. A provider may
+      // accept payment even if our process loses the response; its callback
+      // must still be attributable to this order.
+      await tx.insert(paymentTransactions).values({
+        orderId,
+        provider: activeProvider,
+        status: 'PENDING',
+      });
     });
 
     const chargedByProvider = await provider.createPayment({
@@ -222,12 +230,10 @@ export class PaymentService {
       returnUrl: `${returnBaseUrl}/payment/result?orderId=${orderId}`,
     });
 
-    await this.db.insert(paymentTransactions).values({
-      orderId,
-      provider: activeProvider,
-      providerRef: chargedByProvider.tradeNo,
-      status: 'PENDING',
-    });
+    await this.db
+      .update(paymentTransactions)
+      .set({ providerRef: chargedByProvider.tradeNo, updatedAt: new Date() })
+      .where(eq(paymentTransactions.orderId, orderId));
 
     return {
       orderId,
@@ -349,6 +355,11 @@ export class PaymentService {
         status: 'PENDING',
         fulfillmentStatus: 'PENDING',
       });
+      await tx.insert(paymentTransactions).values({
+        orderId,
+        provider: activeProvider,
+        status: 'PENDING',
+      });
     });
 
     const chargedByProvider = await provider.createPayment({
@@ -359,12 +370,10 @@ export class PaymentService {
       returnUrl: `${returnBaseUrl}/payment/result?orderId=${orderId}`,
     });
 
-    await this.db.insert(paymentTransactions).values({
-      orderId,
-      provider: activeProvider,
-      providerRef: chargedByProvider.tradeNo,
-      status: 'PENDING',
-    });
+    await this.db
+      .update(paymentTransactions)
+      .set({ providerRef: chargedByProvider.tradeNo, updatedAt: new Date() })
+      .where(eq(paymentTransactions.orderId, orderId));
 
     return {
       orderId,
@@ -391,7 +400,7 @@ export class PaymentService {
     const notification: PaymentNotification | null = await provider.verifyNotification(rawBody, headers, context);
     if (!notification) return { received: false };
     if (notification.status === 'success') {
-      await this.settleNotification(notification);
+      await this.settleNotification(providerKey, notification);
     }
     return { received: true };
   }
@@ -399,6 +408,11 @@ export class PaymentService {
   /** sandbox：模拟确认支付（仅当前 Workspace 可确权自己的订单）。 */
   async simulateConfirm(user: AuthUser, orderId: string): Promise<{ orderId: string; credits: number; balance: number }> {
     const order = await this.requireOrderForWorkspace(orderId, user.workspaceId);
+    await this.requireOrderPaymentProvider(
+      order.id,
+      'sandbox',
+      'Order was not created by the sandbox channel',
+    );
     await this.settleOrder(order.workspaceId, order.id, order.credits);
     const w = await this.db
       .select({ balance: wallets.balance })
@@ -408,8 +422,16 @@ export class PaymentService {
     return { orderId: order.id, credits: order.credits, balance: w[0]?.balance ?? 0 };
   }
 
-  private async settleNotification(notification: PaymentNotification): Promise<void> {
+  private async settleNotification(
+    providerKey: PaymentProviderKey,
+    notification: PaymentNotification,
+  ): Promise<void> {
     const order = await this.requireOrder(notification.orderId);
+    await this.requireOrderPaymentProvider(
+      order.id,
+      providerKey,
+      'Payment notification channel does not match order payment channel',
+    );
     // P0-6: 金额校验（防少付）。
     if (order.amountCents !== notification.amountCents) {
       throw domainError(ERROR_CODES.PAYMENT_AMOUNT_MISMATCH, 'Payment amount mismatch with order', 400, {
@@ -552,6 +574,21 @@ export class PaymentService {
       throw domainError(ERROR_CODES.IDOR_FORBIDDEN, 'Order does not belong to this workspace', 403);
     }
     return order;
+  }
+
+  private async requireOrderPaymentProvider(
+    orderId: string,
+    providerKey: PaymentProviderKey,
+    message: string,
+  ): Promise<void> {
+    const transactionRows = await this.db
+      .select({ provider: paymentTransactions.provider })
+      .from(paymentTransactions)
+      .where(eq(paymentTransactions.orderId, orderId))
+      .limit(1);
+    if (!transactionRows[0] || transactionRows[0].provider !== providerKey) {
+      throw domainError(ERROR_CODES.PAYMENT_CALLBACK_INVALID, message, 400);
+    }
   }
 
   // ---- P0-6: query / close（生产就绪支付契约）。产品策略：不支持自动退款。 ----

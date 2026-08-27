@@ -8,11 +8,12 @@ import { Pool } from 'pg';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDbFromPool, sessions, userAgreementAcceptances, users, type Database } from '@enova/db';
+import { createDbFromPool, emailVerificationTokens, sessions, userAgreementAcceptances, users, type Database } from '@enova/db';
 import { AuthService } from './auth.service.js';
 import { PasswordService } from './password.service.js';
 import { SessionService } from './session.service.js';
 import { ERROR_CODES } from '@enova/contracts';
+import { RbacStore } from '@enova/billing';
 import { LoginAgreementService } from '../settings/login-agreement.service.js';
 
 const connectionString = process.env.DATABASE_URL;
@@ -188,5 +189,51 @@ describe('AuthService sessions (real PostgreSQL)', () => {
     await expect(
       auth!.changePassword(result.user.userId, 'wrong-password', 'newpassword1'),
     ).rejects.toMatchObject({ code: ERROR_CODES.INVALID_CREDENTIALS, statusCode: 401 });
+  });
+
+  it.skipIf(!hasDb)('serializes concurrent initial-admin creation', async () => {
+    const rbac = new RbacStore(db);
+    await rbac.seed();
+    const setupAuth = new AuthService(
+      db,
+      makeSettings() as never,
+      new PasswordService(),
+      new SessionService(),
+      makeTurnstile() as never,
+      rbac,
+    );
+
+    const results = await Promise.allSettled([
+      setupAuth.createAdmin(`admin-a-${crypto.randomUUID()}@t.com`, 'password123'),
+      setupAuth.createAdmin(`admin-b-${crypto.randomUUID()}@t.com`, 'password123'),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+  });
+
+  it.skipIf(!hasDb)('creates the initial admin with an email verification token in one transaction', async () => {
+    const rbac = new RbacStore(db);
+    await rbac.seed();
+    const verificationSettings = {
+      ...makeSettings(),
+      getBoolean: async (key: string) => key === 'auth.emailVerification',
+    };
+    const setupAuth = new AuthService(
+      db,
+      verificationSettings as never,
+      new PasswordService(),
+      new SessionService(),
+      makeTurnstile() as never,
+      rbac,
+    );
+
+    const result = await setupAuth.createAdmin(`admin-verified-${crypto.randomUUID()}@t.com`, 'password123');
+    const tokens = await db
+      .select()
+      .from(emailVerificationTokens)
+      .where(eq(emailVerificationTokens.userId, result.user.userId));
+
+    expect(tokens).toHaveLength(1);
   });
 });

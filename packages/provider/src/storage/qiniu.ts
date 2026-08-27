@@ -101,7 +101,7 @@ export class QiniuObjectStorage implements ObjectStorage {
   }
 
   async objectExists(key: string): Promise<boolean> {
-    const response = await fetch(publicUrl(this.cfg.domain, key), { method: 'HEAD' });
+    const response = await fetch(publicUrl(this.cfg.domain, key), { method: 'HEAD', redirect: 'manual' });
     if (response.status === 404) return false;
     if (!response.ok) throw new Error(`Qiniu object check failed: HTTP ${response.status}`);
     return true;

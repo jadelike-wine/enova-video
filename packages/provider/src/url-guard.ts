@@ -19,6 +19,8 @@ export interface UrlGuardOptions {
   resolveDns: boolean;
   /** 额外允许的 host（仅开发）。 */
   devAllowlist?: string[];
+  /** 测试注入；生产使用 node:dns/promises.lookup。 */
+  dnsLookup?: typeof lookup;
 }
 
 const PRIVATE_HOST_GLOBS: Array<{ match: RegExp; reason: string }> = [
@@ -128,18 +130,21 @@ function longToIpv4(num: number): string | null {
   ].join('.');
 }
 
-async function isPrivateViaDns(hostname: string): Promise<string | null> {
+async function isPrivateViaDns(hostname: string, dnsLookup: typeof lookup = lookup): Promise<string | null> {
   let records: string[];
   try {
-    const [a, aaaa] = await Promise.allSettled([lookup(hostname, { all: true }), lookup(hostname, { all: true, family: 6 })]);
+    const [a, aaaa] = await Promise.allSettled([dnsLookup(hostname, { all: true }), dnsLookup(hostname, { all: true, family: 6 })]);
     records = [];
     for (const r of [a, aaaa]) {
       if (r.status === 'fulfilled') records.push(...r.value.map((x) => x.address));
     }
   } catch {
-    // DNS 解析失败：交由 HTTP 层处理，这里不因此直接放行内网；保守起见视为不可解析。
-    return null;
+    return 'dns-unresolved';
   }
+  // Promise.allSettled itself does not reject. If every lookup failed (or
+  // returned no address), allowing the later HTTP resolver to try again
+  // creates a fail-open DNS-rebinding window.
+  if (records.length === 0) return 'dns-unresolved';
   for (const ip of records) {
     const reason = isPrivateIpLiteral(ip);
     if (reason) return reason;
@@ -177,7 +182,7 @@ export async function validateFetchableUrl(url: string, opts: UrlGuardOptions): 
   }
 
   if (opts.resolveDns) {
-    const dnsReason = await isPrivateViaDns(hostname);
+    const dnsReason = await isPrivateViaDns(hostname, opts.dnsLookup);
     if (dnsReason) {
       throw domainError(ERROR_CODES.SSRF_BLOCKED, `Blocked host via DNS: ${hostname} (${dnsReason})`, 400);
     }
@@ -216,7 +221,7 @@ export async function validateSmtpHost(hostname: string, opts: UrlGuardOptions):
   }
 
   if (opts.resolveDns) {
-    const dnsReason = await isPrivateViaDns(host);
+    const dnsReason = await isPrivateViaDns(host, opts.dnsLookup);
     if (dnsReason) {
       throw domainError(ERROR_CODES.SSRF_BLOCKED, `Blocked SMTP host via DNS: ${host} (${dnsReason})`, 400);
     }

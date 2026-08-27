@@ -162,10 +162,26 @@ export class CredentialsAdminService {
       .offset(offsetSafe);
 
     return rows.map((r) => ({
-      ...r,
-      maskedApiKey: this.maskSecret(r.encryptedSecret),
-      hasSecret: r.encryptedSecret.length > 0,
+      id: r.id,
+      name: r.name,
+      remark: r.remark,
+      providerId: r.providerId,
+      providerCode: r.providerCode,
+      providerName: r.providerName,
+      providerBaseUrl: r.providerBaseUrl,
+      providerStatus: r.providerStatus,
+      status: r.status,
+      priority: r.priority,
+      weight: r.weight,
+      maxConcurrency: r.maxConcurrency,
+      currentConcurrency: r.currentConcurrency,
+      cooldownUntil: r.cooldownUntil,
+      lastUsedAt: r.lastUsedAt,
       lastError: this.sanitizeLastError(r.lastError),
+      hasSecret: r.encryptedSecret.length > 0,
+      maskedApiKey: this.maskSecret(r.encryptedSecret),
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
     }));
   }
 

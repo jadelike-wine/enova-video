@@ -2670,6 +2670,40 @@
           "setup"
         ]
       }
+    },
+    "/api/v1/uploads": {
+      "post": {
+        "operationId": "UploadsController_upload",
+        "summary": "上传图片生成输入（JPEG/PNG/WebP，最大 10 MiB）",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "uploads"
+        ]
+      }
     }
   },
   "info": {

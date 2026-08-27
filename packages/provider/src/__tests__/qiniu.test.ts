@@ -37,4 +37,22 @@ describe('QiniuObjectStorage', () => {
     expect(result?.url).toMatch(/^https:\/\/cdn\.example\.com\/enova\/images\//);
     expect(fetchMock).toHaveBeenCalledWith('https://upload.qiniup.com', expect.objectContaining({ method: 'POST' }));
   });
+
+  it('does not follow redirects while checking an object URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const storage = new QiniuObjectStorage({
+      accessKey: 'ak', secretKey: 'sk', bucket: 'bucket', domain: 'https://cdn.example.com',
+      region: 'z0', prefix: 'enova',
+      download: { guard: { allowHttp: false, resolveDns: false }, maxBytes: 1024, timeoutMs: 1000 },
+      allowedContentTypePrefixes: ['image/'],
+    });
+
+    await storage.objectExists('images/test.png');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://cdn.example.com/images/test.png',
+      expect.objectContaining({ method: 'HEAD', redirect: 'manual' }),
+    );
+  });
 });

@@ -18,32 +18,49 @@ interface Row {
 
 /** 内存 Redis：模拟 acquire/release Lua 脚本的并发计数语义。 */
 class FakeRedis {
-  counter = new Map<string, number>();
+  leases = new Map<string, Map<string, number>>();
+  nowMs = Date.now();
 
   async eval(script: string, _numkeys: number, ...args: string[]): Promise<number> {
     const key = args[0];
-    if (script.includes("redis.call('INCR'")) {
-      const max = Number(args[2]);
-      const cur = (this.counter.get(key) ?? 0) + 1;
-      if (cur > max) {
-        this.counter.set(key, Math.max(0, cur - 1));
+    const entries = this.leases.get(key) ?? new Map<string, number>();
+    this.leases.set(key, entries);
+    if (script.includes('ACQUIRE_LEASE_V2')) {
+      const usesRedisTime = script.includes("redis.call('TIME')");
+      const now = usesRedisTime ? this.nowMs : Number(args[1]);
+      const expiresAt = usesRedisTime ? now + Number(args[1]) : Number(args[2]);
+      const max = Number(args[usesRedisTime ? 2 : 3]);
+      const token = args[usesRedisTime ? 3 : 4];
+      for (const [existingToken, expiry] of entries) {
+        if (expiry <= now) entries.delete(existingToken);
+      }
+      if (entries.size >= max) {
         return 0;
       }
-      this.counter.set(key, cur);
+      entries.set(token, expiresAt);
       return 1;
     }
-    // release
-    const cur = this.counter.get(key) ?? 0;
-    if (cur <= 1) {
-      this.counter.set(key, 0);
-      return cur;
+    if (script.includes('RELEASE_LEASE_V2')) {
+      return entries.delete(args[1]) ? 1 : 0;
     }
-    this.counter.set(key, cur - 1);
-    return cur - 1;
+    if (script.includes('RENEW_LEASE_V2')) {
+      const token = args[1];
+      if (!entries.has(token)) return 0;
+      entries.set(token, script.includes("redis.call('TIME')") ? this.nowMs + Number(args[2]) : Number(args[2]));
+      return 1;
+    }
+    if (script.includes('COUNT_LEASES_V2')) {
+      const now = script.includes("redis.call('TIME')") ? this.nowMs : Number(args[1]);
+      for (const [token, expiry] of entries) {
+        if (expiry <= now) entries.delete(token);
+      }
+      return entries.size;
+    }
+    throw new Error('unknown script');
   }
 
   async get(key: string): Promise<string> {
-    return String(this.counter.get(key) ?? 0);
+    return String(this.leases.get(key)?.size ?? 0);
   }
 }
 
@@ -71,9 +88,9 @@ function makeDb(rows: Row[]) {
   return db;
 }
 
-function manager(redis: FakeRedis, rows: Row[]) {
+function manager(redis: FakeRedis, rows: Row[], leaseTtlMs?: number) {
   const db = makeDb(rows);
-  return { mgr: new RedisCredentialManager({ db: db as never, redis: redis as never, crypto }), db };
+  return { mgr: new RedisCredentialManager({ db: db as never, redis: redis as never, crypto, leaseTtlMs }), db };
 }
 
 const CRITERIA: CredentialSelectionCriteria = { providerCode: 'agnes' };
@@ -138,10 +155,66 @@ describe('RedisCredentialManager', () => {
     ]);
     const a = await mgr.acquire(CRITERIA);
     const b = await mgr.acquire(CRITERIA);
-    expect(await redis.get('enova:credential:c1:concurrency')).toBe('2');
+    expect(await redis.get('enova:credential:c1:leases:v2')).toBe('2');
     await a.release();
     await b.release();
-    expect(await redis.get('enova:credential:c1:concurrency')).toBe('0');
+    expect(await redis.get('enova:credential:c1:leases:v2')).toBe('0');
+  });
+
+  it('releasing one lease twice never releases another active lease', async () => {
+    const redis = new FakeRedis();
+    const { mgr } = manager(redis, [
+      { credentialId: 'c1', status: 'ACTIVE', maxConcurrency: 2, encryptedSecret: crypto.encrypt('sk') },
+    ]);
+    const first = await mgr.acquire(CRITERIA);
+    const second = await mgr.acquire(CRITERIA);
+
+    await first.release();
+    await first.release();
+
+    const third = await mgr.acquire(CRITERIA);
+    await expect(mgr.acquire(CRITERIA)).rejects.toThrow(/No available credential/);
+    await third.release();
+    await second.release();
+  });
+
+  it('renews an active lease so a long provider call keeps its concurrency slot', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    try {
+      const redis = new FakeRedis();
+      const { mgr } = manager(redis, [
+        { credentialId: 'c1', status: 'ACTIVE', maxConcurrency: 1, encryptedSecret: crypto.encrypt('sk') },
+      ], 300);
+      const active = await mgr.acquire(CRITERIA);
+
+      await vi.advanceTimersByTimeAsync(350);
+
+      await expect(mgr.acquire(CRITERIA)).rejects.toThrow(/No available credential/);
+      await active.release();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not reclaim a live lease when a worker clock jumps ahead of Redis', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(1_000));
+    try {
+      const redis = new FakeRedis();
+      redis.nowMs = 1_000;
+      const { mgr } = manager(redis, [
+        { credentialId: 'c1', status: 'ACTIVE', maxConcurrency: 1, encryptedSecret: crypto.encrypt('sk') },
+      ], 10_000);
+      const active = await mgr.acquire(CRITERIA);
+
+      vi.setSystemTime(new Date(1_000_000));
+
+      await expect(mgr.acquire(CRITERIA)).rejects.toThrow(/No available credential/);
+      await active.release();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('markSuccess resets cooldown/status/error', async () => {

@@ -19,10 +19,13 @@ function createDb(handlers: Record<string, () => any>) {
   const mk = (table: unknown) => {
     const chain: any = {
       from: () => chain,
+      innerJoin: () => chain,
       where: () => chain,
-      limit: () => Promise.resolve(next('sel:' + tableKey(table))),
+      limit: () => chain,
       orderBy: () => chain,
       offset: () => chain,
+      then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
+        Promise.resolve(next('sel:' + tableKey(table))).then(resolve, reject),
       values: (v: any) => {
         writes.push({ op: 'insert', table: tableKey(table), value: v });
         return chain;
@@ -70,6 +73,29 @@ const presentProvider = { 'sel:providers': () => [providerRow] };
 const emptyCred = { 'sel:provider_credentials': () => [] };
 
 describe('CredentialsAdminService', () => {
+  describe('listAccounts', () => {
+    it('never exposes encryptedSecret in the runtime response object', async () => {
+      const db = createDb({
+        'sel:provider_credentials': () => [{
+          ...credRow,
+          name: 'Primary',
+          remark: null,
+          providerCode: 'agnes',
+          providerName: 'Agnes',
+          providerBaseUrl: 'https://api.example.com',
+          providerStatus: 'ACTIVE',
+        }],
+      });
+      const svc = new CredentialsAdminService(db as any, env);
+
+      const [account] = await svc.listAccounts();
+
+      expect(account.hasSecret).toBe(true);
+      expect(account.maskedApiKey).toBeTruthy();
+      expect((account as any).encryptedSecret).toBeUndefined();
+    });
+  });
+
   describe('create', () => {
     it('rejects missing provider', async () => {
       const svc = new CredentialsAdminService(createDb(emptyCred), env);

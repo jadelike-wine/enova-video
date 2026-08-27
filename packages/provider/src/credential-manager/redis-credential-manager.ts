@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, isNull, or, sql } from 'drizzle-orm';
 import type IORedis from 'ioredis';
+import { randomUUID } from 'node:crypto';
 import { domainError, ERROR_CODES, type CredentialStatus } from '@enova/contracts';
 import { providerCredentials, providers, type Database } from '@enova/db';
 import { CredentialCrypto } from '../crypto.js';
@@ -24,27 +25,46 @@ import type {
  */
 
 const ACQUIRE_LEASE_SCRIPT = `
-local cur = redis.call('INCR', KEYS[1])
-redis.call('EXPIRE', KEYS[1], ARGV[1])
-if cur > tonumber(ARGV[2]) then
-  redis.call('DECR', KEYS[1])
+-- ACQUIRE_LEASE_V2
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+local cur = redis.call('ZCARD', KEYS[1])
+if cur >= tonumber(ARGV[2]) then
   return 0
 end
+redis.call('ZADD', KEYS[1], now + tonumber(ARGV[1]), ARGV[3])
+redis.call('PEXPIRE', KEYS[1], ARGV[1])
 return 1
 `;
 
 const RELEASE_SCRIPT = `
-local cur = redis.call('GET', KEYS[1])
-if cur == false then
+-- RELEASE_LEASE_V2
+local removed = redis.call('ZREM', KEYS[1], ARGV[1])
+if redis.call('ZCARD', KEYS[1]) == 0 then
+  redis.call('DEL', KEYS[1])
+end
+return removed
+`;
+
+const RENEW_LEASE_SCRIPT = `
+-- RENEW_LEASE_V2
+if redis.call('ZSCORE', KEYS[1], ARGV[1]) == false then
   return 0
 end
-cur = tonumber(cur)
-if cur <= 1 then
-  redis.call('DEL', KEYS[1])
-  return cur
-end
-redis.call('DECR', KEYS[1])
-return cur - 1
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+redis.call('ZADD', KEYS[1], now + tonumber(ARGV[2]), ARGV[1])
+redis.call('PEXPIRE', KEYS[1], ARGV[2])
+return 1
+`;
+
+const COUNT_LEASES_SCRIPT = `
+-- COUNT_LEASES_V2
+local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+return redis.call('ZCARD', KEYS[1])
 `;
 
 export interface RedisCredentialManagerOptions {
@@ -73,20 +93,28 @@ export class RedisCredentialManager implements CredentialManager {
 
     // 候选已按 priority DESC / weight DESC / last_used_at ASC 排序。
     for (const row of rows) {
-      const ok = await this.tryReserveLease(row.credentialId, row.maxConcurrency);
+      const leaseToken = randomUUID();
+      const ok = await this.tryReserveLease(row.credentialId, row.maxConcurrency, leaseToken);
       if (!ok) continue;
       try {
         const secret = this.opts.crypto.decrypt(row.encryptedSecret);
         await this.touchUsed(row.credentialId);
+        const renewTimer = this.startLeaseRenewal(row.credentialId, leaseToken);
+        let released = false;
         return {
           credentialId: row.credentialId,
           providerCode: row.providerCode,
           secret,
-          release: () => this.doRelease(row.credentialId),
+          release: async () => {
+            if (released) return;
+            released = true;
+            clearInterval(renewTimer);
+            await this.doRelease(row.credentialId, leaseToken);
+          },
         };
       } catch (err) {
         // 解密或 DB 更新失败：归还槽位并继续尝试下一个。
-        await this.doRelease(row.credentialId);
+        await this.doRelease(row.credentialId, leaseToken);
         throw err;
       }
     }
@@ -206,22 +234,53 @@ export class RedisCredentialManager implements CredentialManager {
   }
 
   private leaseKey(credentialId: string): string {
-    return `enova:credential:${credentialId}:concurrency`;
+    return `enova:credential:${credentialId}:leases:v2`;
   }
 
-  private async tryReserveLease(credentialId: string, maxConcurrency: number): Promise<boolean> {
-    const ttlSeconds = Math.max(1, Math.floor(this.leaseTtlMs / 1000));
-    const res = await this.opts.redis.eval(ACQUIRE_LEASE_SCRIPT, 1, this.leaseKey(credentialId), String(ttlSeconds), String(maxConcurrency));
+  private async tryReserveLease(
+    credentialId: string,
+    maxConcurrency: number,
+    leaseToken: string,
+  ): Promise<boolean> {
+    const res = await this.opts.redis.eval(
+      ACQUIRE_LEASE_SCRIPT,
+      1,
+      this.leaseKey(credentialId),
+      String(this.leaseTtlMs),
+      String(maxConcurrency),
+      leaseToken,
+    );
     return res === 1;
   }
 
-  private async doRelease(credentialId: string): Promise<void> {
-    await this.opts.redis.eval(RELEASE_SCRIPT, 1, this.leaseKey(credentialId));
+  private async doRelease(credentialId: string, leaseToken: string): Promise<void> {
+    await this.opts.redis.eval(RELEASE_SCRIPT, 1, this.leaseKey(credentialId), leaseToken);
   }
 
   private async currentConcurrency(credentialId: string): Promise<number> {
-    const v = await this.opts.redis.get(this.leaseKey(credentialId));
-    return v ? Number(v) : 0;
+    const value = await this.opts.redis.eval(
+      COUNT_LEASES_SCRIPT,
+      1,
+      this.leaseKey(credentialId),
+    );
+    return Number(value);
+  }
+
+  private startLeaseRenewal(credentialId: string, leaseToken: string): ReturnType<typeof setInterval> {
+    const intervalMs = Math.max(100, Math.floor(this.leaseTtlMs / 3));
+    const timer = setInterval(() => {
+      void this.opts.redis
+        .eval(
+          RENEW_LEASE_SCRIPT,
+          1,
+          this.leaseKey(credentialId),
+          leaseToken,
+          String(this.leaseTtlMs),
+        )
+        .catch(() => undefined);
+    }, intervalMs);
+    timer.unref?.();
+    return timer;
   }
 
   private async touchUsed(credentialId: string): Promise<void> {

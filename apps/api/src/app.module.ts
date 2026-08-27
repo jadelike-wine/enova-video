@@ -11,6 +11,7 @@ import { AdminModule } from './admin/admin.module.js';
 import { PaymentModule } from './payment/payment.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { SetupModule } from './setup/setup.module.js';
+import { UploadsModule } from './uploads/uploads.module.js';
 import { RequestIdMiddleware } from './common/request-id/request-id.middleware.js';
 import { RateLimitModule } from './common/guards/rate-limit.module.js';
 import { AccessLogMiddleware } from './common/access-log/access-log.middleware.js';
@@ -29,6 +30,7 @@ import { AccessLogMiddleware } from './common/access-log/access-log.middleware.j
     PaymentModule,
     SettingsModule,
     SetupModule,
+    UploadsModule,
     RateLimitModule,
   ],
   providers: [AccessLogMiddleware],

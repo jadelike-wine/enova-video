@@ -9,9 +9,12 @@ function tableKey(table: unknown): string {
 
 function createDb(handlers: Record<string, () => any>) {
   const calls: Record<string, number> = {};
+  const events: string[] = [];
   const next = (key: string) => {
     calls[key] = (calls[key] ?? 0) + 1;
-    return handlers[key] ? handlers[key](calls[key]) : [];
+    if (handlers[key]) return handlers[key](calls[key]);
+    if (key === 'sel:payment_transactions') return [{ provider: 'sandbox' }];
+    return [];
   };
   const tx = {
     select: () => ({
@@ -26,13 +29,13 @@ function createDb(handlers: Record<string, () => any>) {
       },
     }),
     update: (t: unknown) => ({
-      set: () => ({ where: () => Promise.resolve([]) }),
+      set: () => ({ where: () => { events.push(`tx.update:${tableKey(t)}`); return Promise.resolve([]); } }),
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       _t: tableKey(t),
     }),
     insert: (t: unknown) => {
       const insertChain: any = {
-        values: () => insertChain,
+        values: () => { events.push(`tx.insert:${tableKey(t)}`); return insertChain; },
         onConflictDoNothing: () => insertChain,
         returning: () => Promise.resolve([]),
       };
@@ -54,7 +57,7 @@ function createDb(handlers: Record<string, () => any>) {
     }),
     insert: (t: unknown) => {
       const insertChain: any = {
-        values: () => insertChain,
+        values: () => { events.push(`db.insert:${tableKey(t)}`); return insertChain; },
         onConflictDoNothing: () => insertChain,
         returning: () => Promise.resolve([]),
       };
@@ -62,11 +65,12 @@ function createDb(handlers: Record<string, () => any>) {
       return insertChain;
     },
     update: (t: unknown) => ({
-      set: () => ({ where: () => Promise.resolve([]) }),
+      set: () => ({ where: () => { events.push(`db.update:${tableKey(t)}`); return Promise.resolve([]); } }),
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       _t: tableKey(t),
     }),
     transaction: (cb: (t: any) => unknown) => cb(tx),
+    events,
   };
 }
 
@@ -114,6 +118,20 @@ function makeSettings() {
   };
 }
 
+function makePaymentModeSettings(mode: 'sandbox' | 'alipay' | 'wechat') {
+  const settings = makeSettings();
+  settings.getMany.mockResolvedValue(
+    new Map([
+      ['payment.mode', mode],
+      ['payment.creditsPerCny', '100'],
+      ['payment.minRechargeCents', '100'],
+      ['payment.returnBaseUrl', 'http://localhost:3001'],
+      ['payment.notifyUrl', `http://localhost:3001/api/v1/payment/notify/${mode}`],
+    ]),
+  );
+  return settings;
+}
+
 const user = { userId: 'u1', workspaceId: 'ws1', email: 'a@b.c', role: 'USER', status: 'ACTIVE' } as any;
 
 describe('PaymentService', () => {
@@ -134,6 +152,17 @@ describe('PaymentService', () => {
       expect(res.tradeNo).toMatch(/^SANDBOX-/);
       expect(res.payUrl).toBeTruthy();
       expect(res.orderId).toBeTruthy();
+    });
+
+    it('persists the payment channel before the external provider call can return', async () => {
+      const db = createDb({});
+      const svc = new PaymentService(db as any, makeSettings() as any, makeWallet() as any, makeFulfillment() as any);
+
+      await svc.createRecharge(user, 1000);
+
+      expect(db.events).toContain('tx.insert:payment_transactions');
+      expect(db.events).not.toContain('db.insert:payment_transactions');
+      expect(db.events).toContain('db.update:payment_transactions');
     });
   });
 
@@ -159,13 +188,98 @@ describe('PaymentService', () => {
       const other = { userId: 'u1', workspaceId: 'ws1' } as any;
       await expect(svc.simulateConfirm(other, 'o1')).rejects.toThrowError(/does not belong/i);
     });
+
+    it.each(['alipay', 'wechat'] as const)(
+      'settles an existing sandbox order after switching to %s payment mode',
+      async (mode) => {
+        const db = createDb({
+          'sel:orders': () => [{
+            id: 'o1',
+            workspaceId: 'ws1',
+            userId: 'u1',
+            amountCents: 1000,
+            credits: 1000,
+            status: 'PENDING',
+            orderType: 'RECHARGE',
+            currency: 'CNY',
+            fulfillmentStatus: 'PENDING',
+          }],
+        });
+        const wallet = makeWallet();
+        const svc = new PaymentService(
+          db as any,
+          makePaymentModeSettings(mode) as any,
+          wallet as any,
+          makeFulfillment() as any,
+        );
+
+        await expect(svc.simulateConfirm(user, 'o1')).resolves.toMatchObject({ orderId: 'o1', credits: 1000 });
+        expect(wallet.rechargeInTx).toHaveBeenCalled();
+      },
+    );
+
+    it('rejects confirmation for an order created by a non-sandbox channel', async () => {
+      const orderRow = { id: 'o1', workspaceId: 'ws1', userId: 'u1', amountCents: 1000, credits: 1000, status: 'PENDING', orderType: 'RECHARGE', currency: 'CNY', fulfillmentStatus: 'PENDING' };
+      const db = createDb({
+        'sel:orders': () => [orderRow],
+        'sel:payment_transactions': () => [{ orderId: 'o1', provider: 'alipay' }],
+      });
+      const wallet = makeWallet();
+      const svc = new PaymentService(db as any, makeSettings() as any, wallet as any, makeFulfillment() as any);
+
+      await expect(svc.simulateConfirm(user, 'o1')).rejects.toThrowError(/not created by the sandbox channel/i);
+      expect(wallet.rechargeInTx).not.toHaveBeenCalled();
+    });
   });
 
   describe('notify', () => {
+    it.each(['alipay', 'wechat'] as const)(
+      'settles an existing sandbox notification after switching to %s payment mode',
+      async (mode) => {
+        const orderRow = { id: 'o1', workspaceId: 'ws1', userId: 'u1', amountCents: 1000, credits: 1000, status: 'PENDING', orderType: 'RECHARGE', currency: 'CNY', fulfillmentStatus: 'PENDING' };
+        const db = createDb({ 'sel:orders': () => [orderRow] });
+        const wallet = makeWallet();
+        const svc = new PaymentService(
+          db as any,
+          makePaymentModeSettings(mode) as any,
+          wallet as any,
+          makeFulfillment() as any,
+        );
+
+        await expect(
+          svc.notify(
+            'sandbox',
+            JSON.stringify({ orderId: 'o1', tradeNo: 'FORGED', amountCents: 1000, status: 'success' }),
+            {},
+          ),
+        ).resolves.toEqual({ received: true });
+        expect(wallet.rechargeInTx).toHaveBeenCalled();
+      },
+    );
+
     it('throws on invalid sandbox notification body', async () => {
       const db = createDb({});
       const svc = new PaymentService(db as any, makeSettings() as any, makeWallet() as any, makeFulfillment() as any);
       await expect(svc.notify('sandbox', JSON.stringify({ hello: 1 }), {})).rejects.toThrow(/missing orderId\/tradeNo/);
+    });
+
+    it('rejects a notification whose channel does not match the order transaction', async () => {
+      const orderRow = { id: 'o1', workspaceId: 'ws1', userId: 'u1', amountCents: 1000, credits: 1000, status: 'PENDING', orderType: 'RECHARGE', currency: 'CNY', fulfillmentStatus: 'PENDING' };
+      const db = createDb({
+        'sel:orders': () => [orderRow],
+        'sel:payment_transactions': () => [{ orderId: 'o1', provider: 'alipay' }],
+      });
+      const wallet = makeWallet();
+      const svc = new PaymentService(db as any, makeSettings() as any, wallet as any, makeFulfillment() as any);
+
+      await expect(
+        svc.notify(
+          'sandbox',
+          JSON.stringify({ orderId: 'o1', tradeNo: 'FORGED', amountCents: 1000, status: 'success' }),
+          {},
+        ),
+      ).rejects.toThrowError(/does not match order payment channel/i);
+      expect(wallet.rechargeInTx).not.toHaveBeenCalled();
     });
 
     it('settles a success notification and recharges', async () => {

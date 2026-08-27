@@ -501,6 +501,24 @@ export class GenerationPipeline {
           metadata: { sourceUrl },
         };
       }
+    } catch {
+      // Object storage is an optional persistence layer. A configured backend
+      // can still be temporarily unavailable; preserve the provider result and
+      // settle the completed generation rather than turning it into a failed job.
+      this.deps.logger.warn('object storage upload failed; retaining provider result', {
+        generationJobId: job.id,
+      });
+      asset = {
+        storageProvider: 'none',
+        bucket: null,
+        objectKey: null,
+        mimeType: dl.contentType,
+        size: dl.size,
+        width: providerResult.width ?? null,
+        height: providerResult.height ?? null,
+        duration: providerResult.duration ?? null,
+        metadata: { sourceUrl },
+      };
     } finally {
       await cleanupTempFile(dl.filePath);
     }

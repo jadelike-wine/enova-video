@@ -252,6 +252,22 @@ describe('RedisCredentialManager', () => {
     expect(set.status).toBe('ERROR');
   });
 
+  it('redacts credentials embedded in provider failure messages before persisting health', async () => {
+    const redis = new FakeRedis();
+    const { mgr, db } = manager(redis, [
+      { credentialId: 'c1', status: 'ACTIVE', maxConcurrency: 1, encryptedSecret: crypto.encrypt('sk') },
+    ]);
+
+    await mgr.markFailure('c1', 'agnes', {
+      category: 'AUTH_ERROR',
+      message: 'upstream rejected Authorization: Bearer sk-live-super-secret at https://provider.test?api_key=sk-live-super-secret',
+    });
+
+    const set = db._updates[db._updates.length - 1] as { lastError: string };
+    expect(set.lastError).toContain('[REDACTED]');
+    expect(set.lastError).not.toContain('sk-live-super-secret');
+  });
+
   it('health returns typed status (no raw string leak)', async () => {
     const redis = new FakeRedis();
     const { mgr } = manager(redis, [

@@ -303,8 +303,20 @@ function defaultBackoffMs(): number {
 
 /** 只记录归类的简短错误摘要，绝不包含 secret / 完整响应。 */
 function sanitizedError(failure: CredentialFailure): string {
-  const msg = failure.message?.slice(0, 200) ?? failure.category;
+  const msg = redactCredentialValues(failure.message ?? failure.category).slice(0, 200);
   return `${failure.category}: ${msg}`;
+}
+
+/**
+ * Provider responses are outside our trust boundary and may echo request
+ * credentials. Health records are shown in the admin UI, so redact the common
+ * Authorization and query/header credential formats before persisting them.
+ */
+function redactCredentialValues(message: string): string {
+  return message
+    .replace(/(\b(?:authorization|proxy-authorization)\s*:\s*bearer\s+)[^\s,;]+/gi, '$1[REDACTED]')
+    .replace(/([?&](?:api[_-]?key|access[_-]?token|token|secret|password)=)[^&#\s]+/gi, '$1[REDACTED]')
+    .replace(/(\b(?:api[_ -]?key|access[_ -]?token|token|secret|password)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]');
 }
 
 export type { ProviderErrorCategory };

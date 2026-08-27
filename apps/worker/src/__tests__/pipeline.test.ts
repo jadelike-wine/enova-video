@@ -149,6 +149,27 @@ describe('GenerationPipeline', () => {
     expect(deps.repo.finalizeFailureInTx).not.toHaveBeenCalled();
   });
 
+  it('keeps a successful generation when configured object storage upload fails', async () => {
+    const deps = makeDeps();
+    (deps.resources.credentials.acquire as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(acquireCred());
+    (deps.resources.storage.uploadFile as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('S3 unavailable'));
+    const provider = (deps.resources.registry as unknown as { getProvider: ReturnType<typeof vi.fn> }).getProvider();
+    (provider.generateImage as ReturnType<typeof vi.fn>).mockResolvedValue({ sourceUrl: 'https://cdn.test/i.png' });
+
+    const pipeline = new GenerationPipeline(deps);
+    await pipeline.execute(makePayload());
+
+    const finalizeArgs = (deps.repo.finalizeSuccessInTx as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(finalizeArgs.asset).toMatchObject({
+      storageProvider: 'none',
+      objectKey: null,
+      metadata: { sourceUrl: 'https://cdn.test/i.png' },
+    });
+    expect(finalizeArgs.output.url).toBe('https://cdn.test/i.png');
+    expect(deps.wallet.settleInTx).toHaveBeenCalled();
+    expect(deps.repo.finalizeFailureInTx).not.toHaveBeenCalled();
+  });
+
   it('video submit stores provider_job_id and schedules delayed poll', async () => {
     const deps = makeDeps();
     (deps.repo.load as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(makeVideoJob({ providerJobId: null }));
